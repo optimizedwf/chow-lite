@@ -152,9 +152,11 @@ tests/                    25 tests (router, ledger, gates, executor, chains, lea
 - [x] Google ADK 2.0 agent integration (agents as `subagent` nodes)
 - [x] 5-hop chain (research → plan → build → review → teach) + demo lane
 - [x] Cloud Run + Firestore deploy layer (Dockerfile, service, rules, API)
-- [ ] Live Cloud Run deployment (needs billing-enabled GCP project)
-- [ ] Firestore-backed ledger + route-event learning loop
-- [ ] Architecture diagram + demo video
+- [x] Route-event learning loop (append-only JSONL + candidate-only learner)
+- [x] Architecture diagram + demo lane + one-command `python demo.py`
+- [x] Second Google model: Gemma 4 teach hop (+0.2 Stage-3 bonus, live-tested)
+- [ ] Live Cloud Run deployment (needs Adam to auth gcloud — runbook in docs/ADAM-RUNBOOK.md)
+- [ ] Demo video with live GCP proof (script in docs/demo-script.md)
 
 ## License
 
