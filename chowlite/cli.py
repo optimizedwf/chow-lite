@@ -28,7 +28,6 @@ from chowlite.gates.evidence import (
     EvidenceGate,
     eval_json_check,
     exit_codes_check,
-    required_artifact_check,
 )
 from chowlite.ledger.ledger import JSONLLedger, LedgerError
 from chowlite.router.classifier import Router
@@ -376,6 +375,7 @@ def _regression_green() -> bool:
     pollute the operator's real event store."""
     import subprocess as _sp
 
+    _py = sys.executable
     root = Path(__file__).resolve().parent.parent
     jobs = root / "jobs"
     evp, cand = jobs / "events.jsonl", jobs / "events.jsonl.candidates.jsonl"
@@ -389,11 +389,12 @@ def _regression_green() -> bool:
         env = dict(os.environ)
         env["GEMINI_API_KEY"] = ""
         r = _sp.run(
-            [_sp.sys.executable, "-m", "pytest", "tests/", "-q", "--tb=short"],
+            [_py, "-m", "pytest", "tests/", "-q", "--tb=short"],
             cwd=root,
             capture_output=True,
             text=True,
             timeout=600,
+            check=False,
         )
         return r.returncode == 0
     finally:
@@ -413,7 +414,6 @@ def _git_commit(message: str) -> None:
     _sp.run(["git", "-C", str(root), "-c", "user.name=adamnorm4wd",
              "-c", "user.email=adamnorm4wd@atomicmail.io", "commit", "-m", message],
             check=True)
-    return 0
 
 
 def main(argv: list[str] | None = None) -> int:

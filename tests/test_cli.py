@@ -2,9 +2,18 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
 from chowlite.cli import main
+
+
+@pytest.fixture(autouse=True)
+def _isolated_catalog(tmp_path, monkeypatch):
+    """Learn apply/revert writes the shared git-tracked catalog for real;
+    point it at a temp file so tests never touch the repo catalog."""
+    monkeypatch.setattr("chowlite.registry._CATALOG_PATH", tmp_path / "catalog.json")
 
 
 def test_cli_help_ok():
@@ -46,3 +55,92 @@ def test_cli_bad_command_returns_nonzero(tmp_path):
     with pytest.raises(SystemExit) as e:
         main(["--ledger", str(tmp_path / "ledger.jsonl"), "bogus"])
     assert e.value.code == 2
+
+# ---------------------------------------------------------------- P2 learn CLI
+
+def test_cli_submit_records_route_event(tmp_path, monkeypatch):
+    """Every submit path writes a durable route event (was: zero events from
+    the CLI; strategy claim-audit #5)."""
+    ledger = tmp_path / "ledger.jsonl"
+    events = tmp_path / "events.jsonl"
+    assert main(["--ledger", str(ledger), "--events", str(events),
+                 "submit", "research black holes"]) == 0
+    r = main(["--ledger", str(ledger), "--events", str(events), "learn", "events"])
+    assert r == 0
+    lines = open(events).read().splitlines()
+    assert len(lines) == 1
+    import json
+    assert json.loads(lines[0])["workflow_id"] == "research"
+    assert json.loads(lines[0])["verdict"] == "SHIP"
+
+
+def test_cli_direct_answer_records_unverified_event(tmp_path):
+    ledger = tmp_path / "ledger.jsonl"
+    events = tmp_path / "events.jsonl"
+    assert main(["--ledger", str(ledger), "--events", str(events),
+                 "submit", "zzz qqq unknown"]) == 0
+    import json
+    lines = open(events).read().splitlines()
+    assert len(lines) == 1
+    assert json.loads(lines[0])["verdict"] == "UNVERIFIED"
+
+
+def test_cli_learn_apply_revert_gated_by_regression(tmp_path, monkeypatch):
+    """apply runs the regression gate before+after, writes the git-tracked
+    catalog, and reverts cleanly — with the gate+git monkeypatched so the
+    unit test never spawns pytest or commits."""
+
+    import chowlite.cli as cli
+
+    events = tmp_path / "events.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    # record a low-confidence route -> keyword candidate (distinctive token
+    # so the assertion survives a catalog that already routes 'chromodynamics')
+    assert main(["--ledger", str(ledger), "--events", str(events),
+                 "submit", "study fooquark dynamics"]) == 0
+    out = main(["--ledger", str(ledger), "--events", str(events), "learn", "scan"])
+    assert out == 0
+    cands = cli._learner(type("A", (), {"events": str(events)})()).cands.all()
+    assert len(cands) == 1 and cands[0].kind == "keyword"
+    cid = cands[0].candidate_id
+
+    gate_calls = {"n": 0}
+
+    def _fake_green() -> bool:
+        gate_calls["n"] += 1
+        return True
+
+    monkeypatch.setattr(cli, "_regression_green", _fake_green)
+    commits = []
+    monkeypatch.setattr(cli, "_git_commit", commits.append)
+
+    from chowlite.registry import load_catalog
+    # apply: catalog gains the keyword; candidate applied
+    assert cli._apply_candidate(cli._learner(type("A", (), {"events": str(events)})()), cid) == 0
+    cat = load_catalog()
+    assert "fooquark" in cat["keyword_overrides"]["research"]
+    assert cli._learner(type("A", (), {"events": str(events)})()).cands.get(cid).status == "applied"
+    assert len(commits) == 1 and "fooquark" in commits[0]
+    assert gate_calls["n"] >= 2  # pre + post change
+
+    # revert: catalog loses the keyword; candidate back to pending
+    assert cli._revert_candidate(cli._learner(type("A", (), {"events": str(events)})()), cid) == 0
+    cat = load_catalog()
+    assert "keyword_overrides" not in cat or not cat["keyword_overrides"].get("research")
+    assert cli._learner(type("A", (), {"events": str(events)})()).cands.get(cid).status == "pending"
+    assert len(commits) == 2
+
+
+def test_cli_learn_apply_refuses_non_applicable(tmp_path, monkeypatch):
+    """fallback-respond candidates have no target workflow -> apply refuses."""
+    import chowlite.cli as cli
+
+    events = tmp_path / "events.jsonl"
+    ledger = tmp_path / "ledger.jsonl"
+    assert main(["--ledger", str(ledger), "--events", str(events),
+                 "submit", "zzz qqq unknown"]) == 0
+    assert main(["--ledger", str(ledger), "--events", str(events), "learn", "scan"]) == 0
+    cands = cli._learner(type("A", (), {"events": str(events)})()).cands.all()
+    assert len(cands) == 1 and cands[0].params["keyword"] == ""
+    monkeypatch.setattr(cli, "_regression_green", lambda: True)
+    assert cli._apply_candidate(cli._learner(type("A", (), {"events": str(events)})()), cands[0].candidate_id) == 2

@@ -42,6 +42,36 @@ self-hostable, scale-to-zero.
 Multi-hop **chains** hand off artifacts between departments with a gate at
 every handoff — nothing ships without evidence, at any stage.
 
+### The visible LEARN loop
+
+Every submit path (CLI, server, chains, direct answers) appends a **route
+event** to `jobs/events.jsonl` — the task, the routed workflow, the router's
+confidence, and the verdict. `chow learn scan` turns weak signals into
+**improvement candidates**:
+
+```bash
+$ chow submit "study quantum chromodynamics"
+  -> research  (confidence 0.179)
+$ chow learn scan
+  cand-…  [keyword]  pending
+      route to 'research' at confidence 0.18 (low);
+      add keyword 'chromodynamics' or re-describe the workflow
+      params: {"workflow_id": "research", "keyword": "chromodynamics", …}
+$ chow learn apply cand-…
+  # regression suite runs BEFORE and AFTER the catalog change
+  # commits chowlite/router/catalog.json (git-tracked, rollback = git revert)
+$ chow submit "chromodynamics of gauge fields"
+  -> research  (confidence 0.467)   # 2.6× more confident, same workflow
+$ chow learn revert cand-…          # remove the override, re-gated, committed
+```
+
+Doctrine: **the loop never changes behavior silently.** Apply/revert are
+gated by the full regression suite (green before and after), every change is
+a git commit, the human owns the final keyword choice (candidate-only), and
+the catalog is the *only* file LEARN writes — base routing logic is never
+edited. Server surface: `GET /v1/events` and `/v1/stats` expose the same
+event + candidate counts.
+
 ## Quickstart
 
 ```bash

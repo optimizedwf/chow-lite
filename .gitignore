@@ -33,3 +33,5 @@ work/
 
 demo_capture/
 docs/demo-terminal-segment.mp4
+# pytest-cov
+.coverage

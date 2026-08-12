@@ -2,12 +2,21 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
 from chowlite.chains.chain import ChainExecutor
 from chowlite.chains.flagship import demo_lane
 from chowlite.learn.learner import Learner, RouteEvent, RouteEventStore
 from chowlite.ledger.ledger import JSONLLedger
+
+
+@pytest.fixture(autouse=True)
+def _isolated_catalog(tmp_path, monkeypatch):
+    """Every test writes to its OWN catalog (the router catalog is
+    git-tracked + shared; learn apply/revert touches it for real)."""
+    monkeypatch.setattr("chowlite.registry._CATALOG_PATH", tmp_path / "catalog.json")
 
 
 def test_route_event_store_roundtrip(tmp_path):
@@ -107,3 +116,72 @@ def test_chain_events_carry_real_route_decision(tmp_path):
     assert ev.confidence == decision.confidence, "real confidence, not 0.5"
     assert ev.router_version == decision.router_version, "real router version, not chain-v1"
     assert job.route_decision is not None
+
+# ---------------------------------------------------------------- P2
+
+def _low_conf_event(store, task="study quantum chromodynamics", conf=0.18,
+                    wf="research", ev_id="ev-low"):
+    store.record(RouteEvent(
+        event_id=ev_id, job_id="j-low", task_redacted=task,
+        workflow_id=wf, confidence=conf, router_version="0.1.0",
+        verdict="SHIP", checks_passed=1, checks_total=1,
+    ))
+
+
+def test_keyword_candidate_from_low_confidence_route(tmp_path):
+    """P2: a low-confidence route to a KNOWN workflow proposes adding the
+    strongest unmatched task token as a router keyword (machine-applicable).
+    Uses a distinctive token so the assertion survives a catalog that already
+    routes 'chromodynamics' (the LEARN apply gate re-runs this suite)."""
+    store = RouteEventStore(tmp_path / "events.jsonl")
+    _low_conf_event(store, task="study fooquark dynamics")
+    cands = Learner(store).learn()
+    assert len(cands) == 1
+    c = cands[0]
+    assert c.kind == "keyword"
+    assert c.params["workflow_id"] == "research"
+    assert c.params["keyword"] == "fooquark"
+    assert c.params["task_hint"] == "study fooquark dynamics"
+
+
+def test_fallback_respond_candidate_is_human_owned(tmp_path):
+    """P2: conf-0 fallback has no target workflow -> keyword empty, so apply
+    refuses (a human must pick the workflow/keyword)."""
+    store = RouteEventStore(tmp_path / "events.jsonl")
+    _low_conf_event(store, task="zzz qqq something", conf=0.0,
+                    wf="fallback-respond", ev_id="ev-fb")
+    cands = Learner(store).learn()
+    assert len(cands) == 1
+    c = cands[0]
+    assert c.kind == "keyword"
+    assert c.params["workflow_id"] == ""
+    assert c.params["keyword"] == ""
+
+
+def test_event_seeds_at_most_one_candidate_ever(tmp_path):
+    """P2: once an event has a candidate (even after apply), a re-scan never
+    re-suggests the same event (would otherwise propose the next-best keyword
+    forever)."""
+    store = RouteEventStore(tmp_path / "events.jsonl")
+    _low_conf_event(store)
+    learner = Learner(store)
+    cands = learner.learn()
+    assert len(cands) == 1
+    # simulate apply: status transitions to applied; catalog now contains the
+    # keyword, so a naive re-scan would derive a DIFFERENT keyword
+    learner.cands.update_status(cands[0].candidate_id, "applied")
+    rescan = Learner(store).learn()
+    # the SAME candidate comes back; no NEW suggestion for the event
+    assert [c.candidate_id for c in rescan] == [cands[0].candidate_id]
+    assert rescan[0].status == "applied"
+
+
+def test_candidate_store_status_roundtrip(tmp_path):
+    store = RouteEventStore(tmp_path / "events.jsonl")
+    _low_conf_event(store)
+    learner = Learner(store)
+    cid = learner.learn()[0].candidate_id
+    learner.cands.update_status(cid, "applied")
+    assert learner.cands.get(cid).status == "applied"
+    learner.cands.update_status(cid, "pending")
+    assert learner.cands.get(cid).status == "pending"

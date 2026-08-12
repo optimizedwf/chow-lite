@@ -76,3 +76,29 @@ def test_unknown_job_404():
 def test_malformed_json_400():
     r = client.post("/v1/submit", content=b"{not json", headers={"Content-Type": "application/json"})
     assert r.status_code in (400, 422)
+
+def test_submit_records_route_events_and_events_endpoint():
+    """P2: /v1/submit writes durable route events; /v1/events exposes them;
+    /v1/stats reports event + candidate counts (claim-audit #5)."""
+    # count before
+    before = client.get("/v1/events").json()["count"]
+    r = client.post("/v1/submit", json={"task": "review a thing"})
+    assert r.status_code == 200
+    ev = client.get("/v1/events").json()
+    assert ev["count"] == before + 1
+    latest = ev["events"][-1]
+    assert latest["workflow_id"] == "review"
+    assert latest["verdict"] == "SHIP"
+    stats = client.get("/v1/stats").json()
+    assert stats["events"]["count"] == before + 1
+    assert stats["events"]["candidates"]["total"] >= 0
+
+
+def test_direct_answer_records_unverified_event():
+    before = client.get("/v1/events").json()["count"]
+    r = client.post("/v1/submit", json={"task": "zzz qqq totally unknown"})
+    assert r.status_code == 200
+    assert "note" in r.json() or r.json().get("workflow_id") in ("respond", "fallback-respond")
+    ev = client.get("/v1/events").json()
+    assert ev["count"] == before + 1
+    assert ev["events"][-1]["verdict"] == "UNVERIFIED"

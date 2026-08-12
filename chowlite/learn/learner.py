@@ -15,6 +15,7 @@ Output schema: chowlite/schemas/route-event.schema.json
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -121,7 +122,7 @@ class CandidateStore:
     def update_status(self, candidate_id: str, status: str) -> None:
         """Rewrite the JSONL with a new status for one candidate (immutable
         log -> status is a state transition, applied in place)."""
-        recs = [json.loads(l) for l in self.path.read_text().splitlines() if l.strip()]
+        recs = [json.loads(line) for line in self.path.read_text().splitlines() if line.strip()]
         changed = False
         for rec in recs:
             if rec.get("candidate_id") == candidate_id:
@@ -243,15 +244,13 @@ _STOPWORDS = {
 }
 
 
-def _derive_keyword(ev: "RouteEvent") -> str:
+def _derive_keyword(ev: RouteEvent) -> str:
     """Longest informative token in the task not already routing the workflow.
 
     The human owns the final choice (candidate-only doctrine); this just
     makes the candidate actionable for `chow learn apply`.
     """
     from chowlite.registry import KEYWORDS
-
-    import re
 
     existing = set(KEYWORDS.get(ev.workflow_id, []))
     toks = [

@@ -44,6 +44,7 @@ _RUNTIME = Path(os.environ.get(
 ))
 LEDGER_PATH = _RUNTIME / "jobs" / "ledger.jsonl"
 WORKDIR = _RUNTIME / "work"
+EVENTS_PATH = _RUNTIME / "jobs" / "events.jsonl"
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
 
 
@@ -51,6 +52,14 @@ _ledger: Any | None = None
 _ledger_failed = False
 
 
+
+
+def get_learner():
+    """Durable LEARN store (JSONL in the runtime data dir; Firestore events
+    are a future step — the route-event log is append-only and small)."""
+    from chowlite.learn.learner import Learner, RouteEventStore
+
+    return Learner(RouteEventStore(EVENTS_PATH))
 def get_ledger():
     """Firestore in cloud, JSONL locally.
 
@@ -230,6 +239,7 @@ def submit(payload: SubmitRequest):
     router = build_router()
     decision = router.classify(task)
     if decision.workflow_id in ("respond", "fallback-respond"):
+        _record_route_event(get_learner(), None, decision, {"verdict": "UNVERIFIED"})
         return {"decision": decision.to_dict(), "note": "direct answer; no run"}
 
     job = ledger.submit(workflow_id=decision.workflow_id, input={"task": task})
@@ -249,7 +259,7 @@ def submit(payload: SubmitRequest):
         (job_dir / "task.txt").write_text(task + "\n")
         if decision.workflow_id == "inbox-triage-task-report":
             (job_dir / "inbox.txt").write_text(task + "\n")
-        cex = ChainExecutor(ledger, workdir=WORKDIR)
+        cex = ChainExecutor(ledger, workdir=WORKDIR, learner=get_learner())
         res = cex.execute(chain, job, {"task": task}, decision=decision)
         return {
             "job_id": job.job_id,
@@ -271,15 +281,40 @@ def submit(payload: SubmitRequest):
                 decision.workflow_id, task, Path(jd)),
             description="collect task + write report artifact + EVAL.json (Python)"))
 
-    gate = build_gate()
+    from chowlite.registry import workflow_gate
+
+    gate = workflow_gate(decision.workflow_id) or build_gate()
     ex = WorkflowExecutor(ledger, gate, workdir=WORKDIR)
     result = ex.execute(wf, job, {"task": task})
+    _record_route_event(get_learner(), job, decision, result["verdict"])
     return {
         "job_id": job.job_id,
         "status": job.status,
         "verdict": result["verdict"],
         "decision": decision.to_dict(),
     }
+
+
+def _record_route_event(learner, job, decision, verdict: dict) -> None:
+    """Append one route event (chain runs record per-hop events inside
+    ChainExecutor; direct answers get verdict UNVERIFIED with no job)."""
+    from chowlite.learn.learner import RouteEvent
+
+    eval_results = verdict.get("eval_results") or {}
+    learner.observe(
+        RouteEvent(
+            event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
+            job_id=job.job_id if job else "",
+            task_redacted=decision.task_redacted[:200],
+            workflow_id=decision.workflow_id,
+            confidence=float(decision.confidence),
+            router_version=decision.router_version,
+            verdict=verdict.get("verdict", "BLOCK"),
+            checks_passed=sum(1 for r in eval_results.values() if r.get("passed")),
+            checks_total=len(eval_results),
+            fix_directive="",
+        )
+    )
 
 
 @app.get("/v1/jobs")
@@ -295,6 +330,29 @@ def job_detail(job_id: str):
         raise HTTPException(404, str(e)) from e
 
 
+@app.get("/v1/events")
+def events(limit: int = 50):
+    """Recent route events (the LEARN loop's raw material)."""
+    learner = get_learner()
+    all_ev = learner.store.all()
+    return {
+        "count": len(all_ev),
+        "events": [e.to_dict() for e in all_ev[-limit:]],
+    }
+
+
 @app.get("/v1/stats")
 def stats():
-    return get_ledger().stats()
+    data = get_ledger().stats()
+    learner = get_learner()
+    cands = learner.cands.all()
+    data["events"] = {
+        "count": len(learner.store.all()),
+        "candidates": {
+            "total": len(cands),
+            "pending": sum(1 for c in cands if c.status == "pending"),
+            "applied": sum(1 for c in cands if c.status == "applied"),
+            "rejected": sum(1 for c in cands if c.status == "rejected"),
+        },
+    }
+    return data
