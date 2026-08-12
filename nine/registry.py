@@ -34,6 +34,7 @@ from nine.workflows.compare_wf import compare_hop
 from nine.workflows.debug_wf import debug_hop
 from nine.workflows.deploy_check_wf import deploy_check_hop
 from nine.workflows.document_wf import document_hop
+from nine.workflows.draft_wf import draft_hop
 from nine.workflows.extract_wf import extract_hop
 from nine.workflows.refactor_wf import refactor_hop
 from nine.workflows.research_deep_wf import research_deep_hop
@@ -78,6 +79,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "build-multi": _wf(build_multi_hop),
     "compare": _wf(compare_hop),
     "debug": _wf(debug_hop),
+    "draft": _wf(draft_hop),
     "deploy-check": _wf(deploy_check_hop),
     "document": _wf(document_hop),
     "extract": _wf(extract_hop),
@@ -156,6 +158,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "summarize-standalone": ["summarize", "summary", "summarize this", "tl;dr", "give me a summary", "summarize the code", "condense", "brief me", "short version", "executive summary"],
     "extract": ["extract", "extract data", "parse this", "convert to json", "convert this to json", "to json", "into json", "structured json", "extract the facts", "pull out the", "json output", "extract to json"],
     "compare": ["compare", "compare options", "which one is better", "compare the two", "compare these", "pros and cons", "compare and contrast", "which should i pick", "help me choose", "vs"],
+    "draft": ["draft", "draft this", "write a draft", "write a proposal", "write an article", "write a spec", "first draft", "outline and draft", "write a plan"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -177,6 +180,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "summarize-standalone": "One-source distillation: read-source -> summarizer -> SUMMARY.md.",
     "extract": "Unstructured -> structured JSON: read-source -> extractor -> OUTPUT.json.",
     "compare": "Options vs criteria: criteria-extract -> analyzer -> comparator -> COMPARISON.md.",
+    "draft": "Draft -> review -> revise: DRAFT.md + REVIEW.md + REVISION_LOG.md.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
