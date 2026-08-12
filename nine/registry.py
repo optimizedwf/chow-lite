@@ -37,6 +37,7 @@ from nine.workflows.document_wf import document_hop
 from nine.workflows.draft_email_wf import draft_email_hop
 from nine.workflows.draft_wf import draft_hop
 from nine.workflows.extract_wf import extract_hop
+from nine.workflows.ideate_wf import ideate_hop
 from nine.workflows.refactor_wf import refactor_hop
 from nine.workflows.research_deep_wf import research_deep_hop
 from nine.workflows.research_quick_wf import research_quick_hop
@@ -85,6 +86,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "deploy-check": _wf(deploy_check_hop),
     "document": _wf(document_hop),
     "extract": _wf(extract_hop),
+    "ideate": _wf(ideate_hop),
     "research-quick": _wf(research_quick_hop),
     "research-deep": _wf(research_deep_hop),
     "summarize-standalone": _wf(summarize_standalone_hop),
@@ -162,6 +164,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "compare": ["compare", "compare options", "which one is better", "compare the two", "compare these", "pros and cons", "compare and contrast", "which should i pick", "help me choose", "vs"],
     "draft": ["draft", "draft this", "write a draft", "write a proposal", "write an article", "write a spec", "first draft", "outline and draft", "write a plan"],
     "draft-email": ["draft an email", "write an email", "email reply", "compose an email", "outreach email", "follow up email", "email to", "reply to this email", "draft a response", "cold email"],
+    "ideate": ["ideate", "brainstorm", "come up with ideas", "idea for", "give me ideas", "what should i build", "generate ideas", "think of an idea", "new product idea", "spark ideas"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -185,6 +188,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "compare": "Options vs criteria: criteria-extract -> analyzer -> comparator -> COMPARISON.md.",
     "draft": "Draft -> review -> revise: DRAFT.md + REVIEW.md + REVISION_LOG.md.",
     "draft-email": "Tone-aware email: draft -> reviewtone -> revise -> DRAFT.md.",
+    "ideate": "Idea -> expand -> challenge -> refine: IDEA_BRIEF.md + VIABILITY.json.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
