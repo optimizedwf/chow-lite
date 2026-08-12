@@ -1,6 +1,6 @@
 {
-  "last_cycle": "2026-08-12T23:49:00.987034+00:00",
-  "cycles_run": 1,
+  "last_cycle": "2026-08-12T23:50:09.169686+00:00",
+  "cycles_run": 2,
   "last_bench": "2026-08-12T23:49:00.987037+00:00",
   "bench_runs": [
     "r0-slice17-baseline",
@@ -24,6 +24,6 @@
       45
     ]
   },
-  "next_target": "bugfix-small-002",
-  "last_error": "Gemini empty stream (quota) on bugfix-small-002 smoke: loud RuntimeError per fix A - loop switches to HARDEN cycles until cooldown"
+  "next_target": "HARDEN: static gap-hunt -> doc-truth (model version)",
+  "last_error": null
 }

@@ -1,7 +1,7 @@
 """Workflow engine — the EXECUTE step of the nine loop.
 
 A workflow is a DAG of typed nodes:
-    prompt  — LLM step (Gemini 3.5 Flash via ADK or raw API)
+    prompt  — LLM step (Gemini 3.6 Flash via ADK or raw API)
     bash    — deterministic shell step
     tool    — tool/function call (API, filesystem, etc.)
     subagent— nested agent run (ADK sub-agent)

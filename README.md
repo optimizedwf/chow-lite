@@ -26,7 +26,7 @@ the matching API key) to pin a different model.*
 
 nine is the open-source, lightweight version of the agent harness that
 runs our own multi-lane agent operation. It is built **on Google ADK 2.0 +
-Gemini 3.5 Flash + Cloud Run + Firestore** — no vendor lock-in, MIT licensed,
+Gemini 3.6 Flash (default) + Cloud Run + Firestore** — no vendor lock-in, MIT licensed,
 self-hostable, scale-to-zero.
 
 ---
@@ -39,7 +39,7 @@ self-hostable, scale-to-zero.
 
 | Phase | What happens | Backing tech |
 |---|---|---|
-| **ROUTE** | every task is classified to a workflow (intent router) | Gemini 3.5 Flash via ADK + KeywordRouter substrate (routing only — output is always model-generated) |
+| **ROUTE** | every task is classified to a workflow (intent router) | Gemini 3.6 Flash via ADK + KeywordRouter substrate (routing only — output is always model-generated) |
 | **EXECUTE** | declarative workflow DAGs run typed nodes (`prompt`/`bash`/`tool`/`subagent`) | Google ADK 2.0 agents, artifact-passing contract |
 | **VERIFY** | evidence gate checks EVAL.json, required artifacts, exit codes | verdict: **SHIP / FIX / BLOCK** |
 | **LEARN** | route events -> improvement candidates (human-approved only) | append-only event store, never auto-applies |
@@ -142,7 +142,7 @@ exits 0 and everyone assumes it worked.
 nine makes agents *trustworthy by construction*:
 
 1. **ROUTE** — every task is classified to a workflow by an intent router
-   (Gemini 3.5 Flash, with the KeywordRouter substrate when no model is
+   (Gemini 3.6 Flash, with the KeywordRouter substrate when no model is
    configured — routing decides the lane, it never fabricates output).
 2. **EXECUTE** — workflows are declarative DAGs of typed nodes
    (`prompt` / `bash` / `tool` / `subagent`), with artifacts passed between
@@ -178,14 +178,14 @@ nine stats                 # ledger stats
 
 | Requirement | nine uses |
 |---|---|
-| Gemini 3.5 or newer | Gemini 3.5 Flash via Gemini API (router + agent steps) |
+| Gemini 3.5 or newer | Gemini 3.6 Flash via Gemini API (router + agent steps) |
 | Google agent framework | **Google ADK 2.0** (agents, routing, workflow-agents, sessions/memory, evaluate, observability) |
 | Google Cloud infra service | **Cloud Run** (scale-to-zero deployment) + **Firestore** (durable job ledger, memory, route events) |
 
 ## Architecture
 
 ```
-[Task] → [Router: Gemini 3.5 Flash classification]
+[Task] → [Router: Gemini 3.6 Flash classification]
               │ route-decision (schema-validated)
               ▼
 [Workflow DAG: ADK workflow-agents (sequential/parallel/loop)]
