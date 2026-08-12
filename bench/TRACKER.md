@@ -9,6 +9,7 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 | date | HEAD | cycle | score | tests | notes |
 |------|------|-------|-------|-------|-------|
 | 2026-08-12 | c888ba6 (slice 17) | BENCH baseline (Dell) | 3/5 (60%) | 34/45 (75.6%) | 001 SHIP but candidate_unchanged (exit-code-only self-test); 002 FIX 2/9; 003 FIX 9/9 (perfect patch blocked: ROOT_CAUSE.md gate); 004 FIX 7/9; 005 FIX 5/9. 7 gaps logged -> slice 21 fixes A-F |
+| 2026-08-12 | 0bfdbe7 (slice 22) | BENCH smoke | 0/1 (quota) | 2/9 | bugfix-small-002 via real key: ADK empty stream (quota exhausted by bench run) -> loud RuntimeError per fix A. Loop validated end-to-end locally. Switching to HARDEN until cooldown 2026-08-14 |
 | 2026-08-12 | 920d3a9 (slice 21) | FIXES | — | 183 tests pass | bench-findings fixes shipped: loud empty-stream, pytest self-test, debug gate relaxed, 1500-char truncation, collection-error msgs, model-first router |
 
 ---

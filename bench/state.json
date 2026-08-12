@@ -1,12 +1,13 @@
 {
-  "last_cycle": null,
-  "cycles_run": 0,
-  "last_bench": "2026-08-12T00:00:00Z",
+  "last_cycle": "2026-08-12T23:49:00.987034+00:00",
+  "cycles_run": 1,
+  "last_bench": "2026-08-12T23:49:00.987037+00:00",
   "bench_runs": [
-    "r0-slice17-baseline"
+    "r0-slice17-baseline",
+    "smoke-slice22-002"
   ],
-  "est_quota_left": 20,
-  "cooldown_until": "2026-08-12T00:00:00Z",
+  "est_quota_left": 0,
+  "cooldown_until": "2026-08-14T23:49:00.987038+00:00",
   "last_score": {
     "ship": 3,
     "total": 5,
@@ -24,5 +25,5 @@
     ]
   },
   "next_target": "bugfix-small-002",
-  "last_error": null
+  "last_error": "Gemini empty stream (quota) on bugfix-small-002 smoke: loud RuntimeError per fix A - loop switches to HARDEN cycles until cooldown"
 }
