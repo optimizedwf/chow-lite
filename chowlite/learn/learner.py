@@ -53,6 +53,7 @@ class ImprovementCandidate:
     description: str
     evidence: list[str]      # route event ids that motivate this
     status: str = "pending"  # pending | approved | rejected | applied
+    params: dict[str, Any] = field(default_factory=dict)  # machine-readable change spec
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).isoformat()
     )
@@ -111,6 +112,25 @@ class CandidateStore:
                 out.append(ImprovementCandidate(**json.loads(line)))
         return out
 
+    def get(self, candidate_id: str) -> ImprovementCandidate | None:
+        for c in self.all():
+            if c.candidate_id == candidate_id:
+                return c
+        return None
+
+    def update_status(self, candidate_id: str, status: str) -> None:
+        """Rewrite the JSONL with a new status for one candidate (immutable
+        log -> status is a state transition, applied in place)."""
+        recs = [json.loads(l) for l in self.path.read_text().splitlines() if l.strip()]
+        changed = False
+        for rec in recs:
+            if rec.get("candidate_id") == candidate_id:
+                rec["status"] = status
+                changed = True
+        if not changed:
+            raise ValueError(f"no candidate {candidate_id}")
+        self.path.write_text("".join(json.dumps(r) + "\n" for r in recs))
+
     def has(self, description: str, evidence: list[str]) -> bool:
         return any(
             c.description == description and c.evidence == evidence
@@ -133,7 +153,13 @@ class Learner:
     def observe(self, event: RouteEvent) -> None:
         self.store.record(event)
 
-    def _suggest(self, kind: str, description: str, evidence: list[str]) -> None:
+    def _suggest(
+        self,
+        kind: str,
+        description: str,
+        evidence: list[str],
+        params: dict[str, Any] | None = None,
+    ) -> None:
         if self.cands.has(description, evidence):
             return
         cand = ImprovementCandidate(
@@ -141,6 +167,7 @@ class Learner:
             kind=kind,
             description=description,
             evidence=evidence,
+            params=params or {},
         )
         self.cands.append(cand)
 
@@ -155,7 +182,15 @@ class Learner:
           * high-confidence routes that still FIX -> candidate: tighten gate
         """
         events = self.store.all()
+        # an event seeds AT MOST one candidate ever (even after apply/reject):
+        # otherwise the same observation re-suggests the next-best keyword on
+        # every scan once the first suggestion was applied.
+        used_events: set[str] = set()
+        for c in self.cands.all():
+            used_events.update(c.evidence)
         for ev in events:
+            if ev.event_id in used_events:
+                continue
             if ev.verdict == "BLOCK":
                 self._suggest(
                     "gate",
@@ -171,7 +206,58 @@ class Learner:
                     "check workflow step reliability",
                     [ev.event_id],
                 )
+            elif ev.confidence < 0.3:
+                # low-confidence route: propose adding a keyword so the next
+                # identical task routes with more certainty (kind=keyword).
+                # Only auto-applicable when the route DID reach a known
+                # workflow (the strongest unmatched task token becomes the
+                # keyword); fallback-respond has no target workflow, so its
+                # candidate requires a human decision.
+                from chowlite.registry import WORKFLOWS
+
+                kw = _derive_keyword(ev) if ev.workflow_id in WORKFLOWS else ""
+                self._suggest(
+                    "keyword",
+                    f"route to '{ev.workflow_id}' at confidence "
+                    f"{ev.confidence:.2f} (low); add keyword "
+                    f"'{kw or '<human-chosen>'}' or re-describe the workflow",
+                    [ev.event_id],
+                    params={
+                        "workflow_id": ev.workflow_id if ev.workflow_id in WORKFLOWS else "",
+                        "keyword": kw or "",
+                        "task_hint": ev.task_redacted[:80],
+                    },
+                )
         return self.cands.all()
 
     def candidates_json(self) -> str:
         return json.dumps([c.to_dict() for c in self.cands.all()], indent=2)
+
+
+# words too generic to make good router keywords
+_STOPWORDS = {
+    "the", "and", "for", "with", "this", "that", "from", "what", "when",
+    "task", "please", "need", "want", "make", "write", "some", "about",
+    "would", "could", "should", "there", "their", "your", "have", "been",
+    "into", "over", "under", "after", "before", "then", "than", "them",
+}
+
+
+def _derive_keyword(ev: "RouteEvent") -> str:
+    """Longest informative token in the task not already routing the workflow.
+
+    The human owns the final choice (candidate-only doctrine); this just
+    makes the candidate actionable for `chow learn apply`.
+    """
+    from chowlite.registry import KEYWORDS
+
+    import re
+
+    existing = set(KEYWORDS.get(ev.workflow_id, []))
+    toks = [
+        t for t in re.findall(r"[a-z]{4,}", ev.task_redacted.lower())
+        if t not in _STOPWORDS and t not in existing
+    ]
+    if not toks:
+        return ""
+    return max(toks, key=len)[:30]

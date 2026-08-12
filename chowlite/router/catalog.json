@@ -1,0 +1,5 @@
+{
+  "$comment": "Human/LEARN-approved router overrides. chow learn apply writes here; registry.py merges these into KEYWORDS at import time. Rollback = chow learn revert (git-tracked).",
+  "keyword_overrides": {},
+  "description_overrides": {}
+}

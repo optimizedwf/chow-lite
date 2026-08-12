@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -65,7 +66,7 @@ def cmd_chain(args) -> int:
 
     ledger = _ledger(args)
     chain = chains[args.chain_id]()
-    ex = ChainExecutor(ledger, workdir=args.workdir)
+    ex = ChainExecutor(ledger, workdir=args.workdir, learner=_learner(args))
 
     # seed the chain job dir with the task input file
     job = ledger.submit(chain.id, input={"task": args.task})
@@ -86,9 +87,10 @@ def cmd_chain(args) -> int:
 
 
 def build_default_gate() -> EvidenceGate:
+    """Generic gate: artifact requirements live in hop/workflow definitions,
+    not here (research.md != review.md != solution.py)."""
     gate = EvidenceGate()
     gate.register_check("eval-json", eval_json_check())
-    gate.register_check("artifacts", required_artifact_check(["FINAL_REPORT.md"]))
     gate.register_check("exit-codes", exit_codes_check())
     return gate
 
@@ -100,12 +102,17 @@ def cmd_submit(args) -> int:
     print(json.dumps(decision.to_dict(), indent=2))
 
     if decision.workflow_id in ("respond", "fallback-respond"):
+        # LEARN still sees the route (that's how keyword candidates are born)
+        _record_route_event(_learner(args), None, decision, {"verdict": "UNVERIFIED"})
         print("\n[direct answer] no execution run needed:", decision.reason)
         return 0
 
     job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
     job.attach_route_decision(decision)
     ledger.update(job)
+
+    # LEARN: every submit path records a route event (durable, per P2)
+    learner = _learner(args)
 
     # dispatch through the shared registry: real workflows/chains per
     # workflow_id (research != review != build); Python collect node is the
@@ -115,7 +122,7 @@ def cmd_submit(args) -> int:
     if decision.workflow_id in CHAINS:
         from chowlite.chains.chain import ChainExecutor
         chain = CHAINS[decision.workflow_id]()
-        cex = ChainExecutor(ledger, workdir=args.workdir)
+        cex = ChainExecutor(ledger, workdir=args.workdir, learner=learner)
         job_dir = Path(args.workdir) / job.job_id
         job_dir.mkdir(parents=True, exist_ok=True)
         (job_dir / "task.txt").write_text(args.task + "\n")
@@ -134,12 +141,40 @@ def cmd_submit(args) -> int:
                              decision.workflow_id, args.task, Path(jd)),
                          description="collect task + write report artifact + EVAL.json (Python)"))
 
-    gate = build_default_gate()
+    from chowlite.registry import workflow_gate
+
+    gate = workflow_gate(decision.workflow_id) or build_default_gate()
     executor = WorkflowExecutor(ledger, gate)
     result = executor.execute(wf, job, {"task": args.task})
+
+    # LEARN: one route event per completed workflow run
+    _record_route_event(learner, job, decision, result["verdict"])
+
     print("\n[verdict]", result["verdict"]["verdict"], "-", result["verdict"]["summary"])
     print("[job]", job.job_id, "->", job.status)
     return 0
+
+
+def _record_route_event(learner, job, decision, verdict: dict) -> None:
+    """Append a route event for a one-shot workflow run (chain runs record
+    per-hop events inside ChainExecutor). job is None for direct answers."""
+    from chowlite.learn.learner import RouteEvent
+
+    eval_results = verdict.get("eval_results") or {}
+    learner.observe(
+        RouteEvent(
+            event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
+            job_id=job.job_id if job else "",
+            task_redacted=decision.task_redacted[:200],
+            workflow_id=decision.workflow_id,
+            confidence=float(decision.confidence),
+            router_version=decision.router_version,
+            verdict=verdict.get("verdict", "BLOCK"),
+            checks_passed=sum(1 for r in eval_results.values() if r.get("passed")),
+            checks_total=len(eval_results),
+            fix_directive="",
+        )
+    )
 
 
 def cmd_status(args) -> int:
@@ -188,9 +223,203 @@ def cmd_stats(args) -> int:
     return 0
 
 
+def _learner(args):
+    """Route-event store + learner on the CLI's durable event log."""
+    from chowlite.learn.learner import Learner, RouteEventStore
+
+    events_path = Path(args.events)
+    return Learner(RouteEventStore(events_path))
+
+
+def _print_candidate(c) -> None:
+    print(f"{c.candidate_id}  [{c.kind:8s}] {c.status}")
+    print(f"    {c.description}")
+    if c.params:
+        print(f"    params: {json.dumps(c.params)}")
+    print()
+
+
+def cmd_learn(args) -> int:
+    """LEARN loop: events, candidates, and regression-gated apply/revert."""
+    learner = _learner(args)
+    action = args.action
+
+    if action == "events":
+        events = learner.store.all()
+        print(f"{len(events)} route events")
+        for ev in events[-20:]:
+            print(f"  {ev.event_id}  {ev.workflow_id:28s} conf={ev.confidence:.2f} "
+                  f"{ev.verdict:5s} {ev.recorded_at[:19]}")
+        return 0
+
+    if action == "candidates":
+        cands = learner.cands.all()
+        if not cands:
+            print("no improvement candidates yet (run: chow learn scan)")
+        for c in cands:
+            _print_candidate(c)
+        return 0
+
+    if action == "scan":
+        cands = learner.learn()
+        print(f"scan produced {len(cands)} candidate(s)")
+        for c in cands:
+            _print_candidate(c)
+        return 0
+
+    if action == "apply":
+        return _apply_candidate(learner, args.candidate_id)
+
+    if action == "revert":
+        return _revert_candidate(learner, args.candidate_id)
+
+    print(f"unknown learn action: {action}")
+    return 2
+
+
+def _apply_candidate(learner, candidate_id: str) -> int:
+    """Apply an approved candidate: regression-gated catalog change + commit.
+
+    Doctrine: the LEARN loop never changes behavior silently. apply() runs
+    the full hermetic suite BEFORE and AFTER the change, and only commits
+    if both pass; any failure restores the catalog and aborts.
+    """
+    cand = learner.cands.get(candidate_id)
+    if cand is None:
+        print(f"no candidate {candidate_id}")
+        return 2
+    if cand.status != "pending":
+        print(f"candidate {candidate_id} is {cand.status} (only pending can be applied)")
+        return 2
+
+    wf_id = cand.params.get("workflow_id", "")
+    kw = cand.params.get("keyword", "")
+    if cand.kind != "keyword" or not kw or not wf_id:
+        print("this candidate is not auto-applicable (no actionable keyword); "
+              "edit chowlite/router/catalog.json manually, then chow learn apply")
+        return 2
+
+    from chowlite.registry import load_catalog, save_catalog
+
+    catalog = load_catalog()
+    current = catalog.setdefault("keyword_overrides", {}).setdefault(wf_id, [])
+    if kw in current:
+        print(f"keyword '{kw}' already in catalog for {wf_id} — nothing to do")
+        learner.cands.update_status(candidate_id, "applied")
+        return 0
+
+    # 1) pre-change gate: regression suite must be green before we touch anything
+    if not _regression_green():
+        print("regression suite FAILED before change — aborting apply")
+        return 1
+
+    # 2) apply the change
+    current.append(kw)
+    save_catalog(catalog)
+
+    # 3) post-change gate: the new keyword must not break routing tests
+    if not _regression_green():
+        print("regression suite FAILED after change — restoring catalog")
+        current.remove(kw)
+        save_catalog(catalog)
+        return 1
+
+    # 4) durable, auditable commit
+    _git_commit(f"learn apply {candidate_id}: add keyword '{kw}' to '{wf_id}'")
+    learner.cands.update_status(candidate_id, "applied")
+    print(f"applied {candidate_id}: keyword '{kw}' -> {wf_id}; "
+          f"catalog committed (rollback: chow learn revert {candidate_id})")
+    return 0
+
+
+def _revert_candidate(learner, candidate_id: str) -> int:
+    """Rollback an applied candidate: remove its keywords, re-gate, commit."""
+    cand = learner.cands.get(candidate_id)
+    if cand is None:
+        print(f"no candidate {candidate_id}")
+        return 2
+    if cand.status != "applied":
+        print(f"candidate {candidate_id} is {cand.status} (only applied can be reverted)")
+        return 2
+
+    from chowlite.registry import load_catalog, save_catalog
+
+    wf_id = cand.params.get("workflow_id", "")
+    kw = cand.params.get("keyword", "")
+    catalog = load_catalog()
+    overrides = catalog.get("keyword_overrides", {})
+    bucket = overrides.get(wf_id, [])
+    if kw not in bucket:
+        print(f"keyword '{kw}' not present in catalog for {wf_id} — nothing to revert")
+        learner.cands.update_status(candidate_id, "pending")
+        return 0
+
+    bucket.remove(kw)
+    if not bucket:
+        overrides.pop(wf_id, None)
+    save_catalog(catalog)
+    if not _regression_green():
+        print("regression suite FAILED after revert — restoring catalog")
+        bucket.append(kw)
+        overrides[wf_id] = bucket
+        save_catalog(catalog)
+        return 1
+    _git_commit(f"learn revert {candidate_id}: remove keyword '{kw}' from '{wf_id}'")
+    learner.cands.update_status(candidate_id, "pending")
+    print(f"reverted {candidate_id}: keyword '{kw}' removed from {wf_id}")
+    return 0
+
+
+def _regression_green() -> bool:
+    """Hermetic regression suite (no API key, no network), run ISOLATED so
+    the suite's own submits (which use the default jobs/events.jsonl) never
+    pollute the operator's real event store."""
+    import subprocess as _sp
+
+    root = Path(__file__).resolve().parent.parent
+    jobs = root / "jobs"
+    evp, cand = jobs / "events.jsonl", jobs / "events.jsonl.candidates.jsonl"
+    backup = []
+    for p in (evp, cand):
+        data = p.read_bytes() if p.exists() else None
+        backup.append((p, data))
+        if data is not None:
+            p.unlink()
+    try:
+        env = dict(os.environ)
+        env["GEMINI_API_KEY"] = ""
+        r = _sp.run(
+            [_sp.sys.executable, "-m", "pytest", "tests/", "-q", "--tb=short"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+        return r.returncode == 0
+    finally:
+        for p, data in backup:
+            if data is None:
+                if p.exists():
+                    p.unlink()
+            else:
+                p.write_bytes(data)
+
+
+def _git_commit(message: str) -> None:
+    import subprocess as _sp
+
+    root = Path(__file__).resolve().parent.parent
+    _sp.run(["git", "-C", str(root), "add", "chowlite/router/catalog.json"], check=True)
+    _sp.run(["git", "-C", str(root), "-c", "user.name=adamnorm4wd",
+             "-c", "user.email=adamnorm4wd@atomicmail.io", "commit", "-m", message],
+            check=True)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="chow", description="chow-lite agent OS")
     p.add_argument("--ledger", default=DEFAULT_LEDGER, help="ledger path")
+    p.add_argument("--events", default="jobs/events.jsonl", help="route-event store path")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("submit")
@@ -226,6 +455,12 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("stats")
     s.set_defaults(fn=cmd_stats)
+
+    s = sub.add_parser("learn")
+    s.add_argument("action", choices=["events", "candidates", "scan", "apply", "revert"])
+    s.add_argument("candidate_id", nargs="?", default=None,
+                   help="candidate id for apply/revert")
+    s.set_defaults(fn=cmd_learn)
 
     args = p.parse_args(argv)
     return args.fn(args)
