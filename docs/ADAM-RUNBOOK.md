@@ -1,6 +1,6 @@
 # ADAM RUNBOOK — the 3 things only you can do
 
-Everything else is built, tested (27/27), pushed, and demo-ready.
+Everything else is built, tested (63/63), pushed, and demo-ready.
 These three steps need **your** accounts. ~30 minutes total.
 
 ---

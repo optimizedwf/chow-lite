@@ -24,7 +24,7 @@ call, one answer, no proof it did anything. Real autonomous work needs a
 **kernel**: decide what to do, do it in a typed pipeline, *prove* it happened,
 and get smarter from the trail.
 
-**chow-lite** is that kernel, in ~1,200 lines of Python, open source (MIT):
+**chow-lite** is that kernel, in ~2700 lines of Python, open source (MIT):
 
 - **ROUTE** — a Gemini 3.5 Flash router (with deterministic keyword fallback)
   turns free-text tasks into typed `RouteDecision`s against a workflow catalog.
@@ -46,7 +46,7 @@ zero API keys (deterministic routing + bash hops) — CI-friendly and
 judge-friendly.
 
 **Dogfooding.** The repo's own roadmap, tracker, and this submission were
-managed with the same route→execute→verify→learn loop. 27/27 tests pass;
+managed with the same route→execute→verify→learn loop. 63/63 tests pass (5 live-gated skips);
 every CLI run ships a full artifact trail.
 
 **Try it (5 minutes, no key needed):**
@@ -83,7 +83,7 @@ the deployed API.
 |---|---|
 | Innovation & Operational Utility (40%) | autonomy kernel with evidence-gated SHIP/FIX/BLOCK; candidate-only learning loop; dogfooded on its own build |
 | Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + Gemini 3.5 + Cloud Run/Firestore; JSON Schema validation in tests |
-| Demo & Production Readiness (30%) | one-command demo, 27 tests, Dockerfile + deploy.sh, FastAPI operator API, offline fallback |
+| Demo & Production Readiness (30%) | one-command demo, 63 tests, Dockerfile + deploy.sh, FastAPI operator API, offline fallback |
 
 ## 9. Post-submission freeze
 Video, repo, and live site are frozen after submission (Aug 31 17:00 PDT);

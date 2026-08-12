@@ -91,7 +91,7 @@ pip install -e .
 
 chow submit "research the latest agent frameworks"
 # → route decision (workflow_id: research)
-# → workflow runs, produces FINAL_REPORT.md + EVAL.json
+# → workflow runs, produces research.md + EVAL.json
 # → evidence gate: SHIP (all evidence checks passed)
 # → job ledger: submitted → routing → running → awaiting_evidence → shipped
 
@@ -144,6 +144,7 @@ chowlite/
   router/classifier.py    intent classifier + route-decision contract
   ledger/ledger.py        durable job ledger (JSONL + Firestore adapters)
   gates/evidence.py       SHIP/FIX/BLOCK evidence gate (EVAL.json, exit codes)
+  schema_validation.py    JSON Schema checks at every boundary (jsonschema)
   runtime/workflows.py    declarative workflow DAG executor
   runtime/adk_runtime.py  Google ADK 2.0 integration layer
   cli.py                  operator CLI (submit/status/discover/...)
