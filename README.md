@@ -34,6 +34,20 @@ self-hostable, scale-to-zero.
 Multi-hop **chains** hand off artifacts between departments with a gate at
 every handoff — nothing ships without evidence, at any stage.
 
+## Quickstart
+
+```bash
+pip install -e .            # or: uv pip install -e .
+export GEMINI_API_KEY=...   # optional; deterministic routing works without it
+chow submit "research the history of the typewriter"
+chow chain demo "respond to customer refund question"   # 3-hop demo lane
+chow chain flagship "build a calculator"                # 5-hop full chain
+chow stats
+```
+
+Everything ships with a full artifact trail and a SHIP/FIX/BLOCK verdict per
+job — see `chow status <job_id>` and `chow artifacts <job_id>`.
+
 ## Why this exists
 
 Most "agents" are chatbots in a trench coat: they talk, they don't do.
