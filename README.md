@@ -1,4 +1,12 @@
 # chow-lite 🍜
+<p align="center">
+  <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/chow-lite/ci.yml?branch=main&label=CI" alt="CI">
+  <img src="https://img.shields.io/badge/tests-45%20passing-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
+  <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
+</p>
+
+
 
 **A router-first, evidence-gated agent operating system.**
 Tasks come in → the router picks the right workflow → the workflow runs →

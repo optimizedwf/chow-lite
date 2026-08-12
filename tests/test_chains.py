@@ -66,3 +66,72 @@ def test_unknown_hop_raises(tmp_path):
     chain = research_plan_build_review_teach()
     with pytest.raises(ChainError):
         chain.hop("nope")
+
+
+def test_chain_job_reaches_terminal_state(tmp_path):
+    """Chain job must leave 'submitted' and end SHIPPED in the durable ledger."""
+    from chowlite.chains.flagship import demo_lane
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = ChainExecutor(ledger, workdir=tmp_path / "work")
+
+    job = ledger.submit("inbox-triage-task-report", {"task": "inbox item"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "inbox.txt").write_text("customer refund question\n")
+
+    res = ex.execute(demo_lane(), job, {"task": "inbox item"})
+    assert res["final"] == "SHIPPED"
+    # durable ledger reflects the terminal state (was stuck at 'submitted')
+    assert ledger.get(job.job_id).status == "shipped"
+
+
+def test_chain_crash_marks_job_failed(tmp_path):
+    """A crashing hop must mark the chain job 'failed', not leave it dangling."""
+    from chowlite.chains.chain import Chain, ChainExecutor, Hop
+
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = ChainExecutor(ledger, workdir=tmp_path / "work")
+
+    def boom(inputs, job_dir):
+        raise RuntimeError("simulated crash")
+
+    wf = Workflow(id="boom")
+    wf.add_node(Node(id="x", kind="tool", run=boom))
+    chain = Chain(id="boom-chain", hops=[Hop(id="hop1", workflow=wf)])
+
+    job = ledger.submit("boom-chain", {"task": "t"})
+    try:
+        ex.execute(chain, job, {"task": "t"})
+        raise AssertionError("expected ChainError")
+    except Exception:  # noqa: BLE001 - deliberately broad; we assert on state
+        pass
+    assert ledger.get(job.job_id).status == "failed"
+
+
+def test_fix_loop_retries_on_failed_check_not_just_missing_artifact(tmp_path):
+    """A gate FIX from a failing EVAL check (no missing artifacts) must re-run."""
+    from chowlite.chains.chain import Chain, ChainExecutor, Hop
+    from chowlite.gates.evidence import eval_json_check
+
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = ChainExecutor(ledger, workdir=tmp_path / "work")
+    calls = {"n": 0}
+
+    def flaky(inputs, job_dir):
+        calls["n"] += 1
+        (job_dir / "FINAL_REPORT.md").write_text("report\n")
+        # EVAL.json passes only on the 2nd attempt
+        ok = calls["n"] >= 2
+        (job_dir / "EVAL.json").write_text(
+            '{"checks":[{"name":"r","passed":%s}]}' % ("true" if ok else "false"))
+        return {"stdout": "done"}
+
+    wf = Workflow(id="flaky")
+    wf.add_node(Node(id="make", kind="tool", run=flaky))
+    gate = {"eval-json": eval_json_check(), "artifacts": required_artifact_check(["FINAL_REPORT.md"])}
+    chain = Chain(id="flaky-chain", hops=[Hop(id="hop1", workflow=wf, gate_checks=gate, max_fix_loops=2)])
+
+    job = ledger.submit("flaky-chain", {"task": "t"})
+    res = ex.execute(chain, job, {"task": "t"})
+    assert res["final"] == "SHIPPED"
+    assert calls["n"] == 2  # first attempt failed the gate, second shipped

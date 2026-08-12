@@ -1,0 +1,32 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install uv
+        run: |
+          pip install uv
+          uv venv .venv
+      - name: Install dependencies
+        run: |
+          uv pip install --python .venv/bin/python -e ".[dev]"
+      - name: Lint (ruff)
+        run: .venv/bin/ruff check chowlite tests deploy workflows demo.py demo_live.py
+      - name: Type check (mypy)
+        run: |
+          .venv/bin/mypy chowlite deploy demo.py demo_live.py --ignore-missing-imports
+        continue-on-error: true
+      - name: Test (hermetic — live tests auto-skip without GEMINI_API_KEY)
+        run: .venv/bin/pytest tests/ -q --tb=short
+        env:
+          GEMINI_API_KEY: ""

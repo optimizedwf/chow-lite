@@ -12,7 +12,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from chowlite.gates.evidence import EvidenceGate, exit_codes_check, required_artifact_check
+from chowlite.gates.evidence import (
+    EvidenceGate,
+    exit_codes_check,
+    required_artifact_check,
+)
 from chowlite.ledger.ledger import JSONLLedger
 from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor
 
@@ -34,8 +38,8 @@ def build_research_workflow() -> Workflow:
 
 def main() -> int:
     import tempfile
-    with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(tmp)
         ledger = JSONLLedger(td / "ledger.jsonl")
         gate = EvidenceGate()
         gate.register_check("artifacts", required_artifact_check(["research.md"]))

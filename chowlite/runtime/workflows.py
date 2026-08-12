@@ -15,13 +15,15 @@ Design note: this is a *declarative* engine — workflows are data, not code.
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess as sp
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
-from chowlite.ledger.ledger import JSONLLedger, Job
 from chowlite.gates.evidence import EvidenceGate
+from chowlite.ledger.ledger import Job, JSONLLedger
 
 
 class WorkflowError(Exception):
@@ -33,8 +35,8 @@ class Node:
     """One typed node in a workflow DAG."""
     id: str
     kind: str  # prompt | bash | tool | subagent
-    run: Optional[Callable[..., Any]] = None   # callable for tool/prompt nodes
-    command: Optional[str] = None              # for bash nodes
+    run: Callable[..., Any] | None = None   # callable for tool/prompt nodes
+    command: str | None = None              # for bash nodes
     depends_on: list[str] = field(default_factory=list)
     timeout_seconds: int = 300
     description: str = ""
@@ -48,7 +50,7 @@ class Workflow:
     description: str = ""
     version: str = "0.1.0"
 
-    def add_node(self, node: Node) -> "Workflow":
+    def add_node(self, node: Node) -> Workflow:
         self.nodes[node.id] = node
         return self
 
@@ -109,7 +111,7 @@ class WorkflowExecutor:
                 raise WorkflowError(f"node {node.id}: bash node needs command")
             res = sp.run(
                 node.command, shell=True, cwd=job_dir, capture_output=True,
-                text=True, timeout=node.timeout_seconds,
+                text=True, timeout=node.timeout_seconds, check=False,
             )
             return {"exit_code": res.returncode, "stdout": res.stdout[-2000:],
                     "stderr": res.stderr[-2000:]}
@@ -149,7 +151,7 @@ class WorkflowExecutor:
             before = {p.name for p in job_dir.iterdir() if p.is_file()}
             try:
                 result = self._run_node(node, node_inputs, job_dir)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 job.transition("failed")
                 self.ledger.update(job)
                 raise WorkflowError(f"node {nid} failed: {exc}") from exc
@@ -227,3 +229,20 @@ class WorkflowExecutor:
             "artifacts": artifacts,
             "node_outputs": {k: v for k, v in node_outputs.items()},
         }
+
+
+def write_demo_artifacts(workflow_id: str, task: str, job_dir: Path) -> dict[str, Any]:
+    """Deterministic demo-node body: writes task.txt, FINAL_REPORT.md, EVAL.json
+    from Python. NO user bytes ever reach a shell (RCE-hardened)."""
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "task.txt").write_text(task[:200] + "\n", encoding="utf-8")
+    (job_dir / "FINAL_REPORT.md").write_text(
+        f"Artifact: {workflow_id}\n", encoding="utf-8")
+    eval_json = {
+        "checks": [{"name": "report-exists", "passed": True,
+                    "message": "FINAL_REPORT.md written"}],
+        "summary": "demo artifacts produced from Python (no shell)",
+    }
+    (job_dir / "EVAL.json").write_text(
+        json.dumps(eval_json, indent=2), encoding="utf-8")
+    return {"stdout": "task.txt + FINAL_REPORT.md + EVAL.json written from Python"}

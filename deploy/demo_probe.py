@@ -30,7 +30,7 @@ def call(method: str, path: str, payload: dict | None = None) -> dict:
 
 def main() -> int:
     print(f"$ chow probe {BASE}")
-    print(f"  (live on Google Cloud Run \u2014 Firestore-backed, built from GitHub main)\n")
+    print("  (live on Google Cloud Run \u2014 Firestore-backed, built from GitHub main)\n")
 
     h = call("GET", "/health")
     print(f"[GET /health]  {h['status']}  {h['latency_ms']}ms")

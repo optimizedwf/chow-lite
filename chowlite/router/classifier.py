@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from dataclasses import dataclass, field, asdict
-from datetime import datetime, timezone
-from typing import Any, Optional
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
+from typing import Any
 
 
 @dataclass
@@ -50,7 +50,7 @@ def redact(text: str) -> str:
     ]
     out = text
     for pat, repl in patterns:
-        out = re.sub(pat, repl, out, flags=re.S)
+        out = re.sub(pat, repl, out, flags=re.DOTALL)
     return out
 
 
@@ -62,7 +62,7 @@ class KeywordRouter:
     a list of trigger keywords and a description.
     """
 
-    def __init__(self, workflows: Optional[dict[str, dict]] = None) -> None:
+    def __init__(self, workflows: dict[str, dict] | None = None) -> None:
         # workflow_id -> {keywords: [...], description: str}
         self.workflows: dict[str, dict] = workflows or {}
 
@@ -94,7 +94,7 @@ class GeminiRouter:
     return a JSON decision. Schema validation happens in Router.classify().
     """
 
-    def __init__(self, model: Any, workflows: Optional[dict[str, dict]] = None) -> None:
+    def __init__(self, model: Any, workflows: dict[str, dict] | None = None) -> None:
         self.model = model
         self.workflows = workflows or {}
 
@@ -133,18 +133,17 @@ class Router:
 
     def __init__(
         self,
-        workflows: Optional[dict[str, dict]] = None,
-        model: Optional[Any] = None,
+        workflows: dict[str, dict] | None = None,
+        model: Any | None = None,
         version: str = "0.1.0",
     ) -> None:
         self.workflows = workflows or {}
         self.model = model
         self.version = version
         self.keyword = KeywordRouter(self.workflows)
+        self.model_router: GeminiRouter | None = None
         if model is not None:
             self.model_router = GeminiRouter(model, self.workflows)
-        else:
-            self.model_router = None
 
     def register(self, workflow_id: str, keywords: list[str], description: str = "") -> None:
         self.workflows[workflow_id] = {
@@ -159,17 +158,26 @@ class Router:
         task_red = redact(task)
         wf_id, conf, reason = "", 0.0, ""
         model_used = "deterministic-keyword"
+        fallback_note = ""
 
         if self.model_router is not None:
-            wf_id, conf, reason = self.model_router.classify(task_red)
-            model_used = "gemini-3.5-flash"
+            try:
+                wf_id, conf, reason = self.model_router.classify(task_red)
+                model_used = "gemini-3.5-flash"
+            except Exception as exc:  # noqa: BLE001 - quota/network errors must never crash the loop
+                fallback_note = (
+                    f"model unavailable ({type(exc).__name__}); keyword fallback"
+                )
             # validate against catalog; fall back if the model invented an id
             if wf_id not in self.workflows:
                 wf_id, conf, reason = "", 0.0, "model returned unknown workflow, falling back"
+                fallback_note = fallback_note or "model returned unknown workflow; keyword fallback"
 
         if not wf_id or wf_id not in self.workflows:
             wf_id, conf, reason = self.keyword.classify(task_red)
             model_used = "deterministic-keyword"
+            if fallback_note:
+                reason = f"{reason} [{fallback_note}]"
 
         return RouteDecision(
             decision_id=str(uuid.uuid4()),
@@ -177,7 +185,7 @@ class Router:
             workflow_id=wf_id,
             confidence=round(conf, 3),
             reason=reason[:300] or "keyword match",
-            decided_at=datetime.now(timezone.utc).isoformat(),
+            decided_at=datetime.now(UTC).isoformat(),
             router_version=self.version,
             model=model_used,
         )

@@ -19,10 +19,11 @@ from __future__ import annotations
 
 from chowlite.chains.chain import Chain, Hop
 from chowlite.gates.evidence import (
-    required_artifact_check, eval_json_check, exit_codes_check,
+    eval_json_check,
+    exit_codes_check,
+    required_artifact_check,
 )
 from chowlite.runtime.workflows import Node, Workflow
-
 
 # ---------------------------------------------------------------- hops
 

@@ -7,7 +7,6 @@ script used for the demo video and for judges to try instantly.
 
 Run:  python demo.py "your task here"
 """
-import json
 import sys
 import tempfile
 from pathlib import Path
@@ -20,8 +19,8 @@ from chowlite.ledger.ledger import JSONLLedger
 
 def main() -> int:
     task = sys.argv[1] if len(sys.argv) > 1 else "respond to customer refund question"
-    with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(tmp)
         ledger = JSONLLedger(td / "ledger.jsonl")
         events = RouteEventStore(td / "events.jsonl")
         learner = Learner(events)

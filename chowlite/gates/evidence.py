@@ -13,9 +13,10 @@ callable check) and produces a schema-conformant EvidenceVerdict.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 GATE_VERSION = "0.1.0"
 
@@ -25,7 +26,7 @@ CheckFn = Callable[[dict[str, Any], Path], tuple[bool, str]]
 class EvidenceGate:
     """Runs checks against a job's artifact directory and returns a verdict."""
 
-    def __init__(self, checks: Optional[dict[str, CheckFn]] = None) -> None:
+    def __init__(self, checks: dict[str, CheckFn] | None = None) -> None:
         # check_name -> callable(artifact_ctx, workdir) -> (passed, message)
         self.checks: dict[str, CheckFn] = checks or {}
 
@@ -64,12 +65,12 @@ class EvidenceGate:
             "evidence_refs": sorted(artifact_ctx.get("artifact_paths", [])),
             "eval_results": results,
             "summary": summary,
-            "verified_at": datetime.now(timezone.utc).isoformat(),
+            "verified_at": datetime.now(UTC).isoformat(),
             "gate_version": GATE_VERSION,
         }
 
 
-def load_eval_json(workdir: Path) -> Optional[dict[str, Any]]:
+def load_eval_json(workdir: Path) -> dict[str, Any] | None:
     """Load EVAL.json if present in the workdir (the standard contract)."""
     p = workdir / "EVAL.json"
     if p.exists():
@@ -80,7 +81,7 @@ def load_eval_json(workdir: Path) -> Optional[dict[str, Any]]:
     return None
 
 
-def eval_json_check(expected_checks: Optional[list[str]] = None) -> CheckFn:
+def eval_json_check(expected_checks: list[str] | None = None) -> CheckFn:
     """Factory: a check that requires EVAL.json with expected checks all pass.
 
     EVAL.json shape:

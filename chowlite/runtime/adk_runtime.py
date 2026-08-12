@@ -23,7 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 
 def adk_available() -> bool:
@@ -48,10 +48,12 @@ class ADKAgentNode:
         self.agent = agent
         self.app_name = app_name
         self.runner = InMemoryRunner(agent=agent, app_name=app_name)
-        self._session_ready = False
+        self._created_sessions: set[str] = set()
 
     def _ensure_session(self, user_id: str, session_id: str) -> None:
-        if self._session_ready:
+        # sessions are per-job; track created ids (a single bool previously
+        # skipped session creation for the 2nd job -> SessionNotFoundError)
+        if session_id in self._created_sessions:
             return
         # create_session is a coroutine on google-adk 2.6.x
         asyncio.run(
@@ -59,7 +61,7 @@ class ADKAgentNode:
                 app_name=self.app_name, user_id=user_id, session_id=session_id
             )
         )
-        self._session_ready = True
+        self._created_sessions.add(session_id)
 
     def __call__(self, inputs: dict[str, Any], job_dir: Path) -> dict[str, Any]:
         from google.genai import types
@@ -91,7 +93,7 @@ class ADKAgentNode:
                         function_calls.append(
                             f"{part.function_call.name}({json.dumps(part.function_call.args)})"
                         )
-            if ev.is_final_response and ev.content and ev.content.parts:
+            if bool(ev.is_final_response) and ev.content and ev.content.parts:
                 texts = [p.text for p in ev.content.parts if p.text]
                 if texts:
                     final_text = texts[0]

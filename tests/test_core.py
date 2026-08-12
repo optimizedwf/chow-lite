@@ -10,13 +10,15 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from chowlite.router.classifier import Router, redact
-from chowlite.ledger.ledger import JSONLLedger, Job, InvalidTransition
 from chowlite.gates.evidence import (
-    EvidenceGate, eval_json_check, required_artifact_check, exit_codes_check,
+    EvidenceGate,
+    eval_json_check,
+    exit_codes_check,
+    required_artifact_check,
 )
-from chowlite.runtime.workflows import Workflow, Node, WorkflowExecutor, WorkflowError
-
+from chowlite.ledger.ledger import InvalidTransition, JSONLLedger
+from chowlite.router.classifier import Router, redact
+from chowlite.runtime.workflows import Node, Workflow, WorkflowError, WorkflowExecutor
 
 # ---------- router ----------
 
@@ -220,3 +222,41 @@ def test_exception_marks_job_failed(tmp_path):
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+def test_model_crash_falls_back_to_keywords():
+    """A model exception (quota 429, timeout) must never crash routing."""
+    from chowlite.router.classifier import Router
+
+    class ExplodingModel:
+        def generate_content(self, prompt):
+            raise RuntimeError("429 RESOURCE_EXHAUSTED")
+
+    r = Router()
+    r.register("research", ["research", "investigate"])
+    r.register("build", ["build", "implement"])
+    from chowlite.router.classifier import GeminiRouter
+
+    r.model_router = GeminiRouter(ExplodingModel(), r.workflows)
+    d = r.classify("research the printing press")
+    assert d.workflow_id == "research"
+    assert d.model == "deterministic-keyword"
+    assert "model unavailable" in d.reason
+
+
+def test_model_unknown_workflow_falls_back_to_keywords():
+    from chowlite.router.classifier import GeminiRouter, Router
+
+    class LyingModel:
+        def generate_content(self, prompt):
+            class R:
+                text = '{"workflow_id": "made-up-wf", "confidence": 0.99, "reason": "x"}'
+
+            return R()
+
+    r = Router()
+    r.register("research", ["research"])
+    r.model_router = GeminiRouter(LyingModel(), r.workflows)
+    d = r.classify("research something")
+    assert d.workflow_id == "research"  # invented id rejected, keyword used
+    assert "unknown workflow" in d.reason

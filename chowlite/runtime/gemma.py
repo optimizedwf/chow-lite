@@ -8,13 +8,14 @@ no API key is set (the core loop must run offline / in CI).
 """
 from __future__ import annotations
 
-import json
 import os
 
 try:
-    import requests
+    import requests as _requests
 except ImportError:  # pragma: no cover
-    requests = None
+    _requests = None  # type: ignore[assignment]
+
+requests = _requests
 
 DEFAULT_MODEL = "gemma-4-26b-a4b-it"
 API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"

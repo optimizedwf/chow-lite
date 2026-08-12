@@ -16,9 +16,9 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from chowlite.router.classifier import RouteDecision
 
@@ -61,7 +61,7 @@ class Job:
         chain_id: str | None = None,
         max_fix_loops: int = 2,
     ) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         self.job_id = job_id or str(uuid.uuid4())
         self.workflow_id = workflow_id
         self.chain_id = chain_id
@@ -71,10 +71,10 @@ class Job:
         self.verdicts: list[dict[str, Any]] = []
         self.attempts = 0
         self.max_fix_loops = max_fix_loops
-        self.route_decision: Optional[dict[str, Any]] = None
+        self.route_decision: dict[str, Any] | None = None
         self.created_at = now
         self.updated_at = now
-        self.completed_at: Optional[str] = None
+        self.completed_at: str | None = None
         self.metadata: dict[str, Any] = {}
 
     def to_dict(self) -> dict[str, Any]:
@@ -103,21 +103,21 @@ class Job:
                 f"illegal transition {self.status} -> {new_status}"
             )
         self.status = new_status
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
         if new_status in ("shipped", "blocked", "failed", "cancelled", "archived"):
             self.completed_at = self.updated_at
 
     def attach_route_decision(self, decision: RouteDecision) -> None:
         self.route_decision = decision.to_dict()
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
     def add_artifact(self, artifact: dict[str, Any]) -> None:
         self.artifacts.append(artifact)
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
     def add_verdict(self, verdict: dict[str, Any]) -> None:
         self.verdicts.append(verdict)
-        self.updated_at = datetime.now(timezone.utc).isoformat()
+        self.updated_at = datetime.now(UTC).isoformat()
 
 
 class JSONLLedger:

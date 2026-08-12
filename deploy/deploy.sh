@@ -15,10 +15,25 @@ if ! gcloud firestore databases list --project "$PROJECT_ID" 2>/dev/null | grep 
   gcloud firestore databases create --region "$REGION" --project "$PROJECT_ID"
 fi
 
+# Optional live-model + API-key wiring. If GEMINI_API_KEY secret exists in
+# Secret Manager, Cloud Run gets it (so the deployed API routes LIVE Gemini,
+# not keyword fallback). Otherwise the API still works in deterministic mode.
+#   Create the secret first:
+#     echo -n "$GEMINI_API_KEY" | gcloud secrets create GEMINI_API_KEY \
+#         --data-file=- --project "$PROJECT_ID"
+SECRETS=""
+if gcloud secrets describe GEMINI_API_KEY --project "$PROJECT_ID" >/dev/null 2>&1; then
+  SECRETS="--set-secrets GEMINI_API_KEY=GEMINI_API_KEY:latest"
+  echo "==> GEMINI_API_KEY found in Secret Manager; live model routing enabled"
+else
+  echo "==> no GEMINI_API_KEY secret -> API will use deterministic keyword routing"
+fi
+
 echo "==> Deploying $SERVICE to Cloud Run"
 gcloud run deploy "$SERVICE" --source . --region "$REGION" --project "$PROJECT_ID" \
     --allow-unauthenticated --min-instances 0 --max-instances 2 \
-    --set-env-vars GEMINI_MODEL=gemini-3.5-flash,FIRESTORE_COLLECTION=chowlite-jobs
+    --set-env-vars GEMINI_MODEL=gemini-3.5-flash,FIRESTORE_COLLECTION=chowlite-jobs \
+    $SECRETS
 
 echo "==> Applying Firestore rules"
 gcloud firestore security-rules update deploy/firestore.rules --project "$PROJECT_ID" 2>/dev/null || true

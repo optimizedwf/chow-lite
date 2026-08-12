@@ -16,8 +16,8 @@ from __future__ import annotations
 
 import json
 import uuid
-from dataclasses import dataclass, asdict, field
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -35,7 +35,7 @@ class RouteEvent:
     checks_passed: int
     checks_total: int
     recorded_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
     fix_directive: str = ""
 
@@ -52,7 +52,7 @@ class ImprovementCandidate:
     evidence: list[str]      # route event ids that motivate this
     status: str = "pending"  # pending | approved | rejected | applied
     created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+        default_factory=lambda: datetime.now(UTC).isoformat()
     )
 
     def to_dict(self) -> dict[str, Any]:

@@ -7,7 +7,6 @@ deterministic routing when no GEMINI_API_KEY is set.
 
 Run:  python demo_live.py "your task here"
 """
-import json
 import os
 import sys
 import tempfile
@@ -41,8 +40,8 @@ def _model_router() -> Router:
 
 def main() -> int:
     task = sys.argv[1] if len(sys.argv) > 1 else "plan a weekend trip to Big Sur"
-    with tempfile.TemporaryDirectory() as td:
-        td = Path(td)
+    with tempfile.TemporaryDirectory() as tmp:
+        td = Path(tmp)
         ledger = JSONLLedger(td / "ledger.jsonl")
         events = RouteEventStore(td / "events.jsonl")
         learner = Learner(events)

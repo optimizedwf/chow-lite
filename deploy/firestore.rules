@@ -1,8 +1,11 @@
 rules_version = '2';
+// chow-lite uses the Cloud Run service account (Server SDK) for Firestore,
+// which bypasses security rules. Lock rules to deny ALL client SDK access:
+// no browser/mobile client should ever touch the ledger directly.
 service cloud.firestore {
   match /databases/{database}/documents {
     match /chowlite-jobs/{jobId} {
-      allow read, write: if request.auth != null;
+      allow read, write: if false;
     }
   }
 }

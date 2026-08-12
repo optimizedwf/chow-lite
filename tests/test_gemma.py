@@ -7,7 +7,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from chowlite.runtime.gemma import gemma_generate  # noqa: E402
+from chowlite.runtime.gemma import gemma_generate
 
 
 def test_gemma_generate_without_key_returns_none(monkeypatch):

@@ -23,13 +23,15 @@ import json
 import sys
 from pathlib import Path
 
+from chowlite.gates.evidence import (
+    EvidenceGate,
+    eval_json_check,
+    exit_codes_check,
+    required_artifact_check,
+)
 from chowlite.ledger.ledger import JSONLLedger, LedgerError
 from chowlite.router.classifier import Router
-from chowlite.gates.evidence import (
-    EvidenceGate, eval_json_check, required_artifact_check, exit_codes_check,
-)
-from chowlite.runtime.workflows import Workflow, Node, WorkflowExecutor
-
+from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor, write_demo_artifacts
 
 DEFAULT_LEDGER = "jobs/ledger.jsonl"
 
@@ -110,15 +112,14 @@ def cmd_submit(args) -> int:
     job.attach_route_decision(decision)
     ledger.update(job)
 
-    # build a minimal workflow on the fly for the demo/default registry
+    # build a minimal workflow on the fly for the demo/default registry.
+    # RCE-hardened: task text is written from Python, never interpolated
+    # into a shell command.
     wf = Workflow(id=decision.workflow_id)
-    eval_json = '{"checks":[{"name":"report-exists","passed":true,' \
-                 '"message":"FINAL_REPORT.md written"}]}'
-    cmd = (f"echo '{args.task[:200]}' > task.txt; "
-           f"printf 'Artifact: {decision.workflow_id}\n' > FINAL_REPORT.md; "
-           f"printf '{eval_json}' > EVAL.json")
-    wf.add_node(Node(id="collect", kind="bash", command=cmd,
-                     description="collect task + write report artifact + EVAL.json"))
+    wf.add_node(Node(id="collect", kind="tool",
+                     run=lambda inputs, jd: write_demo_artifacts(
+                         decision.workflow_id, args.task, Path(jd)),
+                     description="collect task + write report artifact + EVAL.json (Python)"))
 
     gate = build_default_gate()
     executor = WorkflowExecutor(ledger, gate)
@@ -179,16 +180,39 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ledger", default=DEFAULT_LEDGER, help="ledger path")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    s = sub.add_parser("submit"); s.add_argument("task"); s.set_defaults(fn=cmd_submit)
-    s = sub.add_parser("chain"); s.add_argument("chain_id"); s.add_argument("task")
+    s = sub.add_parser("submit")
+    s.add_argument("task")
+    s.set_defaults(fn=cmd_submit)
+
+    s = sub.add_parser("chain")
+    s.add_argument("chain_id")
+    s.add_argument("task")
     s.add_argument("--ledger", default=DEFAULT_LEDGER)
-    s.add_argument("--workdir", default="work"); s.set_defaults(fn=cmd_chain)
-    s = sub.add_parser("status"); s.add_argument("job_id"); s.set_defaults(fn=cmd_status)
-    s = sub.add_parser("discover"); s.add_argument("--status", default=None); s.set_defaults(fn=cmd_discover)
-    s = sub.add_parser("artifacts"); s.add_argument("job_id"); s.set_defaults(fn=cmd_artifacts)
-    s = sub.add_parser("cancel"); s.add_argument("job_id"); s.set_defaults(fn=cmd_cancel)
-    s = sub.add_parser("recover"); s.add_argument("job_id"); s.set_defaults(fn=cmd_recover)
-    s = sub.add_parser("stats"); s.set_defaults(fn=cmd_stats)
+    s.add_argument("--workdir", default="work")
+    s.set_defaults(fn=cmd_chain)
+
+    s = sub.add_parser("status")
+    s.add_argument("job_id")
+    s.set_defaults(fn=cmd_status)
+
+    s = sub.add_parser("discover")
+    s.add_argument("--status", default=None)
+    s.set_defaults(fn=cmd_discover)
+
+    s = sub.add_parser("artifacts")
+    s.add_argument("job_id")
+    s.set_defaults(fn=cmd_artifacts)
+
+    s = sub.add_parser("cancel")
+    s.add_argument("job_id")
+    s.set_defaults(fn=cmd_cancel)
+
+    s = sub.add_parser("recover")
+    s.add_argument("job_id")
+    s.set_defaults(fn=cmd_recover)
+
+    s = sub.add_parser("stats")
+    s.set_defaults(fn=cmd_stats)
 
     args = p.parse_args(argv)
     return args.fn(args)

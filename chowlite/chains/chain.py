@@ -19,14 +19,16 @@ an artifact that cannot be verified does not ship.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from chowlite.gates.evidence import EvidenceGate
 from chowlite.learn.learner import RouteEvent
-from chowlite.ledger.ledger import JSONLLedger, Job
-from chowlite.runtime.workflows import Workflow, WorkflowExecutor, WorkflowError
+from chowlite.ledger.ledger import Job, JSONLLedger
+from chowlite.runtime.workflows import Workflow, WorkflowError, WorkflowExecutor
 
 
 class ChainError(Exception):
@@ -57,6 +59,33 @@ class Chain:
         raise ChainError(f"no hop named {hop_id}")
 
 
+def force_terminal(job: Job, status: str) -> None:
+    """Drive a container job to a terminal status via legal transitions.
+
+    The chain job is a container: hops run as their own ledger jobs, so we
+    walk it through the legal path (submitted -> routing -> running -> ...)
+    and set the status directly only if a transition is impossible.
+    """
+    from datetime import datetime
+
+    path = {
+        "shipped": ("routing", "running", "awaiting_evidence"),
+        "blocked": ("routing", "running"),
+        "failed": ("routing", "running"),
+        "cancelled": (),
+    }.get(status, ())
+    for st in path:
+        try:
+            job.transition(st)
+        except Exception:  # noqa: BLE001 - some states already passed
+            pass
+    try:
+        job.transition(status)
+    except Exception:  # noqa: BLE001 - fall back to direct set
+        job.status = status
+        job.updated_at = datetime.now(UTC).isoformat()
+
+
 class ChainExecutor:
     """Runs each hop in order, enforcing per-hop gates and artifact handoff."""
 
@@ -80,6 +109,18 @@ class ChainExecutor:
 
     def execute(self, chain: Chain, job: Job, inputs: dict[str, Any]) -> dict[str, Any]:
         """Run all hops. Returns per-hop verdicts + final chain verdict."""
+        try:
+            return self._execute(chain, job, inputs)
+        except Exception:
+            try:
+                force_terminal(job, "failed")
+                self.ledger.update(job)
+            except Exception:  # noqa: BLE001
+                pass
+            raise
+
+    def _execute(self, chain: Chain, job: Job, inputs: dict[str, Any]) -> dict[str, Any]:
+        """Run all hops. Returns per-hop verdicts + final chain verdict."""
         job_dir = self.workdir / job.job_id
         job_dir.mkdir(parents=True, exist_ok=True)
 
@@ -87,7 +128,7 @@ class ChainExecutor:
         chain_inputs = dict(inputs)
         final = "BLOCKED"
 
-        for idx, hop in enumerate(chain.hops):
+        for _idx, hop in enumerate(chain.hops):
             gate = self._gate_for(hop)
             ex = WorkflowExecutor(self.ledger, gate, workdir=self.workdir,
                                   job_dir_override=job_dir)
@@ -132,14 +173,16 @@ class ChainExecutor:
                     )
                 if verdict == "SHIP":
                     break
-                # FIX: missing required artifacts / failed checks -> re-run
-                missing = [a for a in hop.required_artifacts
-                           if not (job_dir / a).exists()]
-                if missing and attempt <= hop.max_fix_loops:
-                    # inject the fix directive into the next attempt's inputs
+                # FIX: any non-SHIP gate verdict retries while attempts remain
+                # (missing artifacts OR failing EVAL.json checks both re-run)
+                if attempt <= hop.max_fix_loops:
+                    missing = [a for a in hop.required_artifacts
+                               if not (job_dir / a).exists()]
+                    reason = (f"missing artifacts {missing}" if missing
+                              else "gate checks failed")
                     chain_inputs["fix_directive"] = (
                         f"hop {hop.id} failed gate (attempt {attempt}): "
-                        f"missing artifacts {missing}; rework and re-run."
+                        f"{reason}; rework and re-run."
                     )
                     continue
                 break
@@ -159,6 +202,9 @@ class ChainExecutor:
             }
             final = "SHIPPED"
 
+        # chain job reaches a terminal state in the durable ledger (was
+        # staying 'submitted' forever); mark failed on any crash too.
+        force_terminal(job, "shipped" if final == "SHIPPED" else "blocked")
         self.ledger.update(job)
         self.results["final"] = {"verdict": final, "hops": list(hop_results)}
         return {"final": final, "hop_results": hop_results}

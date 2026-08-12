@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl && \
 COPY pyproject.toml README.md ./
 COPY chowlite ./chowlite
 COPY schemas ./schemas
+COPY deploy ./deploy
 
 RUN pip install --no-cache-dir -e . google-cloud-firestore
 
