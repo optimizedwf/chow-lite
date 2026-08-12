@@ -21,8 +21,8 @@ venv/
 jobs/*.jsonl
 jobs/*.json
 !jobs/.gitkeep
-memory/
-!memory/.gitkeep
+/memory/
+!/memory/.gitkeep
 *.log
 
 # os

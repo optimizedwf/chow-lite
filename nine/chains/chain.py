@@ -94,12 +94,14 @@ class ChainExecutor:
         ledger: JSONLLedger,
         workdir: str | Path = "work",
         learner=None,
+        memory=None,
     ) -> None:
         self.ledger = ledger
         self.workdir = Path(workdir)
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.results: dict[str, Any] = {}
         self.learner = learner  # optional LEARN-loop observer
+        self.memory = memory  # optional semantic MemoryGraph (artifact summaries)
 
     def _gate_for(self, hop: Hop) -> EvidenceGate:
         gate = EvidenceGate()
@@ -233,6 +235,8 @@ class ChainExecutor:
             # roll the hop's artifacts up to the chain job for one ledger view
             for art in self.ledger.get(hop_job.job_id).artifacts:
                 job.add_artifact(art)
+            if self.memory is not None:
+                self._save_memory(hop_job, chain, hop, job_dir, verdict, inputs)
             chain_inputs["hop_artifacts"] = {
                 a: str(job_dir / a) for a in hop.required_artifacts
                 if (job_dir / a).exists()
@@ -245,3 +249,38 @@ class ChainExecutor:
         self.ledger.update(job)
         self.results["final"] = {"verdict": final, "hops": list(hop_results)}
         return {"final": final, "hop_results": hop_results}
+    def _save_memory(
+        self,
+        hop_job: Job,
+        chain: Chain,
+        hop: Hop,
+        job_dir: Path,
+        verdict: str,
+        inputs: dict[str, Any],
+    ) -> None:
+        """Record the hop's semantic summary + artifact lineage (write-path:
+        distill then store, never raw conversation)."""
+        from nine.router.classifier import redact
+
+        handoff = job_dir / "HANDOFF.md"
+        summary = (
+            handoff.read_text(encoding="utf-8", errors="replace")[:2000]
+            if handoff.exists()
+            else ""
+        )
+        task_redacted = redact(str(inputs.get("task", "")))[:200]
+        for art in self.ledger.get(hop_job.job_id).artifacts:
+            self.memory.save_artifact_summary(
+                job_id=hop_job.job_id,
+                chain_id=chain.id,
+                hop_id=hop.id,
+                workflow_id=hop_job.workflow_id,
+                artifact_name=art["name"],
+                kind=art.get("kind", "document"),
+                sha256=art.get("sha256", ""),
+                size=art.get("size", 0),
+                summary=summary or art["name"],
+                task_redacted=task_redacted,
+                verdict=verdict,
+            )
+

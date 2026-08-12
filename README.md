@@ -1,7 +1,7 @@
 # nine
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/nine/ci.yml?branch=main&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/tests-73%20passing-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-84%20passing-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
 </p>
@@ -47,7 +47,43 @@ self-hostable, scale-to-zero.
 Multi-hop **chains** hand off artifacts between departments with a gate at
 every handoff — nothing ships without evidence, at any stage.
 
+### Semantic context management (Cerebras-inspired)
+
+Between hops, nine never drags raw history forward. Each hop runs with a
+**fresh context window** and hands off **files, not conversation** — the
+research hop's raw findings are distilled into a bounded `HANDOFF.md`
+("minimum viable context", the Cerebras multi-agent lesson), and the plan
+hop reads the distilled brief instead of the full document:
+
+```text
+research.md ──► summarize node ──► HANDOFF.md ──► plan ──► build ──► review ──► teach
+                 (Gemini distill;                        (each hop: fresh context,
+                  deterministic fallback                  files are the interface)
+                  when no API key)
+```
+
+Every shipped hop also records its **artifact summaries + lineage** into a
+durable **MemoryGraph** (local `jobs/memory.jsonl` by default, Firestore
+collection `nine-memory` in the cloud via `NINE_MEMORY=firestore`). Query
+it from the CLI:
+
+```bash
+$ nine memory search chromodynamics     # distilled summaries that match
+$ nine memory list                      # recent hop memories
+```
+
+This keeps Firestore documents tiny by design — the graph stores **distilled
+summaries and manifests (sha256/size), never raw transcripts or artifact
+content** — so a 50-step workflow is 50 small records, far under the 1MB
+document limit. Firestore has no full-text search, so `search_context` is a
+documented recent-window keyword filter; the adapter contract
+(`save_artifact_summary` / `search_context`) lets you swap in a real
+metadata graph — e.g. **DataHub MCP** (`NINE_DATAHUB_MCP=1` adds an optional
+`datahub-context` tool node, the "read the graph first" pattern from our
+datahub-2026 build) — without touching the core loop.
+
 ### The visible LEARN loop
+
 
 Every submit path (CLI, server, chains, direct answers) appends a **route
 event** to `jobs/events.jsonl` — the task, the routed workflow, the router's

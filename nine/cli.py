@@ -8,6 +8,8 @@
     nine cancel <job_id>            cancel a job
     nine recover <job_id>           recover a blocked/failed job
     nine stats                      ledger stats
+    nine memory search <query>     search distilled hop summaries
+    nine memory list               recent semantic memories
 
 Chains:
     flagship   research -> plan -> build -> review -> teach (5 hops)
@@ -48,6 +50,48 @@ def build_default_router() -> Router:
     return r
 
 
+def cmd_memory(args) -> int:
+    """Semantic memory: search distilled hop summaries / list recent entries."""
+    from nine.memory.graph import get_memory_graph
+
+    mem = get_memory_graph(path=args.memory)
+    if mem is None:
+        print("memory disabled (NINE_MEMORY=none)", file=sys.stderr)
+        return 1
+    if args.action == "search":
+        if not args.query:
+            print("usage: nine memory search <query>", file=sys.stderr)
+            return 1
+        hits = mem.search_context(args.query, k=10)
+        if not hits:
+            print(f"no memory entries match '{args.query}'")
+            return 0
+        for h in hits:
+            print(f"{h['memory_id']}  [{h['hop_id']}] {h['artifact_name']}  "
+                  f"verdict={h['verdict']}  {h['created_at'][:19]}")
+            print(f"    {h['summary'][:160].replace(chr(10), ' ')}")
+        return 0
+    # list
+    rows = []
+    local_path = getattr(mem, "path", None)
+    if isinstance(local_path, Path) and local_path.exists():
+        import json as _json
+
+        for line in reversed(open(local_path, encoding="utf-8").read().splitlines()):
+            if line.strip():
+                rows.append(_json.loads(line))
+    else:
+        rows = list(mem.search_context("latest", k=10))
+    if not rows:
+        print("memory is empty (run a chain to record hop summaries)")
+        return 0
+    for h in rows[-10:][::-1]:
+        print(f"{h['memory_id']}  [{h['chain_id']}::{h['hop_id']}] "
+              f"{h['artifact_name']}  verdict={h['verdict']}")
+    print(f"\n{len(rows)} memory entries (last 10 shown)")
+    return 0
+
+
 def cmd_chain(args) -> int:
     """Run a named chain end-to-end with per-hop evidence gates."""
     from nine.chains.chain import ChainExecutor
@@ -63,9 +107,12 @@ def cmd_chain(args) -> int:
         print(f"unknown chain '{args.chain_id}'; choices: {sorted(chains)}", file=sys.stderr)
         return 1
 
+    from nine.memory.graph import get_memory_graph
+
     ledger = _ledger(args)
     chain = chains[args.chain_id]()
-    ex = ChainExecutor(ledger, workdir=args.workdir, learner=_learner(args))
+    ex = ChainExecutor(ledger, workdir=args.workdir, learner=_learner(args),
+                       memory=get_memory_graph(path=args.memory))
 
     # seed the chain job dir with the task input file
     job = ledger.submit(chain.id, input={"task": args.task})
@@ -420,6 +467,7 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(prog="nine", description="nine agent OS")
     p.add_argument("--ledger", default=DEFAULT_LEDGER, help="ledger path")
     p.add_argument("--events", default="jobs/events.jsonl", help="route-event store path")
+    p.add_argument("--memory", default="jobs/memory.jsonl", help="semantic memory store path")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("submit")
@@ -455,6 +503,11 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("stats")
     s.set_defaults(fn=cmd_stats)
+
+    s = sub.add_parser("memory")
+    s.add_argument("action", choices=["search", "list"])
+    s.add_argument("query", nargs="?", default=None, help="search terms (search action)")
+    s.set_defaults(fn=cmd_memory)
 
     s = sub.add_parser("learn")
     s.add_argument("action", choices=["events", "candidates", "scan", "apply", "revert"])

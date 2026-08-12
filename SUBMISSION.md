@@ -77,13 +77,19 @@ the deployed API.
       `FunctionTool`, `InMemoryRunner`
 - [x] **Google Cloud infra: Cloud Run + Firestore** — `deploy/` (server,
       cloud-run.yaml, firestore.rules, deploy.sh)
+- [x] **Semantic context management** — summarize node distills research →
+      `HANDOFF.md` (minimum viable context between hops); MemoryGraph stores
+      artifact summaries + lineage (JSONL local / Firestore `nine-memory`);
+      `nine memory search`; optional DataHub MCP context node behind
+      `NINE_DATAHUB_MCP=1` (read-the-graph-first pattern from our
+      datahub-2026 build)
 
 ## 8. Judging rubric mapping
 | Criterion (weight) | How nine hits it |
 |---|---|
 | Innovation & Operational Utility (40%) | autonomy kernel with evidence-gated SHIP/FIX/BLOCK; candidate-only learning loop; dogfooded on its own build |
 | Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + Gemini 3.5 + Cloud Run/Firestore; JSON Schema validation in tests |
-| Demo & Production Readiness (30%) | one-command demo, 73 tests, Dockerfile + deploy.sh, FastAPI operator API, offline fallback |
+| Demo & Production Readiness (30%) | one-command demo, 84 tests, Dockerfile + deploy.sh, FastAPI operator API, offline fallback |
 
 ## 9. Post-submission freeze
 Video, repo, and live site are frozen after submission (Aug 31 17:00 PDT);

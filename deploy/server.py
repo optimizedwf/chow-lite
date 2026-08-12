@@ -45,6 +45,7 @@ _RUNTIME = Path(os.environ.get(
 LEDGER_PATH = _RUNTIME / "jobs" / "ledger.jsonl"
 WORKDIR = _RUNTIME / "work"
 EVENTS_PATH = _RUNTIME / "jobs" / "events.jsonl"
+MEMORY_PATH = _RUNTIME / "jobs" / "memory.jsonl"
 MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 
@@ -60,6 +61,13 @@ def get_learner():
     from nine.learn.learner import Learner, RouteEventStore
 
     return Learner(RouteEventStore(EVENTS_PATH))
+
+
+def get_memory():
+    """Semantic MemoryGraph (NINE_MEMORY=firestore on Cloud Run, JSONL local)."""
+    from nine.memory.graph import get_memory_graph
+
+    return get_memory_graph(path=MEMORY_PATH)
 def get_ledger():
     """Firestore in cloud, JSONL locally.
 
@@ -259,7 +267,8 @@ def submit(payload: SubmitRequest):
         (job_dir / "task.txt").write_text(task + "\n")
         if decision.workflow_id == "inbox-triage-task-report":
             (job_dir / "inbox.txt").write_text(task + "\n")
-        cex = ChainExecutor(ledger, workdir=WORKDIR, learner=get_learner())
+        cex = ChainExecutor(ledger, workdir=WORKDIR, learner=get_learner(),
+                            memory=get_memory())
         res = cex.execute(chain, job, {"task": task}, decision=decision)
         return {
             "job_id": job.job_id,

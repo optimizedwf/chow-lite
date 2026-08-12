@@ -32,7 +32,7 @@ fi
 echo "==> Deploying $SERVICE to Cloud Run"
 gcloud run deploy "$SERVICE" --source . --region "$REGION" --project "$PROJECT_ID" \
     --allow-unauthenticated --min-instances 0 --max-instances 2 \
-    --set-env-vars GEMINI_MODEL=gemini-3.6-flash,FIRESTORE_COLLECTION=nine-jobs \
+    --set-env-vars GEMINI_MODEL=gemini-3.6-flash,FIRESTORE_COLLECTION=nine-jobs,NINE_MEMORY=firestore \
     $SECRETS
 
 echo "==> Applying Firestore rules"

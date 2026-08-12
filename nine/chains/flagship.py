@@ -13,8 +13,8 @@ from nine.runtime.workflows import Node, Workflow
 
 # ---------------------------------------------------------------- hops
 
-def research_hop() -> Hop:
-    wf = Workflow(id="research", description="Produce findings document")
+def research_hop(include_datahub: bool = False) -> Hop:
+    wf = Workflow(id="research", description="Produce findings + distilled handoff")
     wf.add_node(Node(
         id="research", kind="bash",
         command=(
@@ -27,10 +27,25 @@ def research_hop() -> Hop:
             "echo 'Key insight: evidence-gated execution keeps agents honest.' >> research.md"
         ),
     ))
+    if include_datahub:
+        # optional metadata-graph context (behind NINE_DATAHUB_MCP=1) — the
+        # "read the graph first" pattern from optimizedwf/datahub-2026.
+        from nine.memory.datahub import datahub_tool_node
+
+        wf.add_node(datahub_tool_node())
+    # Cerebras minimum-viable-context: distill research.md -> HANDOFF.md so
+    # the plan hop never chews the full raw findings document.
+    from nine.runtime.summarizer import build_summarize_node
+
+    wf.add_node(build_summarize_node("research.md", target="HANDOFF.md",
+                                     depends_on=["research"]))
     return Hop(
         id="research", workflow=wf,
-        required_artifacts=["research.md"],
-        gate_checks={"research-md": required_artifact_check(["research.md"])},
+        required_artifacts=["research.md", "HANDOFF.md"],
+        gate_checks={
+            "research-md": required_artifact_check(["research.md"]),
+            "handoff-md": required_artifact_check(["HANDOFF.md"]),
+        },
         max_fix_loops=2,
     )
 
@@ -42,15 +57,18 @@ def plan_hop() -> Hop:
         command=(
             "echo '# Plan' > PLAN.md; "
             "echo >> PLAN.md; "
-            "echo 'Inputs: research.md, task.txt' >> PLAN.md; "
+            "echo 'Inputs: HANDOFF.md (distilled research), task.txt' >> PLAN.md; "
             "echo 'Steps: 1) scaffold 2) implement 3) verify with EVAL.json' >> PLAN.md; "
-            "test -s research.md && echo 'OK: research.md present' >> PLAN.md || echo 'WARN: no research.md' >> PLAN.md"
+            "test -s HANDOFF.md && echo 'OK: HANDOFF.md distilled summary present' >> PLAN.md || echo 'WARN: no HANDOFF.md' >> PLAN.md"
         ),
     ))
     return Hop(
         id="plan", workflow=wf,
-        required_artifacts=["PLAN.md", "research.md"],
-        gate_checks={"plan-md": required_artifact_check(["PLAN.md"])},
+        required_artifacts=["PLAN.md", "HANDOFF.md"],
+        gate_checks={
+            "plan-md": required_artifact_check(["PLAN.md"]),
+            "handoff-md": required_artifact_check(["HANDOFF.md"]),
+        },
         max_fix_loops=2,
     )
 

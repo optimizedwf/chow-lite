@@ -115,7 +115,7 @@ class WorkflowExecutor:
             )
             return {"exit_code": res.returncode, "stdout": res.stdout[-2000:],
                     "stderr": res.stderr[-2000:]}
-        if node.kind in ("prompt", "tool", "subagent"):
+        if node.kind in ("prompt", "tool", "subagent", "summarize"):
             if node.run is None:
                 raise WorkflowError(f"node {node.id}: {node.kind} node needs a callable")
             out = node.run(inputs, job_dir)
