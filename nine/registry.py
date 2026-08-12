@@ -14,6 +14,7 @@ Two mappings:
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 
@@ -32,6 +33,7 @@ from nine.runtime.workflows import Workflow
 from nine.workflows.analyze_wf import analyze_hop
 from nine.workflows.build_multi_wf import build_multi_hop
 from nine.workflows.compare_wf import compare_hop
+from nine.workflows.compose_wf import compose_hop
 from nine.workflows.debug_wf import debug_hop
 from nine.workflows.deploy_check_wf import deploy_check_hop
 from nine.workflows.document_wf import document_hop
@@ -86,6 +88,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "pipeline": _wf(pipeline_hop),
     "analyze": _wf(analyze_hop),
     "compare": _wf(compare_hop),
+    "compose": _wf(compose_hop),
     "debug": _wf(debug_hop),
     "draft": _wf(draft_hop),
     "draft-email": _wf(draft_email_hop),
@@ -140,6 +143,39 @@ def workflow_gate(workflow_id: str):
     for name, check in factory().gate_checks.items():
         gate.register_check(name, check)
     return gate
+
+def _load_plugin_workflows() -> dict[str, Callable[[], Workflow]]:
+    """Compose-registered plugin workflows (nine/chains/plugins/).
+
+    The compose meta-workflow writes generated workflow modules into
+    nine/chains/plugins/ and appends their factories to
+    plugin_registry.py; this merge makes them executable through the
+    same WORKFLOWS lookup as hand-written lanes. NINE_PLUGIN_REGISTRY
+    overrides the registry file path (used by compose's own tests).
+    """
+    import importlib.util as _ilu
+
+    default = (Path(__file__).resolve().parent / "chains" / "plugins"
+               / "plugin_registry.py")
+    reg_path = Path(os.environ.get("NINE_PLUGIN_REGISTRY") or default)
+    if not reg_path.exists():
+        return {}
+    spec = _ilu.spec_from_file_location("_nine_plugin_registry", reg_path)
+    if spec is None or spec.loader is None:
+        return {}
+    mod = _ilu.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(mod)
+    except Exception:  # noqa: BLE001 - a broken plugin registry must not break nine
+        return {}
+    return {
+        wid: _wf(fac)
+        for wid, fac in dict(getattr(mod, "PLUGIN_WORKFLOWS", {})).items()
+    }
+
+
+WORKFLOWS.update(_load_plugin_workflows())
+
 
 CHAINS: dict[str, Callable[[], Chain]] = {
     "research-plan-build-review-teach": research_plan_build_review_teach,
