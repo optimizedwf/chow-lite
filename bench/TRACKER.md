@@ -1,0 +1,22 @@
+# Nine Improvement Loop — TRACKER
+
+Scoreboard for the continuous improvement loop. Baseline recovered from the
+Dell bench run (slice 17, c888ba6, 2026-08-12). One row per cycle.
+
+Legend: score = fixtures SHIP'd / total, tests = tests_passed/tests_total.
+Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
+
+| date | HEAD | cycle | score | tests | notes |
+|------|------|-------|-------|-------|-------|
+| 2026-08-12 | c888ba6 (slice 17) | BENCH baseline (Dell) | 3/5 (60%) | 34/45 (75.6%) | 001 SHIP but candidate_unchanged (exit-code-only self-test); 002 FIX 2/9; 003 FIX 9/9 (perfect patch blocked: ROOT_CAUSE.md gate); 004 FIX 7/9; 005 FIX 5/9. 7 gaps logged -> slice 21 fixes A-F |
+| 2026-08-12 | 920d3a9 (slice 21) | FIXES | — | 183 tests pass | bench-findings fixes shipped: loud empty-stream, pytest self-test, debug gate relaxed, 1500-char truncation, collection-error msgs, model-first router |
+
+---
+## Gap ledger (from bench baseline)
+1. Empty ADK output passes silently (no retry, artifact never written) -> FIXED (slice 21)
+2. Build self-test exit-code-only (unchanged buggy starter ships) -> FIXED (slice 21)
+3. Debug gate requires ROOT_CAUSE.md even for perfect patches -> FIXED (slice 21)
+4. Router keyword-substring only in CLI -> FIXED (slice 21: model-first when key present)
+5. Task truncation 200/400/500 chars hides success criteria -> FIXED (slice 21: 1500)
+6. Quota exhaustion looks like "agent did nothing" -> FIXED (slice 21: loud RuntimeError)
+7. EVAL.json "0 failed, 0 passed" on pytest collection errors -> FIXED (slice 21)

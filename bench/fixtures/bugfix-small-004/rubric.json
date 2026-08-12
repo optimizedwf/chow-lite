@@ -1,0 +1,40 @@
+{
+  "fixture_id": "bugfix-small-004",
+  "lab": "chow-agent-eval-lab",
+  "version": "0.1.0",
+  "category": "bug-fix",
+  "difficulty": "easy",
+  "dimensions": [
+    {
+      "id": "correctness",
+      "label": "Correctness",
+      "weight": 0.50,
+      "description": "Does the fix correctly merge two lists preserving first-seen order and removing duplicates?",
+      "pass_if": "All test cases in tests/check.sh pass with exit code 0"
+    },
+    {
+      "id": "edge_cases",
+      "label": "Edge Case Handling",
+      "weight": 0.25,
+      "description": "Does the fix handle empty lists, mixed hashable types, and duplicates within input lists?",
+      "pass_if": "Edge case tests in tests/check.sh pass"
+    },
+    {
+      "id": "style",
+      "label": "Style & Minimality",
+      "weight": 0.25,
+      "description": "Is the fix minimal and idiomatic?",
+      "pass_if": "The fix changes only the function body; no unnecessary imports or refactors"
+    }
+  ],
+  "verdict_thresholds": {
+    "pass": 0.7,
+    "partial": 0.4,
+    "fail": 0.0
+  },
+  "eval_criteria": [
+    "correctness",
+    "edge_cases",
+    "style"
+  ]
+}

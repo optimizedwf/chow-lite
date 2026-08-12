@@ -1,0 +1,28 @@
+{
+  "last_cycle": null,
+  "cycles_run": 0,
+  "last_bench": "2026-08-12T00:00:00Z",
+  "bench_runs": [
+    "r0-slice17-baseline"
+  ],
+  "est_quota_left": 20,
+  "cooldown_until": "2026-08-12T00:00:00Z",
+  "last_score": {
+    "ship": 3,
+    "total": 5,
+    "tests": [
+      34,
+      45
+    ]
+  },
+  "best_score": {
+    "ship": 3,
+    "total": 5,
+    "tests": [
+      34,
+      45
+    ]
+  },
+  "next_target": "bugfix-small-002",
+  "last_error": null
+}
