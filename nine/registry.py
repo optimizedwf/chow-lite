@@ -31,6 +31,7 @@ from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
 from nine.workflows.build_multi_wf import build_multi_hop
 from nine.workflows.debug_wf import debug_hop
+from nine.workflows.review_multi_wf import review_multi_hop
 from nine.workflows.test_wf import test_hop
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
@@ -64,6 +65,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "plan": _wf(plan_hop),
     "build": _wf(build_hop),
     "review": _wf(review_hop),
+    "review-multi": _wf(review_multi_hop),
     "test": _wf(test_hop),
     "build-multi": _wf(build_multi_hop),
     "debug": _wf(debug_hop),
@@ -77,6 +79,7 @@ _HOPS: dict[str, Callable] = {
     "plan": plan_hop,
     "build": build_hop,
     "review": review_hop,
+    "review-multi": review_multi_hop,
     "test": test_hop,
     "build-multi": build_multi_hop,
     "debug": debug_hop,
@@ -118,6 +121,11 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "build": ["build", "implement", "write code", "create the"],
     "build-multi": ["multi-file", "multifile", "multi file", "multiple files", "scaffold", "full project", "project scaffold"],
     "review": ["review", "audit", "check the code", "qa"],
+    "review-multi": ["multi review", "comprehensive review", "code review",
+                     "security review", "pr review", "review this pr",
+                     "review this pull request",
+                     "pull request review", "review the code",
+                     "review my code", "deep review", "review pr"],
     "test": ["test", "write tests", "pytest", "unit test", "make tests"],
     "debug": ["debug", "fix bug", "fix the bug", "bug", "diagnose", "root cause", "broken", "patch", "not working", "error", "crash", "failing"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
@@ -130,6 +138,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "build": "Implement per PLAN.md; write solution.py + EVAL.json.",
     "build-multi": "Scaffold a multi-file project under solution/ (main.py + package + tests).",
     "review": "Review a build; produce review.md verdict.",
+    "review-multi": "4-dimensional review (security/bugs/quality/arch) merged into REVIEW.md.",
     "test": "Write and run pytest tests (test_solution.py + EVAL.json).",
     "debug": "Root-cause a failure, write ROOT_CAUSE.md, patch, and verify.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",

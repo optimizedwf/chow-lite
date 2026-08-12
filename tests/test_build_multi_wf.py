@@ -11,21 +11,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import os
+
 os.environ["GEMINI_API_KEY"] = ""
 
 from nine.chains.chain import Chain, ChainExecutor
 from nine.gates.evidence import (
     EvidenceGate,
-    eval_json_check,
-    exit_codes_check,
-    required_artifact_check,
 )
 from nine.ledger.ledger import JSONLLedger
 from nine.runtime.workflows import Node, WorkflowError, WorkflowExecutor
-from nine.workflows.build_multi_wf import (
-    _build_multi_adk_node,
-    build_multi_hop,
-)
+from nine.workflows.build_multi_wf import build_multi_hop
 
 
 def _fake_project_run(correct: bool = True):
@@ -140,7 +135,6 @@ def test_build_multi_fails_loud_without_api_key(tmp_path):
     """Without GEMINI_API_KEY the real ADK node raises WorkflowError."""
     hop = build_multi_hop()
     gate = _make_gate(hop)
-    real_node = _build_multi_adk_node()
 
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     ex = WorkflowExecutor(ledger, gate, workdir=tmp_path / "work")

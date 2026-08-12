@@ -12,18 +12,16 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import os
+
 os.environ["GEMINI_API_KEY"] = ""
 
-from nine.chains.chain import Chain, ChainExecutor, Hop
+from nine.chains.chain import Chain, ChainExecutor
 from nine.gates.evidence import (
     EvidenceGate,
-    eval_json_check,
-    exit_codes_check,
-    required_artifact_check,
 )
 from nine.ledger.ledger import JSONLLedger
-from nine.runtime.workflows import Node, Workflow, WorkflowError, WorkflowExecutor
-from nine.workflows.test_wf import test_hop as make_test_hop, _test_adk_node
+from nine.runtime.workflows import Node, WorkflowError, WorkflowExecutor
+from nine.workflows.test_wf import test_hop as make_test_hop
 
 
 def _install_fake_test_writer(monkeypatch):
@@ -152,11 +150,9 @@ def test_test_hop_fails_loud_without_api_key(tmp_path):
 def test_test_hop_in_chain(tmp_path, monkeypatch):
     """test_hop works as a chain hop: build -> test."""
     _install_fake_test_writer(monkeypatch)
-    from nine.chains.flagship import build_hop
-    from nine.chains.chain import Chain
-
     # Fake build hop (already pattern in test_chains.py)
     from nine.chains import flagship
+    from nine.chains.flagship import build_hop
 
     def fake_build_run(inputs, job_dir):
         (Path(job_dir) / "solution.py").write_text(
