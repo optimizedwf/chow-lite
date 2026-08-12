@@ -21,6 +21,7 @@ from nine.chains.chain import Chain
 from nine.chains.flagship import (
     build_hop,
     demo_lane,
+    plan_hop,
     research_hop,
     research_plan_build_review_teach,
     review_hop,
@@ -57,6 +58,7 @@ def _wf(hop_factory: Callable) -> Callable[[], Workflow]:
 
 WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "research": _wf(research_hop),
+    "plan": _wf(plan_hop),
     "build": _wf(build_hop),
     "review": _wf(review_hop),
     "teach": _wf(teach_hop),
@@ -66,6 +68,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
 # hop factories per single-hop workflow id (used to build per-hop gates)
 _HOPS: dict[str, Callable] = {
     "research": research_hop,
+    "plan": plan_hop,
     "build": build_hop,
     "review": review_hop,
     "teach": teach_hop,
@@ -102,6 +105,7 @@ CHAINS: dict[str, Callable[[], Chain]] = {
 # keywords used by the router registries (kept here so server/cli/demo agree)
 _BASE_KEYWORDS: dict[str, list[str]] = {
     "research": ["research", "investigate", "find out", "study"],
+    "plan": ["plan", "break down", "decompose", "roadmap", "step by step"],
     "build": ["build", "implement", "write code", "create the"],
     "review": ["review", "audit", "check the code", "qa"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
@@ -110,10 +114,11 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
 
 _BASE_DESCRIPTIONS: dict[str, str] = {
     "research": "Produce a findings document (research.md).",
+    "plan": "Break a task into ordered steps (PLAN.md + HANDOFF.md).",
     "build": "Implement per PLAN.md; write solution.py + EVAL.json.",
     "review": "Review a build; produce review.md verdict.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
-    "respond": "Direct answer; no execution run.",
+    "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
 
 
