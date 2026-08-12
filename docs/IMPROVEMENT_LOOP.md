@@ -61,7 +61,13 @@ Pick ONE, rotating:
 3. **Gate tightening**: bump a ruff rule (e.g. add `BLE`, `S`, `SIM`), raise
    mypy strictness, add a coverage floor (`pytest --cov`), add a pre-commit
    hook — anything that makes the next slice harder to ship broken.
-4. **New fixtures**: write `bugfix-small-00X+` (task.md, expected-behavior.md,
+4. **Torture harvest (simulated users)**: spawn 1-2 TORTURE-TESTER workers on
+   `opencode-go/deepseek-v4-flash` (fallback `rue/cbcn/deepseek-v4-flash`) per
+   `bench/torture/README.md`; collect `bench/torture/reports/*.md`, triage,
+   implement the best finding with a regression test, log to
+   `bench/torture/LEDGER.md`. Zero Gemini quota — this is the every-cycle default
+   when no other HARDEN item is urgent.
+4b. **New fixtures**: write `bugfix-small-00X+` (task.md, expected-behavior.md,
    starter/, tests/check.sh, rubric.json) modeled on the existing ones —
    each new fixture is a new torture instrument.
 5. **Doc/UX truth**: fix CLI help text, error messages, README claims so the
