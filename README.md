@@ -1,7 +1,7 @@
 # chow-lite 🍜
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/chow-lite/ci.yml?branch=main&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/tests-45%20passing-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-63%20passing-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
 </p>
@@ -132,8 +132,10 @@ chow stats                 # ledger stats
 ```
 
 Deployment: `deploy/cloud-run.yaml` (scale-to-zero), Firestore for state,
-ADK observability for traces. Secret hygiene by design: redaction in logs,
-reference-only paths, never commit credentials.
+ADK agents in the user-facing build hop (LlmAgent + FunctionTool) with an
+independent bash self-test writing EVAL.json from the real run result.
+Secret hygiene by design: redaction in logs, reference-only paths, never
+commit credentials.
 
 ## Repository layout
 

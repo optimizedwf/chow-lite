@@ -73,8 +73,15 @@ def get_ledger():
         )
         _ledger = _LazyFallbackLedger(candidate)
         return _ledger
-    except Exception:  # noqa: BLE001 - deliberate fallback to JSONL when Firestore unavailable
+    except Exception as exc:  # noqa: BLE001 - deliberate fallback to JSONL when Firestore unavailable
         _ledger_failed = True
+        # P1-7: durability degradation must be LOUD, not silent — the Cloud
+        # Run log shows exactly why we fell back to local JSONL state.
+        print(
+            f"[chow-lite] WARNING: Firestore unavailable ({type(exc).__name__}: "
+            f"{exc}); falling back to LOCAL JSONL ledger at {LEDGER_PATH}. "
+            "Jobs will NOT survive a container restart.", flush=True
+        )
         from chowlite.ledger.ledger import JSONLLedger
 
         return JSONLLedger(LEDGER_PATH)
@@ -106,8 +113,14 @@ class _LazyFallbackLedger:
         def wrapper(*args, **kwargs):
             try:
                 return primary_attr(*args, **kwargs)
-            except Exception:  # noqa: BLE001 - switch to JSONL on any query failure
+            except Exception as exc:  # noqa: BLE001 - switch to JSONL on any query failure
                 if self._fallback is None:
+                    print(
+                        f"[chow-lite] WARNING: Firestore query failed "
+                        f"({type(exc).__name__}: {exc}); switching to LOCAL JSONL "
+                        f"ledger at {LEDGER_PATH}. Jobs will NOT survive a "
+                        "container restart.", flush=True
+                    )
                     self._fallback = JSONLLedger(LEDGER_PATH)
                 return getattr(self._fallback, name)(*args, **kwargs)
 
@@ -237,7 +250,7 @@ def submit(payload: SubmitRequest):
         if decision.workflow_id == "inbox-triage-task-report":
             (job_dir / "inbox.txt").write_text(task + "\n")
         cex = ChainExecutor(ledger, workdir=WORKDIR)
-        res = cex.execute(chain, job, {"task": task})
+        res = cex.execute(chain, job, {"task": task}, decision=decision)
         return {
             "job_id": job.job_id,
             "status": job.status,

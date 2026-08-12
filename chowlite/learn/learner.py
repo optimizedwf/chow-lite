@@ -21,6 +21,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from chowlite.schema_validation import validate
+
 
 @dataclass
 class RouteEvent:
@@ -69,6 +71,7 @@ class RouteEventStore:
             self.path.touch()
 
     def record(self, event: RouteEvent) -> None:
+        validate("route-event", event.to_dict())
         with self.path.open("a") as f:
             f.write(json.dumps(event.to_dict()) + "\n")
 
@@ -83,24 +86,63 @@ class RouteEventStore:
         return [e for e in self.all() if e.workflow_id == workflow_id]
 
 
+class CandidateStore:
+    """Durable JSONL store of improvement candidates (P1-5).
+
+    Candidates survive restarts: they are appended on write and re-read
+    from disk on every access, so the LEARN loop's OUTPUT is durable too,
+    not just its input events.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        if not self.path.exists():
+            self.path.touch()
+
+    def append(self, cand: ImprovementCandidate) -> None:
+        with self.path.open("a") as f:
+            f.write(json.dumps(cand.to_dict()) + "\n")
+
+    def all(self) -> list[ImprovementCandidate]:
+        out = []
+        for line in self.path.read_text().splitlines():
+            if line.strip():
+                out.append(ImprovementCandidate(**json.loads(line)))
+        return out
+
+    def has(self, description: str, evidence: list[str]) -> bool:
+        return any(
+            c.description == description and c.evidence == evidence
+            for c in self.all()
+        )
+
+
 class Learner:
-    """Turns route events into improvement candidates (never auto-applies)."""
+    """Turns route events into improvement candidates (never auto-applies).
+
+    Candidates are persisted next to the event store (P1-5): the queue
+    survives restarts and learn() is idempotent per event — re-scanning
+    the same events never duplicates candidates.
+    """
 
     def __init__(self, store: RouteEventStore) -> None:
         self.store = store
-        self.candidates: list[ImprovementCandidate] = []
+        self.cands = CandidateStore(str(store.path) + ".candidates.jsonl")
 
     def observe(self, event: RouteEvent) -> None:
         self.store.record(event)
 
     def _suggest(self, kind: str, description: str, evidence: list[str]) -> None:
+        if self.cands.has(description, evidence):
+            return
         cand = ImprovementCandidate(
             candidate_id=f"cand-{uuid.uuid4().hex[:8]}",
             kind=kind,
             description=description,
             evidence=evidence,
         )
-        self.candidates.append(cand)
+        self.cands.append(cand)
 
     def learn(self) -> list[ImprovementCandidate]:
         """Scan recorded events and propose improvements.
@@ -129,15 +171,7 @@ class Learner:
                     "check workflow step reliability",
                     [ev.event_id],
                 )
-        # dedupe by description
-        seen: set[str] = set()
-        deduped = []
-        for c in self.candidates:
-            if c.description not in seen:
-                seen.add(c.description)
-                deduped.append(c)
-        self.candidates = deduped
-        return self.candidates
+        return self.cands.all()
 
     def candidates_json(self) -> str:
-        return json.dumps([c.to_dict() for c in self.candidates], indent=2)
+        return json.dumps([c.to_dict() for c in self.cands.all()], indent=2)

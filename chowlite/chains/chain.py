@@ -107,10 +107,21 @@ class ChainExecutor:
             gate.register_check(name, check)
         return gate
 
-    def execute(self, chain: Chain, job: Job, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Run all hops. Returns per-hop verdicts + final chain verdict."""
+    def execute(
+        self,
+        chain: Chain,
+        job: Job,
+        inputs: dict[str, Any],
+        decision=None,
+    ) -> dict[str, Any]:
+        """Run all hops. Returns per-hop verdicts + final chain verdict.
+
+        decision: the RouteDecision that selected this chain (P1-5 — chain
+        route events must carry the REAL confidence/router version, not a
+        hardcoded placeholder).
+        """
         try:
-            return self._execute(chain, job, inputs)
+            return self._execute(chain, job, inputs, decision=decision)
         except Exception:
             try:
                 force_terminal(job, "failed")
@@ -119,10 +130,32 @@ class ChainExecutor:
                 pass
             raise
 
-    def _execute(self, chain: Chain, job: Job, inputs: dict[str, Any]) -> dict[str, Any]:
+    def _execute(
+        self,
+        chain: Chain,
+        job: Job,
+        inputs: dict[str, Any],
+        decision=None,
+    ) -> dict[str, Any]:
         """Run all hops. Returns per-hop verdicts + final chain verdict."""
         job_dir = self.workdir / job.job_id
         job_dir.mkdir(parents=True, exist_ok=True)
+
+        # P1-5: carry the real ROUTE decision (confidence, router version)
+        # onto the chain job and into every hop's route event. If the caller
+        # didn't supply one, derive a deterministic keyword decision from
+        # the shared registry so the LEARN loop always sees real values.
+        if decision is None:
+            from chowlite.registry import HOP_DESCRIPTIONS, KEYWORDS
+            from chowlite.router.classifier import Router
+
+            _r = Router()
+            for wf_id, kws in KEYWORDS.items():
+                _r.register(wf_id, kws, HOP_DESCRIPTIONS.get(wf_id, ""))
+            decision = _r.classify(str(inputs.get("task", "")))
+        if job.route_decision is None:
+            job.attach_route_decision(decision)
+            self.ledger.update(job)
 
         hop_results: dict[str, Any] = {}
         chain_inputs = dict(inputs)
@@ -153,15 +186,19 @@ class ChainExecutor:
                     "eval": res["verdict"]["eval_results"],
                 }
                 # LEARN: record the route event for the learning loop
+                # (P1-5: real confidence/router_version from the ROUTE step;
+                # task text is redact()ed, not just truncated)
                 if self.learner is not None:
+                    from chowlite.router.classifier import redact
+
                     self.learner.observe(
                         RouteEvent(
                             event_id=f"ev-{hop_job.job_id[:8]}",
                             job_id=hop_job.job_id,
-                            task_redacted=str(inputs.get("task", ""))[:200],
+                            task_redacted=redact(str(inputs.get("task", "")))[:200],
                             workflow_id=wf_id,
-                            confidence=0.5,
-                            router_version="chain-v1",
+                            confidence=float(decision.confidence),
+                            router_version=decision.router_version,
                             verdict=verdict,
                             checks_passed=sum(
                                 1 for r in res["verdict"]["eval_results"].values()

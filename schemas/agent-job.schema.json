@@ -19,7 +19,10 @@
       "type": "string"
     },
     "chain_id": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "description": "If part of a chain, the chain id"
     },
     "status": {
@@ -38,11 +41,22 @@
       ]
     },
     "input": {
-      "type": "object",
-      "description": "Task input (redacted)"
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "Task input as submitted (the redacted copy travels in route_decision.task_redacted)"
     },
     "route_decision": {
-      "$ref": "route-decision.schema.json"
+      "anyOf": [
+        {
+          "$ref": "route-decision.schema.json"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The ROUTE decision that selected this workflow, if attached"
     },
     "artifacts": {
       "type": "array",
@@ -58,8 +72,8 @@
     },
     "attempts": {
       "type": "integer",
-      "minimum": 1,
-      "description": "Execution attempts (fix loops)"
+      "minimum": 0,
+      "description": "Execution attempts (fix loops); a fresh job starts at 0"
     },
     "max_fix_loops": {
       "type": "integer"
@@ -73,11 +87,17 @@
       "format": "date-time"
     },
     "completed_at": {
-      "type": "string",
+      "type": [
+        "string",
+        "null"
+      ],
       "format": "date-time"
     },
     "metadata": {
-      "type": "object"
+      "type": [
+        "object",
+        "null"
+      ]
     }
   }
 }

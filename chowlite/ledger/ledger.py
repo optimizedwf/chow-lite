@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from chowlite.router.classifier import RouteDecision
+from chowlite.schema_validation import validate
 
 VALID_STATUSES = {
     "submitted", "routing", "running", "awaiting_evidence",
@@ -152,6 +153,7 @@ class JSONLLedger:
     def submit(self, workflow_id: str, input: dict[str, Any] | None = None,
                chain_id: str | None = None) -> Job:
         job = Job(workflow_id=workflow_id, input=input, chain_id=chain_id)
+        validate("agent-job", job.to_dict())
         self._jobs[job.job_id] = job
         self._append(job)
         return job

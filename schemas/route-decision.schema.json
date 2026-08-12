@@ -24,7 +24,7 @@
     },
     "workflow_id": {
       "type": "string",
-      "description": "ID of the selected workflow, e.g. chow-research-v1"
+      "description": "ID of the selected workflow, e.g. research/build/review (see chowlite/registry.py)"
     },
     "confidence": {
       "type": "number",

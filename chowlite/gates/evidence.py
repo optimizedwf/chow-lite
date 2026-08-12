@@ -18,6 +18,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from chowlite.schema_validation import validate
+
 GATE_VERSION = "0.1.0"
 
 CheckFn = Callable[[dict[str, Any], Path], tuple[bool, str]]
@@ -60,7 +62,7 @@ class EvidenceGate:
             verdict = "BLOCK"
             summary = "no evidence checks registered — nothing verified"
 
-        return {
+        record = {
             "verdict": verdict,
             "evidence_refs": sorted(artifact_ctx.get("artifact_paths", [])),
             "eval_results": results,
@@ -68,6 +70,9 @@ class EvidenceGate:
             "verified_at": datetime.now(UTC).isoformat(),
             "gate_version": GATE_VERSION,
         }
+        # P1-6: verdicts are a declared boundary object.
+        validate("evidence-verdict", record)
+        return record
 
 
 def load_eval_json(workdir: Path) -> dict[str, Any] | None:

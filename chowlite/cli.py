@@ -121,7 +121,7 @@ def cmd_submit(args) -> int:
         (job_dir / "task.txt").write_text(args.task + "\n")
         if decision.workflow_id == "inbox-triage-task-report":
             (job_dir / "inbox.txt").write_text(args.task + "\n")
-        res = cex.execute(chain, job, {"task": args.task})
+        res = cex.execute(chain, job, {"task": args.task}, decision=decision)
         print(f"chain={chain.id} job={job.job_id} final={res['final']}")
         return 0 if res["final"] == "SHIPPED" else 2
 

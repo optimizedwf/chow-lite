@@ -15,6 +15,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from chowlite.schema_validation import validate
+
 
 @dataclass
 class RouteDecision:
@@ -179,7 +181,7 @@ class Router:
             if fallback_note:
                 reason = f"{reason} [{fallback_note}]"
 
-        return RouteDecision(
+        decision = RouteDecision(
             decision_id=str(uuid.uuid4()),
             task_redacted=task_red[:500],
             workflow_id=wf_id,
@@ -189,3 +191,6 @@ class Router:
             router_version=self.version,
             model=model_used,
         )
+        # P1-6: every boundary object is validated against its declared schema.
+        validate("route-decision", decision.to_dict())
+        return decision
