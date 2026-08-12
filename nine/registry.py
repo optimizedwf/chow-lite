@@ -26,6 +26,7 @@ from nine.chains.flagship import (
     review_hop,
     teach_hop,
 )
+from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
@@ -59,6 +60,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "build": _wf(build_hop),
     "review": _wf(review_hop),
     "teach": _wf(teach_hop),
+    "respond": respond_workflow,
 }
 
 # hop factories per single-hop workflow id (used to build per-hop gates)
@@ -80,6 +82,8 @@ def workflow_gate(workflow_id: str):
     """
     from nine.gates.evidence import EvidenceGate
 
+    if workflow_id == "respond":
+        return respond_gate()
     factory = _HOPS.get(workflow_id)
     if factory is None:
         return None

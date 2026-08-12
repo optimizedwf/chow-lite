@@ -85,7 +85,9 @@ class KeywordRouter:
                     if score > best_score:
                         best_id, best_score, best_kw = wf_id, score, kw
         if best_id is None:
-            return "fallback-respond", 0.0, ""
+            # universal fallback: even an unknown task is a real workflow
+            # (`respond`) so every prompt goes through EXECUTE + VERIFY.
+            return "respond", 0.0, "no keyword matched; universal respond lane"
         return best_id, best_score, best_kw
 
 
@@ -156,7 +158,7 @@ class GeminiRouter:
             reason = str(data.get("reason", ""))
             return wf_id, conf, reason
         except Exception as exc:  # noqa: BLE001 — fall back on any parse issue
-            return "fallback-respond", 0.0, f"model output unparsable: {exc}"
+            return "respond", 0.0, f"model output unparsable: {exc}"
 
 
 class Router:

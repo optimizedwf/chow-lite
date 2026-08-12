@@ -74,7 +74,8 @@ def test_cli_submit_records_route_event(tmp_path, monkeypatch):
     assert json.loads(lines[0])["verdict"] == "SHIP"
 
 
-def test_cli_direct_answer_records_unverified_event(tmp_path):
+def test_cli_unknown_task_runs_respond_workflow(tmp_path):
+    """Unknown tasks are real jobs: routed to respond, verified SHIP."""
     ledger = tmp_path / "ledger.jsonl"
     events = tmp_path / "events.jsonl"
     assert main(["--ledger", str(ledger), "--events", str(events),
@@ -82,7 +83,8 @@ def test_cli_direct_answer_records_unverified_event(tmp_path):
     import json
     lines = open(events).read().splitlines()
     assert len(lines) == 1
-    assert json.loads(lines[0])["verdict"] == "UNVERIFIED"
+    assert json.loads(lines[0])["workflow_id"] == "respond"
+    assert json.loads(lines[0])["verdict"] == "SHIP"
 
 
 def test_cli_learn_apply_revert_gated_by_regression(tmp_path, monkeypatch):
@@ -132,13 +134,14 @@ def test_cli_learn_apply_revert_gated_by_regression(tmp_path, monkeypatch):
 
 
 def test_cli_learn_apply_refuses_non_applicable(tmp_path, monkeypatch):
-    """fallback-respond candidates have no target workflow -> apply refuses."""
+    """A candidate with no actionable keyword (all stopwords) cannot
+    auto-apply -> apply refuses (no catalog write in tests)."""
     import nine.cli as cli
 
     events = tmp_path / "events.jsonl"
     ledger = tmp_path / "ledger.jsonl"
     assert main(["--ledger", str(ledger), "--events", str(events),
-                 "submit", "zzz qqq unknown"]) == 0
+                 "submit", "make this task for them please"]) == 0
     assert main(["--ledger", str(ledger), "--events", str(events), "learn", "scan"]) == 0
     cands = cli._learner(type("A", (), {"events": str(events)})()).cands.all()
     assert len(cands) == 1 and cands[0].params["keyword"] == ""

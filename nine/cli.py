@@ -147,12 +147,9 @@ def cmd_submit(args) -> int:
     decision = router.classify(args.task)
     print(json.dumps(decision.to_dict(), indent=2))
 
-    if decision.workflow_id in ("respond", "fallback-respond"):
-        # LEARN still sees the route (that's how keyword candidates are born)
-        _record_route_event(_learner(args), None, decision, {"verdict": "UNVERIFIED"})
-        print("\n[direct answer] no execution run needed:", decision.reason)
-        return 0
-
+    # EVERY prompt is a workflow: no direct-answer escape hatch. An unknown
+    # task routes to `respond`, which still runs a job, writes RESPONSE.md,
+    # and is verified (SHIP) before returning.
     job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
     job.attach_route_decision(decision)
     ledger.update(job)
@@ -190,13 +187,17 @@ def cmd_submit(args) -> int:
     from nine.registry import workflow_gate
 
     gate = workflow_gate(decision.workflow_id) or build_default_gate()
-    executor = WorkflowExecutor(ledger, gate)
+    executor = WorkflowExecutor(ledger, gate, workdir=args.workdir)
     result = executor.execute(wf, job, {"task": args.task})
 
     # LEARN: one route event per completed workflow run
     _record_route_event(learner, job, decision, result["verdict"])
 
     print("\n[verdict]", result["verdict"]["verdict"], "-", result["verdict"]["summary"])
+    if decision.workflow_id == "respond":
+        resp_path = Path(args.workdir) / job.job_id / "RESPONSE.md"
+        if resp_path.exists():
+            print("[response]", resp_path.read_text(encoding="utf-8").strip().replace("\n", " "))
     print("[job]", job.job_id, "->", job.status)
     return 0
 
@@ -472,6 +473,8 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("submit")
     s.add_argument("task")
+    s.add_argument("--ledger", default=DEFAULT_LEDGER)
+    s.add_argument("--workdir", default="work")
     s.set_defaults(fn=cmd_submit)
 
     s = sub.add_parser("chain")

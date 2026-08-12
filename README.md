@@ -1,7 +1,7 @@
 # nine
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/nine/ci.yml?branch=main&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/tests-84%20passing-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-96%20passing-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
 </p>

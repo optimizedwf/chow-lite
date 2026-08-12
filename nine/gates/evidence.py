@@ -86,6 +86,24 @@ def load_eval_json(workdir: Path) -> dict[str, Any] | None:
     return None
 
 
+def file_nonempty_check(name: str, min_chars: int = 10) -> CheckFn:
+    """Factory: a check that requires an artifact file exists and is not empty.
+
+    Used by the respond workflow (RESPONSE.md) — an answer that cannot be
+    read back as non-trivial text does not SHIP.
+    """
+    def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
+        f = Path(workdir) / name
+        if not f.exists():
+            return False, f"{name} missing — cannot verify"
+        size = f.stat().st_size
+        if size < min_chars:
+            return False, f"{name} too small ({size}B < {min_chars}B)"
+        return True, f"{name} present and non-trivial ({size}B)"
+
+    return _check
+
+
 def eval_json_check(expected_checks: list[str] | None = None) -> CheckFn:
     """Factory: a check that requires EVAL.json with expected checks all pass.
 

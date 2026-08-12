@@ -94,11 +94,17 @@ def test_submit_records_route_events_and_events_endpoint():
     assert stats["events"]["candidates"]["total"] >= 0
 
 
-def test_direct_answer_records_unverified_event():
+def test_unknown_task_runs_respond_workflow():
+    """No direct-answer escape hatch: unknown tasks run the respond workflow
+    and are verified (SHIP) with a real response — never UNVERIFIED."""
     before = client.get("/v1/events").json()["count"]
     r = client.post("/v1/submit", json={"task": "zzz qqq totally unknown"})
     assert r.status_code == 200
-    assert "note" in r.json() or r.json().get("workflow_id") in ("respond", "fallback-respond")
+    body = r.json()
+    assert body["decision"]["workflow_id"] == "respond"
+    assert body["job_id"]
+    assert body["verdict"]["verdict"] == "SHIP"
+    assert body["response"].strip()
     ev = client.get("/v1/events").json()
     assert ev["count"] == before + 1
-    assert ev["events"][-1]["verdict"] == "UNVERIFIED"
+    assert ev["events"][-1]["verdict"] == "SHIP"

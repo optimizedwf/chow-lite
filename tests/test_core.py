@@ -36,7 +36,7 @@ def test_unknown_task_falls_back():
     r = Router()
     r.register("build", ["build"], "build")
     d = r.classify("zzz qqq unknown thing")
-    assert d.workflow_id == "fallback-respond"
+    assert d.workflow_id == "respond"
 
 
 def test_redaction():
@@ -192,7 +192,8 @@ def test_executor_cycle_detection():
 
 def test_nonzero_exit_is_fix_evidence_not_crash(tmp_path):
     """Doctrine: a shell exit code is NOT task success — non-zero exit is
-    failing evidence, so the gate returns FIX and the job goes to fixing."""
+    failing evidence, so the gate returns FIX (never a crash); the
+    in-engine FIX loop retries and then blocks the job."""
     ledger = JSONLLedger(tmp_path / "l.jsonl")
     gate = EvidenceGate()
     gate.register_check("exit-codes", exit_codes_check())
@@ -202,7 +203,8 @@ def test_nonzero_exit_is_fix_evidence_not_crash(tmp_path):
     wf.add_node(Node(id="bad", kind="bash", command="exit 3"))
     result = ex.execute(wf, job, {"task": "x"})
     assert result["verdict"]["verdict"] == "FIX"
-    assert ledger.get(job.job_id).status == "fixing"
+    assert result["attempts"] == 3  # initial + 2 fix reruns (max_fix_loops=2)
+    assert ledger.get(job.job_id).status == "blocked"
 
 
 def test_exception_marks_job_failed(tmp_path):

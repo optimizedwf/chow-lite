@@ -16,10 +16,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import subprocess as sp
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from time import monotonic
 from typing import Any
 
 from nine.gates.evidence import EvidenceGate
@@ -39,6 +42,9 @@ class Node:
     command: str | None = None              # for bash nodes
     depends_on: list[str] = field(default_factory=list)
     timeout_seconds: int = 300
+    max_retries: int = 0                    # transient-failure retries (backoff)
+    retry_delay_seconds: float = 1.0        # base delay; doubles per retry
+    retry_on_exit: bool = False             # bash: retry on non-zero exit code
     description: str = ""
 
 
@@ -104,8 +110,8 @@ class WorkflowExecutor:
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
 
-    def _run_node(self, node: Node, inputs: dict[str, Any], job_dir: Path) -> dict[str, Any]:
-        """Execute one node, returning {output, artifact?, ...}."""
+    def _run_node_once(self, node: Node, inputs: dict[str, Any], job_dir: Path) -> dict[str, Any]:
+        """Execute one node ONCE, returning {output, artifact?, ...}."""
         if node.kind == "bash":
             if not node.command:
                 raise WorkflowError(f"node {node.id}: bash node needs command")
@@ -122,50 +128,120 @@ class WorkflowExecutor:
             return out if isinstance(out, dict) else {"output": out}
         raise WorkflowError(f"node {node.id}: unknown kind {node.kind}")
 
-    def execute(self, workflow: Workflow, job: Job, inputs: dict[str, Any]) -> dict[str, Any]:
-        """Run the workflow for a job. Returns the final verdict + artifacts."""
-        # lifecycle: submitted -> routing -> running
+    def _run_node(self, node: Node, inputs: dict[str, Any], job_dir: Path) -> tuple[dict[str, Any], int]:
+        """Run a node with retry/backoff for transient failures.
+
+        Retries on any raised exception (timeout, Gemini 429/503, flaky
+        tool) and — for bash nodes with retry_on_exit — on non-zero exit
+        codes. Backoff = retry_delay_seconds * 2**attempt (+/-10% jitter).
+        Returns (result, attempts_used).
+        """
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                result = self._run_node_once(node, inputs, job_dir)
+                if (
+                    node.kind == "bash"
+                    and node.retry_on_exit
+                    and result.get("exit_code", 0) != 0
+                    and attempts <= node.max_retries
+                ):
+                    time.sleep(self._backoff(node, attempts))
+                    continue
+                return result, attempts
+            except Exception as exc:  # noqa: BLE001 — transient failures retried
+                if attempts > node.max_retries:
+                    raise WorkflowError(f"node {node.id} failed after {attempts} attempts: {exc}") from exc
+                time.sleep(self._backoff(node, attempts))
+
+    @staticmethod
+    def _backoff(node: Node, attempt: int) -> float:
+        base = node.retry_delay_seconds * (2 ** (attempt - 1))
+        return base * (1 + random.uniform(-0.1, 0.1))
+
+    def execute(
+        self,
+        workflow: Workflow,
+        job: Job,
+        inputs: dict[str, Any],
+        fix_loop: bool = True,
+    ) -> dict[str, Any]:
+        """Run the workflow for a job, with an in-engine FIX loop.
+
+        A FIX verdict re-runs the workflow (up to job.max_fix_loops) with a
+        `fix_directive` describing exactly which gate checks failed — the
+        single-workflow path (`nine submit`, POST /v1/submit) self-heals
+        instead of leaving jobs stuck at `fixing`. Chains pass fix_loop=False
+        (they re-run whole hops at the hop level).
+
+        Returns the final verdict + artifacts + per-node timing/attempts.
+        """
+        inputs = dict(inputs)
+        # lifecycle: submitted -> routing (once per job)
         if job.status == "submitted":
             job.transition("routing")
             self.ledger.update(job)
-        job.transition("running")
-        job.attempts += 1
-        self.ledger.update(job)
 
         job_dir = self.job_dir_override or (self.workdir / job.job_id)
         job_dir.mkdir(parents=True, exist_ok=True)
-
-        node_outputs: dict[str, Any] = {}
-        artifacts: list[dict[str, Any]] = []
-        node_exit_codes: dict[str, int] = {}
         order = workflow.topological_order()
 
-        for nid in order:
-            node = workflow.nodes[nid]
-            # gather upstream inputs
-            node_inputs = {"task": inputs.get("task", ""), "node": nid,
-                           "job_id": job.job_id}
-            for dep in node.depends_on:
-                if dep in node_outputs:
-                    node_inputs[dep] = node_outputs[dep]
-            # snapshot job dir to detect newly-produced artifacts
-            before = {p.name for p in job_dir.iterdir() if p.is_file()}
-            try:
-                result = self._run_node(node, node_inputs, job_dir)
-            except Exception as exc:
-                job.transition("failed")
-                self.ledger.update(job)
-                raise WorkflowError(f"node {nid} failed: {exc}") from exc
+        node_outputs: dict[str, Any] = {}
+        node_meta: dict[str, dict[str, Any]] = {}
+        verdict: dict[str, Any] = {"verdict": "BLOCK"}
+        attempt = 0
 
-            node_outputs[nid] = result
-            if node.kind == "bash" and "exit_code" in result:
-                node_exit_codes[nid] = result["exit_code"]
+        while True:
+            attempt += 1
+            job.attempts += 1
+            job.transition("running")
+            job.artifacts = []  # manifest = this attempt's artifacts only
+            seen: dict[str, str] = {}  # reset per attempt: reruns re-register the full dir
+            self.ledger.update(job)
 
-            # artifact registration: files newly created in the job dir by
-            # this node (deterministic, schema-conformant manifest)
-            for p in sorted(job_dir.iterdir()):
-                if p.is_file() and p.name not in before:
+            artifacts: list[dict[str, Any]] = []
+            node_exit_codes: dict[str, int] = {}
+
+            for nid in order:
+                node = workflow.nodes[nid]
+                node_inputs = {
+                    "task": inputs.get("task", ""),
+                    "node": nid,
+                    "job_id": job.job_id,
+                    "attempt": attempt,
+                    "fix_directive": inputs.get("fix_directive", ""),
+                }
+                for dep in node.depends_on:
+                    if dep in node_outputs:
+                        node_inputs[dep] = node_outputs[dep]
+                started = monotonic()
+                try:
+                    result, attempts_used = self._run_node(node, node_inputs, job_dir)
+                except Exception as exc:
+                    job.transition("failed")
+                    self.ledger.update(job)
+                    raise WorkflowError(f"node {nid} failed: {exc}") from exc
+                duration_ms = round((monotonic() - started) * 1000)
+                node_meta[nid] = {
+                    "attempts": attempts_used,
+                    "duration_ms": duration_ms,
+                    "node_attempt": attempt,
+                }
+                node_outputs[nid] = result
+                if node.kind == "bash" and "exit_code" in result:
+                    node_exit_codes[nid] = result["exit_code"]
+
+                # artifact registration: name+content-deduped across attempts
+                # (a FIX rerun that rewrites a file refreshes its sha256)
+                for p in sorted(job_dir.iterdir()):
+                    if not p.is_file():
+                        continue
                     data = p.read_bytes()
+                    h = self._hash(data)
+                    if seen.get(p.name) == h:
+                        continue
+                    seen[p.name] = h
                     kind = "document"
                     if p.suffix in (".py", ".js", ".ts", ".go", ".sh", ".json", ".yaml", ".yml"):
                         kind = "code"
@@ -177,7 +253,7 @@ class WorkflowExecutor:
                         "name": p.name,
                         "path": str(p),
                         "kind": kind,
-                        "sha256": self._hash(data),
+                        "sha256": h,
                         "size": len(data),
                         "produced_by": nid,
                         "produced_at": job.updated_at,
@@ -185,50 +261,72 @@ class WorkflowExecutor:
                     artifacts.append(artifact)
                     job.add_artifact(artifact)
 
-            # explicit artifact paths in node output (tool nodes)
-            for key in ("artifact", "artifact_path"):
-                val = result.get(key)
-                if val:
-                    p = Path(val) if isinstance(val, str) else val
-                    if p.exists() and p.name not in {a["name"] for a in artifacts}:
-                        data = p.read_bytes()
-                        artifact = {
-                            "name": p.name,
-                            "path": str(p),
-                            "kind": "other",
-                            "sha256": self._hash(data),
-                            "size": len(data),
-                            "produced_by": nid,
-                            "produced_at": job.updated_at,
-                        }
-                        artifacts.append(artifact)
-                        job.add_artifact(artifact)
+                # explicit artifact paths in node output (tool nodes)
+                for key in ("artifact", "artifact_path"):
+                    val = result.get(key)
+                    if val:
+                        p = Path(val) if isinstance(val, str) else val
+                        if p.exists() and seen.get(p.name) != self._hash(p.read_bytes()):
+                            data = p.read_bytes()
+                            h = self._hash(data)
+                            seen[p.name] = h
+                            artifact = {
+                                "name": p.name,
+                                "path": str(p),
+                                "kind": "other",
+                                "sha256": h,
+                                "size": len(data),
+                                "produced_by": nid,
+                                "produced_at": job.updated_at,
+                            }
+                            artifacts.append(artifact)
+                            job.add_artifact(artifact)
 
-        job.transition("awaiting_evidence")
-        self.ledger.update(job)
+            job.transition("awaiting_evidence")
+            self.ledger.update(job)
 
-        # evidence gate
-        artifact_ctx = {
-            "artifact_paths": [a["path"] for a in artifacts],
-            "artifacts": artifacts,
-            "node_exit_codes": node_exit_codes,
-        }
-        verdict = self.gate.evaluate(artifact_ctx, job_dir)
-        job.add_verdict(verdict)
+            artifact_ctx = {
+                "artifact_paths": [a["path"] for a in artifacts],
+                "artifacts": artifacts,
+                "node_exit_codes": node_exit_codes,
+            }
+            verdict = self.gate.evaluate(artifact_ctx, job_dir)
+            job.add_verdict(verdict)
 
-        if verdict["verdict"] == "SHIP":
-            job.transition("shipped")
-        elif verdict["verdict"] == "FIX" and job.attempts <= job.max_fix_loops:
-            job.transition("fixing")
-        else:
+            if verdict["verdict"] == "SHIP":
+                job.transition("shipped")
+                self.ledger.update(job)
+                break
+
+            if verdict["verdict"] == "FIX" and fix_loop and job.attempts <= job.max_fix_loops:
+                job.transition("fixing")
+                self.ledger.update(job)
+                failures = [
+                    f"{k}: {v['message']}"
+                    for k, v in verdict["eval_results"].items()
+                    if not v.get("passed")
+                ]
+                inputs["fix_directive"] = (
+                    f"gate FIX after attempt {attempt}: "
+                    + ("; ".join(failures) if failures else verdict.get("summary", ""))
+                    + ". Rework the artifacts and re-run."
+                )
+                continue
+
             job.transition("blocked")
-        self.ledger.update(job)
+            self.ledger.update(job)
+            break
 
+        job.metadata["nodes"] = node_meta
+        job.metadata["attempts"] = attempt
+        self.ledger.update(job)
         return {
             "job_id": job.job_id,
             "verdict": verdict,
             "artifacts": artifacts,
+            "attempts": attempt,
             "node_outputs": {k: v for k, v in node_outputs.items()},
+            "node_meta": dict(node_meta),
         }
 
 

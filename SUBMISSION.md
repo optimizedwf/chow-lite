@@ -89,7 +89,7 @@ the deployed API.
 |---|---|
 | Innovation & Operational Utility (40%) | autonomy kernel with evidence-gated SHIP/FIX/BLOCK; candidate-only learning loop; dogfooded on its own build |
 | Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + Gemini 3.5 + Cloud Run/Firestore; JSON Schema validation in tests |
-| Demo & Production Readiness (30%) | one-command demo, 84 tests, Dockerfile + deploy.sh, FastAPI operator API, offline fallback |
+| Demo & Production Readiness (30%) | one-command demo, 96 tests, Dockerfile + deploy.sh, FastAPI operator API, offline fallback |
 
 ## 9. Post-submission freeze
 Video, repo, and live site are frozen after submission (Aug 31 17:00 PDT);

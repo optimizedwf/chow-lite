@@ -176,7 +176,9 @@ class ChainExecutor:
                 attempt += 1
                 hop_job = self.ledger.submit(wf_id, input=dict(chain_inputs), chain_id=chain.id)
                 try:
-                    res = ex.execute(hop.workflow, hop_job, chain_inputs)
+                    # hop-level FIX loop owns retries here; the engine's
+                    # in-engine loop is for single-workflow runs
+                    res = ex.execute(hop.workflow, hop_job, chain_inputs, fix_loop=False)
                 except WorkflowError as exc:
                     self.results[f"{hop.id}:{attempt}"] = {"error": str(exc)}
                     raise ChainError(f"hop {hop.id} crashed: {exc}") from exc

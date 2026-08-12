@@ -246,10 +246,9 @@ def submit(payload: SubmitRequest):
     ledger = get_ledger()
     router = build_router()
     decision = router.classify(task)
-    if decision.workflow_id in ("respond", "fallback-respond"):
-        _record_route_event(get_learner(), None, decision, {"verdict": "UNVERIFIED"})
-        return {"decision": decision.to_dict(), "note": "direct answer; no run"}
-
+    # EVERY prompt is a workflow: no direct-answer escape hatch. A task that
+    # matches no specialist lane routes to `respond`, which still runs a job,
+    # produces RESPONSE.md, and is verified before anything returns.
     job = ledger.submit(workflow_id=decision.workflow_id, input={"task": task})
     job.attach_route_decision(decision)
     ledger.update(job)
@@ -296,12 +295,18 @@ def submit(payload: SubmitRequest):
     ex = WorkflowExecutor(ledger, gate, workdir=WORKDIR)
     result = ex.execute(wf, job, {"task": task})
     _record_route_event(get_learner(), job, decision, result["verdict"])
-    return {
+    body: dict[str, Any] = {
         "job_id": job.job_id,
         "status": job.status,
         "verdict": result["verdict"],
+        "attempts": result.get("attempts", 1),
         "decision": decision.to_dict(),
     }
+    if decision.workflow_id == "respond":
+        resp_path = WORKDIR / job.job_id / "RESPONSE.md"
+        if resp_path.exists():
+            body["response"] = resp_path.read_text(encoding="utf-8").strip()
+    return body
 
 
 def _record_route_event(learner, job, decision, verdict: dict) -> None:
