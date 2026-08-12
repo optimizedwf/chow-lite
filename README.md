@@ -48,6 +48,12 @@ chow stats
 Everything ships with a full artifact trail and a SHIP/FIX/BLOCK verdict per
 job — see `chow status <job_id>` and `chow artifacts <job_id>`.
 
+## Submission pack (All Things Agentic 2026)
+
+Devpost-ready description, judging-rubric mapping, demo-video script, and the
+3 human-only setup steps: see [SUBMISSION.md](SUBMISSION.md) and
+[docs/ADAM-RUNBOOK.md](docs/ADAM-RUNBOOK.md).
+
 ## Why this exists
 
 Most "agents" are chatbots in a trench coat: they talk, they don't do.
