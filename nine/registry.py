@@ -31,6 +31,7 @@ from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
 from nine.workflows.build_multi_wf import build_multi_hop
 from nine.workflows.debug_wf import debug_hop
+from nine.workflows.deploy_check_wf import deploy_check_hop
 from nine.workflows.document_wf import document_hop
 from nine.workflows.refactor_wf import refactor_hop
 from nine.workflows.review_multi_wf import review_multi_hop
@@ -71,6 +72,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "test": _wf(test_hop),
     "build-multi": _wf(build_multi_hop),
     "debug": _wf(debug_hop),
+    "deploy-check": _wf(deploy_check_hop),
     "document": _wf(document_hop),
     "refactor": _wf(refactor_hop),
     "teach": _wf(teach_hop),
@@ -87,6 +89,7 @@ _HOPS: dict[str, Callable] = {
     "test": test_hop,
     "build-multi": build_multi_hop,
     "debug": debug_hop,
+    "deploy-check": deploy_check_hop,
     "document": document_hop,
     "refactor": refactor_hop,
     "teach": teach_hop,
@@ -136,6 +139,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "debug": ["debug", "fix bug", "fix the bug", "bug", "diagnose", "root cause", "broken", "patch", "not working", "error", "crash", "failing"],
     "refactor": ["refactor", "restructure", "reorganize", "clean up the code", "improve the structure", "split the module", "extract functions", "rename internals"],
     "document": ["document", "documentation", "docs", "readme", "docgen", "api doc", "api reference", "write the readme", "explain the codebase", "how do i use", "how to use"],
+    "deploy-check": ["deploy", "deployment", "pre-deploy", "deploy check", "ready to ship", "production readiness", "ready for production", "release check", "go live", "launch check"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -151,6 +155,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "debug": "Root-cause a failure, write ROOT_CAUSE.md, patch, and verify.",
     "refactor": "Restructure code per REFACTOR_PLAN.md, show DIFF.md, apply, and verify behavior intact.",
     "document": "Docgen for a codebase: inventory -> README.md + API.md.",
+    "deploy-check": "Pre-deploy readiness: env scan + validate + risk review -> DEPLOY_CHECK.md Decision.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
