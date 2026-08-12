@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" font-family="'SF Mono', 'JetBrains Mono', Menlo, monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f1117"/><stop offset="100%" stop-color="#1a1d29"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#f5c542"/><stop offset="100%" stop-color="#ff9d2e"/>
+    </linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2dd4a7"/><stop offset="100%" stop-color="#34d399"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#3b82f6"/><stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#ef4444"/><stop offset="100%" stop-color="#f87171"/>
+    </linearGradient>
+    <filter id="glow"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+
+  <rect width="1200" height="760" fill="url(#bg)"/>
+
+  <!-- Title -->
+  <text x="60" y="56" font-size="30" font-weight="bold" fill="#f5f5f7">chow-lite</text>
+  <text x="60" y="84" font-size="15" fill="#8b8fa3">ROUTE → EXECUTE → VERIFY → LEARN — an evidence-gated agent OS on Google ADK 2.0</text>
+
+  <!-- Phase 1: ROUTE -->
+  <rect x="60" y="120" width="240" height="380" rx="14" fill="#11141d" stroke="#3b82f6" stroke-width="1.5" opacity="0.9"/>
+  <rect x="60" y="120" width="240" height="44" rx="14" fill="url(#blue)"/>
+  <text x="180" y="148" font-size="17" font-weight="bold" fill="#0b1020" text-anchor="middle">1 · ROUTE</text>
+
+  <rect x="84" y="184" width="192" height="52" rx="8" fill="#1b2233" stroke="#3b82f6" stroke-width="1"/>
+  <text x="180" y="205" font-size="12.5" fill="#e2e8f0" text-anchor="middle" font-weight="bold">Inbox / task</text>
+  <text x="180" y="224" font-size="11" fill="#94a3b8" text-anchor="middle">"research X" / "build Y"</text>
+
+  <line x1="180" y1="236" x2="180" y2="258" stroke="#3b82f6" stroke-width="1.5"/>
+  <polygon points="176,256 180,266 184,256" fill="#3b82f6"/>
+
+  <rect x="84" y="266" width="192" height="90" rx="8" fill="#1b2233" stroke="#60a5fa" stroke-width="1"/>
+  <text x="180" y="288" font-size="12.5" fill="#e2e8f0" text-anchor="middle" font-weight="bold">Intent Router</text>
+  <text x="180" y="306" font-size="11" fill="#94a3b8" text-anchor="middle">Gemini 3.5 Flash (ADK)</text>
+  <text x="180" y="322" font-size="11" fill="#94a3b8" text-anchor="middle">+ deterministic keyword</text>
+  <text x="180" y="338" font-size="11" fill="#94a3b8" text-anchor="middle">fallback (offline/CI)</text>
+
+  <line x1="180" y1="356" x2="180" y2="378" stroke="#3b82f6" stroke-width="1.5"/>
+  <polygon points="176,376 180,386 184,376" fill="#3b82f6"/>
+
+  <rect x="84" y="386" width="192" height="52" rx="8" fill="#1b2233" stroke="#60a5fa" stroke-width="1"/>
+  <text x="180" y="407" font-size="12.5" fill="#e2e8f0" text-anchor="middle" font-weight="bold">RouteDecision</text>
+  <text x="180" y="426" font-size="11" fill="#94a3b8" text-anchor="middle">JSON-schema contract</text>
+
+  <!-- arrow ROUTE -> EXECUTE -->
+  <line x1="300" y1="310" x2="360" y2="310" stroke="#f5c542" stroke-width="2"/>
+  <polygon points="356,306 368,310 356,314" fill="#f5c542"/>
+
+  <!-- Phase 2: EXECUTE -->
+  <rect x="370" y="120" width="330" height="380" rx="14" fill="#11141d" stroke="#f5c542" stroke-width="1.5" opacity="0.9"/>
+  <rect x="370" y="120" width="330" height="44" rx="14" fill="url(#gold)"/>
+  <text x="535" y="148" font-size="17" font-weight="bold" fill="#1a1408" text-anchor="middle">2 · EXECUTE</text>
+
+  <rect x="394" y="184" width="282" height="58" rx="8" fill="#1f1a10" stroke="#f5c542" stroke-width="1"/>
+  <text x="535" y="205" font-size="12.5" fill="#fdf6e3" text-anchor="middle" font-weight="bold">Workflow DAG (declarative)</text>
+  <text x="535" y="224" font-size="11" fill="#b8a877" text-anchor="middle">prompt · bash · tool · subagent nodes</text>
+
+  <line x1="535" y1="242" x2="535" y2="264" stroke="#f5c542" stroke-width="1.5"/>
+  <polygon points="531,262 535,272 539,262" fill="#f5c542"/>
+
+  <rect x="394" y="272" width="282" height="118" rx="8" fill="#1f1a10" stroke="#ffd97a" stroke-width="1"/>
+  <text x="535" y="294" font-size="12.5" fill="#fdf6e3" text-anchor="middle" font-weight="bold">Google ADK 2.0 agents</text>
+  <text x="535" y="312" font-size="11" fill="#b8a877" text-anchor="middle">LlmAgent · FunctionTool · sessions</text>
+  <text x="535" y="330" font-size="11" fill="#b8a877" text-anchor="middle">Gemini 3.5 Flash tools, memory,</text>
+  <text x="535" y="348" font-size="11" fill="#b8a877" text-anchor="middle">multi-agent sub-agent runs</text>
+  <text x="535" y="370" font-size="11" fill="#d4b355" text-anchor="middle">══ artifact-passing contract ══</text>
+
+  <line x1="535" y1="390" x2="535" y2="412" stroke="#f5c542" stroke-width="1.5"/>
+  <polygon points="531,410 535,420 539,410" fill="#f5c542"/>
+
+  <rect x="394" y="420" width="282" height="40" rx="8" fill="#1f1a10" stroke="#ffd97a" stroke-width="1"/>
+  <text x="535" y="444" font-size="12" fill="#fdf6e3" text-anchor="middle" font-weight="bold">Job Ledger (JSONL / Firestore)</text>
+
+  <!-- arrow EXECUTE -> VERIFY -->
+  <line x1="700" y1="310" x2="760" y2="310" stroke="#2dd4a7" stroke-width="2"/>
+  <polygon points="756,306 768,310 756,314" fill="#2dd4a7"/>
+
+  <!-- Phase 3: VERIFY -->
+  <rect x="770" y="120" width="220" height="380" rx="14" fill="#11141d" stroke="#2dd4a7" stroke-width="1.5" opacity="0.9"/>
+  <rect x="770" y="120" width="220" height="44" rx="14" fill="url(#green)"/>
+  <text x="880" y="148" font-size="17" font-weight="bold" fill="#04140e" text-anchor="middle">3 · VERIFY</text>
+
+  <rect x="794" y="184" width="172" height="110" rx="8" fill="#0f1f19" stroke="#2dd4a7" stroke-width="1"/>
+  <text x="880" y="206" font-size="12.5" fill="#d1fae5" text-anchor="middle" font-weight="bold">Evidence Gate</text>
+  <text x="880" y="226" font-size="11" fill="#7dd3b0" text-anchor="middle">EVAL.json checks</text>
+  <text x="880" y="244" font-size="11" fill="#7dd3b0" text-anchor="middle">required artifacts</text>
+  <text x="880" y="262" font-size="11" fill="#7dd3b0" text-anchor="middle">exit codes</text>
+  <text x="880" y="282" font-size="10" fill="#4ade80" text-anchor="middle">"exit code ≠ success"</text>
+
+  <line x1="880" y1="294" x2="880" y2="316" stroke="#2dd4a7" stroke-width="1.5"/>
+  <polygon points="876,314 880,324 884,314" fill="#2dd4a7"/>
+
+  <!-- verdicts -->
+  <rect x="794" y="324" width="52" height="34" rx="6" fill="#065f46" stroke="#34d399"/>
+  <text x="820" y="346" font-size="13" font-weight="bold" fill="#a7f3d0" text-anchor="middle">SHIP</text>
+  <rect x="854" y="324" width="52" height="34" rx="6" fill="#78350f" stroke="#fbbf24"/>
+  <text x="880" y="346" font-size="13" font-weight="bold" fill="#fde68a" text-anchor="middle">FIX</text>
+  <rect x="914" y="324" width="52" height="34" rx="6" fill="#7f1d1d" stroke="#ef4444"/>
+  <text x="940" y="346" font-size="13" font-weight="bold" fill="#fecaca" text-anchor="middle">BLOCK</text>
+
+  <text x="880" y="388" font-size="11" fill="#7dd3b0" text-anchor="middle">re-run (FIX, ≤2 loops)</text>
+  <text x="880" y="406" font-size="11" fill="#7dd3b0" text-anchor="middle">or block — never ship</text>
+  <text x="880" y="424" font-size="11" fill="#7dd3b0" text-anchor="middle">without evidence</text>
+
+  <!-- arrow VERIFY -> LEARN -->
+  <line x1="990" y1="310" x2="1040" y2="310" stroke="#f87171" stroke-width="2"/>
+  <polygon points="1036,306 1048,310 1036,314" fill="#f87171"/>
+
+  <!-- Phase 4: LEARN -->
+  <rect x="1050" y="120" width="90" height="380" rx="14" fill="#11141d" stroke="#ef4444" stroke-width="1.5" opacity="0.9"/>
+  <rect x="1050" y="120" width="90" height="44" rx="14" fill="url(#red)"/>
+  <text x="1095" y="148" font-size="17" font-weight="bold" fill="#1c0505" text-anchor="middle">4 · LEARN</text>
+  <text x="1095" y="220" font-size="11" fill="#fca5a5" text-anchor="middle" transform="rotate(-90 1095 260)">route events</text>
+  <text x="1095" y="300" font-size="11" fill="#fca5a5" text-anchor="middle" transform="rotate(-90 1095 260)">improvement</text>
+  <text x="1095" y="330" font-size="11" fill="#fca5a5" text-anchor="middle" transform="rotate(-90 1095 260)">candidates</text>
+  <text x="1095" y="420" font-size="10" fill="#f87171" text-anchor="middle">human</text>
+  <text x="1095" y="436" font-size="10" fill="#f87171" text-anchor="middle">approves</text>
+
+  <!-- Bottom strip: Cloud -->
+  <rect x="60" y="540" width="1080" height="150" rx="14" fill="#10131b" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="80" y="572" font-size="15" font-weight="bold" fill="#ddd6fe">Google Cloud — the always-on spine</text>
+
+  <rect x="80" y="596" width="240" height="70" rx="8" fill="#1c1830" stroke="#8b5cf6" stroke-width="1"/>
+  <text x="200" y="620" font-size="12.5" fill="#ede9fe" text-anchor="middle" font-weight="bold">Cloud Run</text>
+  <text x="200" y="640" font-size="11" fill="#a78bfa" text-anchor="middle">scale-to-zero · serverless API</text>
+  <text x="200" y="656" font-size="11" fill="#a78bfa" text-anchor="middle">pay only when a job runs</text>
+
+  <rect x="340" y="596" width="240" height="70" rx="8" fill="#1c1830" stroke="#8b5cf6" stroke-width="1"/>
+  <text x="460" y="620" font-size="12.5" fill="#ede9fe" text-anchor="middle" font-weight="bold">Firestore</text>
+  <text x="460" y="640" font-size="11" fill="#a78bfa" text-anchor="middle">durable job ledger</text>
+  <text x="460" y="656" font-size="11" fill="#a78bfa" text-anchor="middle">crash recovery · state</text>
+
+  <rect x="600" y="596" width="240" height="70" rx="8" fill="#1c1830" stroke="#8b5cf6" stroke-width="1"/>
+  <text x="720" y="620" font-size="12.5" fill="#ede9fe" text-anchor="middle" font-weight="bold">Gemini 3.5 Flash</text>
+  <text x="720" y="640" font-size="11" fill="#a78bfa" text-anchor="middle">model brain (via ADK)</text>
+  <text x="720" y="656" font-size="11" fill="#a78bfa" text-anchor="middle">router + agent nodes</text>
+
+  <rect x="860" y="596" width="260" height="70" rx="8" fill="#1c1830" stroke="#8b5cf6" stroke-width="1"/>
+  <text x="990" y="620" font-size="12.5" fill="#ede9fe" text-anchor="middle" font-weight="bold">ADK 2.0 + A2A</text>
+  <text x="990" y="640" font-size="11" fill="#a78bfa" text-anchor="middle">agents, sessions, evaluation,</text>
+  <text x="990" y="656" font-size="11" fill="#a78bfa" text-anchor="middle">observability, multi-agent A2A</text>
+
+  <!-- footer -->
+  <text x="60" y="730" font-size="12" fill="#6b7280">An exit code is not success. Nothing ships without evidence.</text>
+  <text x="1000" y="730" font-size="12" fill="#6b7280">MIT · github.com/optimizedwf/chow-lite</text>
+</svg>

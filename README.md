@@ -18,6 +18,22 @@ self-hostable, scale-to-zero.
 
 ---
 
+## Architecture
+
+![chow-lite architecture](docs/architecture.png)
+
+**One loop, four phases, zero blind trust:**
+
+| Phase | What happens | Backing tech |
+|---|---|---|
+| **ROUTE** | every task is classified to a workflow (intent router) | Gemini 3.5 Flash via ADK + deterministic keyword fallback |
+| **EXECUTE** | declarative workflow DAGs run typed nodes (`prompt`/`bash`/`tool`/`subagent`) | Google ADK 2.0 agents, artifact-passing contract |
+| **VERIFY** | evidence gate checks EVAL.json, required artifacts, exit codes | verdict: **SHIP / FIX / BLOCK** |
+| **LEARN** | route events -> improvement candidates (human-approved only) | append-only event store, never auto-applies |
+
+Multi-hop **chains** hand off artifacts between departments with a gate at
+every handoff — nothing ships without evidence, at any stage.
+
 ## Why this exists
 
 Most "agents" are chatbots in a trench coat: they talk, they don't do.
@@ -102,10 +118,12 @@ chowlite/
   runtime/adk_runtime.py  Google ADK 2.0 integration layer
   cli.py                  operator CLI (submit/status/discover/...)
 schemas/                  JSON Schemas: route-decision, agent-job, verdict, artifact
-chains/                   5-hop chain: research → plan → build → review → teach
+learn/                    route-event store + improvement candidates
+chains/                   chain engine + flagship 5-hop chain + demo lane
 workflows/                example workflow DAGs
-deploy/                   Cloud Run + Firestore config
-tests/                    17 tests (router, ledger, gates, executor)
+deploy/                   Cloud Run + Firestore config (FastAPI operator API)
+docs/                     architecture diagram (SVG + PNG)
+tests/                    25 tests (router, ledger, gates, executor, chains, learn, ADK)
 ```
 
 ## Roadmap
