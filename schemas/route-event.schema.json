@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/optimizedwf/chow-lite/schemas/route-event.schema.json",
+  "title": "RouteEvent",
+  "description": "One recorded route decision + evidence verdict, used by the LEARN loop.",
+  "type": "object",
+  "required": ["event_id", "job_id", "workflow_id", "verdict", "recorded_at"],
+  "properties": {
+    "event_id": {"type": "string"},
+    "job_id": {"type": "string"},
+    "task_redacted": {"type": "string"},
+    "workflow_id": {"type": "string"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "router_version": {"type": "string"},
+    "verdict": {"enum": ["SHIP", "FIX", "BLOCK", "UNVERIFIED"]},
+    "checks_passed": {"type": "integer"},
+    "checks_total": {"type": "integer"},
+    "recorded_at": {"type": "string", "format": "date-time"},
+    "fix_directive": {"type": "string"}
+  }
+}

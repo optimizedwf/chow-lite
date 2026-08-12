@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from chowlite.gates.evidence import EvidenceGate
+from chowlite.learn.learner import RouteEvent
 from chowlite.ledger.ledger import JSONLLedger, Job
 from chowlite.runtime.workflows import Workflow, WorkflowExecutor, WorkflowError
 
@@ -63,11 +64,13 @@ class ChainExecutor:
         self,
         ledger: JSONLLedger,
         workdir: str | Path = "work",
+        learner=None,
     ) -> None:
         self.ledger = ledger
         self.workdir = Path(workdir)
         self.workdir.mkdir(parents=True, exist_ok=True)
         self.results: dict[str, Any] = {}
+        self.learner = learner  # optional LEARN-loop observer
 
     def _gate_for(self, hop: Hop) -> EvidenceGate:
         gate = EvidenceGate()
@@ -108,6 +111,25 @@ class ChainExecutor:
                     "job_id": hop_job.job_id,
                     "eval": res["verdict"]["eval_results"],
                 }
+                # LEARN: record the route event for the learning loop
+                if self.learner is not None:
+                    self.learner.observe(
+                        RouteEvent(
+                            event_id=f"ev-{hop_job.job_id[:8]}",
+                            job_id=hop_job.job_id,
+                            task_redacted=str(inputs.get("task", ""))[:200],
+                            workflow_id=wf_id,
+                            confidence=0.5,
+                            router_version="chain-v1",
+                            verdict=verdict,
+                            checks_passed=sum(
+                                1 for r in res["verdict"]["eval_results"].values()
+                                if r.get("passed")
+                            ),
+                            checks_total=len(res["verdict"]["eval_results"]),
+                            fix_directive=inputs.get("fix_directive", ""),
+                        )
+                    )
                 if verdict == "SHIP":
                     break
                 # FIX: missing required artifacts / failed checks -> re-run
