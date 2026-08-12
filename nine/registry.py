@@ -39,12 +39,14 @@ from nine.workflows.draft_email_wf import draft_email_hop
 from nine.workflows.draft_wf import draft_hop
 from nine.workflows.extract_wf import extract_hop
 from nine.workflows.ideate_wf import ideate_hop
+from nine.workflows.pipeline_wf import pipeline_hop
 from nine.workflows.refactor_wf import refactor_hop
 from nine.workflows.research_deep_wf import research_deep_hop
 from nine.workflows.research_quick_wf import research_quick_hop
 from nine.workflows.review_multi_wf import review_multi_hop
 from nine.workflows.summarize_standalone_wf import summarize_standalone_hop
 from nine.workflows.test_wf import test_hop
+from nine.workflows.transform_wf import transform_hop
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
 
@@ -80,6 +82,8 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "review-multi": _wf(review_multi_hop),
     "test": _wf(test_hop),
     "build-multi": _wf(build_multi_hop),
+    "transform": _wf(transform_hop),
+    "pipeline": _wf(pipeline_hop),
     "analyze": _wf(analyze_hop),
     "compare": _wf(compare_hop),
     "debug": _wf(debug_hop),
@@ -168,6 +172,8 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "draft-email": ["draft an email", "write an email", "email reply", "compose an email", "outreach email", "follow up email", "email to", "reply to this email", "draft a response", "cold email"],
     "ideate": ["ideate", "brainstorm", "come up with ideas", "idea for", "give me ideas", "what should i build", "generate ideas", "think of an idea", "new product idea", "spark ideas"],
     "analyze": ["analyze", "analyze the data", "analyze this dataset", "explore the data", "data analysis", "what does the data show", "insights from", "analyze the csv", "explore the dataset", "look at the data"],
+    "transform": ["transform", "transform this", "transform the data", "convert", "convert this", "convert this csv to json", "convert this json to csv", "convert this file to json", "convert this file to csv", "convert this file to yaml", "convert the csv", "convert the json", "convert file", "csv to json", "json to csv", "reformat", "reformat this", "change the format", "format conversion", "convert to yaml", "convert to tsv"],
+    "pipeline": ["pipeline", "etl", "etl pipeline", "build a pipeline", "data pipeline", "run the pipeline", "process the data in stages", "transform and load", "multi-stage etl", "ingest and transform"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -193,6 +199,8 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "draft-email": "Tone-aware email: draft -> reviewtone -> revise -> DRAFT.md.",
     "ideate": "Idea -> expand -> challenge -> refine: IDEA_BRIEF.md + VIABILITY.json.",
     "analyze": "Dataset -> explore -> insights: INSIGHTS.md + chart.png.",
+    "transform": "Format conversion (CSV -> JSON etc.): detect -> transform -> validate: OUTPUT.EXT + EVAL.json.",
+    "pipeline": "Multi-stage ETL (read -> transform -> load -> validate): OUTPUT.json + EVAL.json.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
