@@ -34,6 +34,7 @@ from nine.workflows.debug_wf import debug_hop
 from nine.workflows.deploy_check_wf import deploy_check_hop
 from nine.workflows.document_wf import document_hop
 from nine.workflows.refactor_wf import refactor_hop
+from nine.workflows.research_quick_wf import research_quick_hop
 from nine.workflows.review_multi_wf import review_multi_hop
 from nine.workflows.test_wf import test_hop
 
@@ -74,6 +75,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "debug": _wf(debug_hop),
     "deploy-check": _wf(deploy_check_hop),
     "document": _wf(document_hop),
+    "research-quick": _wf(research_quick_hop),
     "refactor": _wf(refactor_hop),
     "teach": _wf(teach_hop),
     "respond": respond_workflow,
@@ -91,6 +93,7 @@ _HOPS: dict[str, Callable] = {
     "debug": debug_hop,
     "deploy-check": deploy_check_hop,
     "document": document_hop,
+    "research-quick": research_quick_hop,
     "refactor": refactor_hop,
     "teach": teach_hop,
 }
@@ -140,6 +143,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "refactor": ["refactor", "restructure", "reorganize", "clean up the code", "improve the structure", "split the module", "extract functions", "rename internals"],
     "document": ["document", "documentation", "docs", "readme", "docgen", "api doc", "api reference", "write the readme", "explain the codebase", "how do i use", "how to use"],
     "deploy-check": ["deploy", "deployment", "pre-deploy", "deploy check", "ready to ship", "production readiness", "ready for production", "release check", "go live", "launch check"],
+    "research-quick": ["research", "quick research", "look into", "find out", "investigate briefly", "what does this code do", "research this", "5 minute research", "quick lookup"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -156,6 +160,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "refactor": "Restructure code per REFACTOR_PLAN.md, show DIFF.md, apply, and verify behavior intact.",
     "document": "Docgen for a codebase: inventory -> README.md + API.md.",
     "deploy-check": "Pre-deploy readiness: env scan + validate + risk review -> DEPLOY_CHECK.md Decision.",
+    "research-quick": "Single-source quick research: plan -> findings -> receipt -> FINDINGS.md.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
