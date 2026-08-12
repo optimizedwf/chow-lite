@@ -34,8 +34,10 @@ from nine.workflows.debug_wf import debug_hop
 from nine.workflows.deploy_check_wf import deploy_check_hop
 from nine.workflows.document_wf import document_hop
 from nine.workflows.refactor_wf import refactor_hop
+from nine.workflows.research_deep_wf import research_deep_hop
 from nine.workflows.research_quick_wf import research_quick_hop
 from nine.workflows.review_multi_wf import review_multi_hop
+from nine.workflows.summarize_standalone_wf import summarize_standalone_hop
 from nine.workflows.test_wf import test_hop
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
@@ -76,6 +78,8 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "deploy-check": _wf(deploy_check_hop),
     "document": _wf(document_hop),
     "research-quick": _wf(research_quick_hop),
+    "research-deep": _wf(research_deep_hop),
+    "summarize-standalone": _wf(summarize_standalone_hop),
     "refactor": _wf(refactor_hop),
     "teach": _wf(teach_hop),
     "respond": respond_workflow,
@@ -145,6 +149,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "deploy-check": ["deploy", "deployment", "pre-deploy", "deploy check", "ready to ship", "production readiness", "ready for production", "release check", "go live", "launch check"],
     "research-quick": ["research", "quick research", "look into", "find out", "investigate briefly", "what does this code do", "research this", "5 minute research", "quick lookup"],
     "research-deep": ["deep research", "thorough research", "comprehensive research", "deep dive", "research in depth", "iterative research", "critique my research", "in-depth analysis"],
+    "summarize-standalone": ["summarize", "summary", "summarize this", "tl;dr", "give me a summary", "summarize the code", "condense", "brief me", "short version", "executive summary"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -163,6 +168,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "deploy-check": "Pre-deploy readiness: env scan + validate + risk review -> DEPLOY_CHECK.md Decision.",
     "research-quick": "Single-source quick research: plan -> findings -> receipt -> FINDINGS.md.",
     "research-deep": "Iterative deep research: draft -> critique -> iterate -> synthesize -> FINDINGS.md.",
+    "summarize-standalone": "One-source distillation: read-source -> summarizer -> SUMMARY.md.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }

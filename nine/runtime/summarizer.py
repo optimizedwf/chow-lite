@@ -72,12 +72,15 @@ def build_summarize_node(
     target: str = "HANDOFF.md",
     max_words: int = 120,
     depends_on: list[str] | None = None,
+    header: str = "# Handoff summary (distilled)",
 ) -> Node:
     """A `summarize` node: distill ``source`` artifact -> ``target`` file.
 
     The target file is written into the job dir, so it auto-registers as an
     artifact in the evidence manifest (and, on chain SHIP, is what the
-    MemoryGraph records as the hop's semantic summary).
+    MemoryGraph records as the hop's semantic summary). ``header`` sets the
+    markdown title written above the distilled text (standalone lanes use
+    e.g. "# Summary").
     """
     depends = depends_on or [Path(source).stem]
 
@@ -93,7 +96,7 @@ def build_summarize_node(
         summary, model_used = summarize_text(
             raw, max_words=max_words, task=str(inputs.get("task", ""))
         )
-        body = "# Handoff summary (distilled)\n\n" + summary + "\n"
+        body = f"{header}\n\n" + summary + "\n"
         (job_dir / target).write_text(body, encoding="utf-8")
         return {
             "summary": summary,
