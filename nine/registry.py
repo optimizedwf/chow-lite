@@ -33,6 +33,7 @@ from nine.workflows.build_multi_wf import build_multi_hop
 from nine.workflows.debug_wf import debug_hop
 from nine.workflows.deploy_check_wf import deploy_check_hop
 from nine.workflows.document_wf import document_hop
+from nine.workflows.extract_wf import extract_hop
 from nine.workflows.refactor_wf import refactor_hop
 from nine.workflows.research_deep_wf import research_deep_hop
 from nine.workflows.research_quick_wf import research_quick_hop
@@ -77,6 +78,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "debug": _wf(debug_hop),
     "deploy-check": _wf(deploy_check_hop),
     "document": _wf(document_hop),
+    "extract": _wf(extract_hop),
     "research-quick": _wf(research_quick_hop),
     "research-deep": _wf(research_deep_hop),
     "summarize-standalone": _wf(summarize_standalone_hop),
@@ -150,6 +152,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "research-quick": ["research", "quick research", "look into", "find out", "investigate briefly", "what does this code do", "research this", "5 minute research", "quick lookup"],
     "research-deep": ["deep research", "thorough research", "comprehensive research", "deep dive", "research in depth", "iterative research", "critique my research", "in-depth analysis"],
     "summarize-standalone": ["summarize", "summary", "summarize this", "tl;dr", "give me a summary", "summarize the code", "condense", "brief me", "short version", "executive summary"],
+    "extract": ["extract", "extract data", "parse this", "convert to json", "convert this to json", "to json", "into json", "structured json", "extract the facts", "pull out the", "json output", "extract to json"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -169,6 +172,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "research-quick": "Single-source quick research: plan -> findings -> receipt -> FINDINGS.md.",
     "research-deep": "Iterative deep research: draft -> critique -> iterate -> synthesize -> FINDINGS.md.",
     "summarize-standalone": "One-source distillation: read-source -> summarizer -> SUMMARY.md.",
+    "extract": "Unstructured -> structured JSON: read-source -> extractor -> OUTPUT.json.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
