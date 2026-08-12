@@ -2,8 +2,10 @@
 """nine LIVE demo — model-routed, evidence-gated, learning.
 
 Same loop as demo.py but the ROUTE step is a real Gemini 3.5 Flash call
-and the teach hop uses Gemma 4 (second Google model). Falls back to
-deterministic routing when no GEMINI_API_KEY is set.
+and the teach hop uses Gemma 4 (second Google model). Routing may use the
+KeywordRouter substrate without a key (routing is not answer generation),
+but every hop that PRODUCES output requires its model — nine fails loud
+rather than fabricate.
 
 Run:  python demo_live.py "your task here"
 """

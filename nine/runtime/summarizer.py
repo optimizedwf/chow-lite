@@ -5,13 +5,14 @@ it gets the minimum viable context to cook one specific dish." The research
 hop's raw findings are distilled here into a bounded HANDOFF.md that the
 plan hop reads instead of the full document.
 
-Degrades to a deterministic extractive summary with no GEMINI_API_KEY, so
-the core loop and CI stay hermetic (same doctrine as gemma.py / adk_runtime).
+Model-or-fail: nine is model-driven. Distillation requires Gemini; with no
+GEMINI_API_KEY (or an API failure) summarize_text raises WorkflowError and
+the job fails loud. There is NO extractive/offline fallback — a mechanical
+head-copy would be fabricated output.
 """
 from __future__ import annotations
 
 import os
-import re
 from pathlib import Path
 from typing import Any
 
@@ -21,30 +22,28 @@ DEFAULT_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 MAX_SOURCE_CHARS = 12_000  # cap the LLM input; full doc stays on disk
 
 
-def _extractive(text: str, max_words: int) -> str:
-    """Deterministic fallback: bounded head summary (offline/CI path)."""
-    words = re.split(r"\s+", text.strip())
-    if not words:
-        return ""
-    if len(words) <= max_words:
-        return text.strip()
-    head = " ".join(words[:max_words])
-    return head + " \u2026 [extractive summary \u2014 set GEMINI_API_KEY for semantic distillation]"
+def _gemini_generate(prompt: str, api_key: str | None, timeout: int = 90) -> str:
+    """Semantic distillation via Gemini (google-genai).
 
-
-def _gemini_generate(prompt: str, api_key: str | None, timeout: int = 90) -> str | None:
-    """Semantic distillation via Gemini (google-genai). None on any failure."""
+    Model-or-fail: missing key or API failure raises WorkflowError — the
+    summarizer never falls back to fabricated output.
+    """
     key = api_key or os.environ.get("GEMINI_API_KEY")
     if not key:
-        return None
-    try:
-        from google import genai
+        raise WorkflowError(
+            "summarize requires GEMINI_API_KEY — no offline fallback "
+            "(nine is model-driven)"
+        )
+    from google import genai
 
-        client = genai.Client(api_key=key)
-        resp = client.models.generate_content(model=DEFAULT_MODEL, contents=prompt)
-        return resp.text if resp.text else None
-    except Exception:  # noqa: BLE001 - degrade to extractive on any API failure
-        return None
+    client = genai.Client(api_key=key)
+    resp = client.models.generate_content(model=DEFAULT_MODEL, contents=prompt)
+    if not (resp.text and resp.text.strip()):
+        raise WorkflowError(
+            "summarize: model returned no usable text — job failed loud "
+            "(no offline fallback)"
+        )
+    return resp.text.strip()
 
 
 def summarize_text(
@@ -65,9 +64,7 @@ def summarize_text(
         f"\nTask: {task[:500]}\n\nResearch notes:\n{text[:MAX_SOURCE_CHARS]}"
     )
     model_text = _gemini_generate(prompt, api_key=api_key)
-    if model_text and model_text.strip():
-        return model_text.strip(), DEFAULT_MODEL
-    return _extractive(text, max_words), "deterministic-extractive"
+    return model_text, DEFAULT_MODEL
 
 
 def build_summarize_node(

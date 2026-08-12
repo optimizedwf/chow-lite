@@ -15,7 +15,6 @@ Design note: this is a *declarative* engine — workflows are data, not code.
 from __future__ import annotations
 
 import hashlib
-import json
 import random
 import subprocess as sp
 import time
@@ -150,6 +149,10 @@ class WorkflowExecutor:
                     time.sleep(self._backoff(node, attempts))
                     continue
                 return result, attempts
+            except WorkflowError:
+                # Deterministic failure (no key, bad input, missing callable) —
+                # retrying cannot fix it. Fail loud immediately.
+                raise
             except Exception as exc:  # noqa: BLE001 — transient failures retried
                 if attempts > node.max_retries:
                     raise WorkflowError(f"node {node.id} failed after {attempts} attempts: {exc}") from exc
@@ -330,18 +333,3 @@ class WorkflowExecutor:
         }
 
 
-def write_demo_artifacts(workflow_id: str, task: str, job_dir: Path) -> dict[str, Any]:
-    """Deterministic demo-node body: writes task.txt, FINAL_REPORT.md, EVAL.json
-    from Python. NO user bytes ever reach a shell (RCE-hardened)."""
-    job_dir.mkdir(parents=True, exist_ok=True)
-    (job_dir / "task.txt").write_text(task[:200] + "\n", encoding="utf-8")
-    (job_dir / "FINAL_REPORT.md").write_text(
-        f"Artifact: {workflow_id}\n", encoding="utf-8")
-    eval_json = {
-        "checks": [{"name": "report-exists", "passed": True,
-                    "message": "FINAL_REPORT.md written"}],
-        "summary": "demo artifacts produced from Python (no shell)",
-    }
-    (job_dir / "EVAL.json").write_text(
-        json.dumps(eval_json, indent=2), encoding="utf-8")
-    return {"stdout": "task.txt + FINAL_REPORT.md + EVAL.json written from Python"}

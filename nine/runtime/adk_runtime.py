@@ -16,7 +16,9 @@ Verified against google-adk 2.6.3 (2026-08-12):
     deploy/cloud-run        -> deploy/cloud-run.yaml
 
 ADK is imported lazily so the core (router/ledger/gates) works without ADK
-installed — useful for CI and offline tests.
+installed (dependency adapter — ADKAgentNode still raises on agent failure;
+it never fabricates a SHIP). No model-output fallbacks exist anywhere in
+nine: a missing dependency or key fails loud.
 """
 from __future__ import annotations
 

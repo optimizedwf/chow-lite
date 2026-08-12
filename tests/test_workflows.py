@@ -1,7 +1,8 @@
 """Workflow engine tests — retries/backoff, in-engine FIX loop, timing,
 artifact dedupe/refresh, and the universal respond workflow.
 
-Hermetic: no GEMINI_API_KEY anywhere (deterministic fallbacks).
+Hermetic: no GEMINI_API_KEY anywhere. Model-or-fail doctrine — tests
+inject fake models via monkeypatch; without one, jobs fail loud.
 """
 import os
 import sys
@@ -176,14 +177,15 @@ def test_node_timing_meta_recorded(tmp_path):
 
 # -------------------------------------------------------- universal respond
 
-def test_respond_workflow_ships_offline(tmp_path):
+def test_respond_workflow_fails_loud_without_model(tmp_path):
+    """No offline fallback: without a model the respond job must fail loud
+    (WorkflowError), never produce a canned answer."""
     wf = respond_workflow()
     job = JSONLLedger(tmp_path / "ledger.jsonl").submit("respond", {"task": "hello there"})
-    res = _run(wf, respond_gate(), job, tmp_path)
-    assert res["verdict"]["verdict"] == "SHIP"
-    resp = (tmp_path / "work" / job.job_id / "RESPONSE.md").read_text()
-    assert len(resp.strip()) >= 10
-    assert "Task noted" in resp  # deterministic fallback
+    with pytest.raises(WorkflowError):
+        _run(wf, respond_gate(), job, tmp_path)
+    assert job.status == "failed"
+    assert not (tmp_path / "work" / job.job_id / "RESPONSE.md").exists()
 
 
 def test_respond_workflow_uses_model_answer(tmp_path, monkeypatch):

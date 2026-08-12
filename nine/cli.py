@@ -33,7 +33,7 @@ from nine.gates.evidence import (
 )
 from nine.ledger.ledger import JSONLLedger, LedgerError
 from nine.router.classifier import Router
-from nine.runtime.workflows import Node, Workflow, WorkflowExecutor, write_demo_artifacts
+from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
 DEFAULT_LEDGER = "jobs/ledger.jsonl"
 
@@ -122,7 +122,16 @@ def cmd_chain(args) -> int:
     if chain.id == "inbox-triage-task-report":
         (job_dir / "inbox.txt").write_text(args.task + "\n")
 
-    res = ex.execute(chain, job, {"task": args.task})
+    from nine.chains.chain import ChainError
+
+    try:
+        res = ex.execute(chain, job, {"task": args.task})
+    except ChainError as exc:
+        # Model-or-fail: a hop that cannot run its model fails loud with a
+        # clean error (job already marked failed) — never fabricated output.
+        print(f"[error] chain {chain.id} job {job.job_id} failed loud: {exc}",
+              file=sys.stderr)
+        return 1
     print(f"chain={chain.id} job={job.job_id} final={res['final']}")
     for hop, info in res["hop_results"].items():
         print(f"  {hop}: {info['verdict']}")
@@ -158,8 +167,9 @@ def cmd_submit(args) -> int:
     learner = _learner(args)
 
     # dispatch through the shared registry: real workflows/chains per
-    # workflow_id (research != review != build); Python collect node is the
-    # RCE-hardened fallback for unregistered ids.
+    # workflow_id (research != review != build). Every id the router can
+    # select has a real, model-gated workflow — there is NO collect node and
+    # NO fabricated-output fallback for unregistered ids (fail loud instead).
     from nine.registry import CHAINS, WORKFLOWS
 
     if decision.workflow_id in CHAINS:
@@ -178,17 +188,23 @@ def cmd_submit(args) -> int:
     if decision.workflow_id in WORKFLOWS:
         wf = WORKFLOWS[decision.workflow_id]()
     else:
-        wf = Workflow(id=decision.workflow_id)
-        wf.add_node(Node(id="collect", kind="tool",
-                         run=lambda inputs, jd: write_demo_artifacts(
-                             decision.workflow_id, args.task, Path(jd)),
-                         description="collect task + write report artifact + EVAL.json (Python)"))
+        raise WorkflowError(
+            f"unregistered workflow id '{decision.workflow_id}' — no collect "
+            "fallback; nine is model-driven (router must only emit "
+            "registered ids)"
+        )
 
     from nine.registry import workflow_gate
 
     gate = workflow_gate(decision.workflow_id) or build_default_gate()
     executor = WorkflowExecutor(ledger, gate, workdir=args.workdir)
-    result = executor.execute(wf, job, {"task": args.task})
+    try:
+        result = executor.execute(wf, job, {"task": args.task})
+    except WorkflowError as exc:
+        # Model-or-fail: no offline fallback. Fail loud with a clean error
+        # (job already marked failed in the ledger), never a canned answer.
+        print(f"[error] job {job.job_id} failed loud: {exc}", file=sys.stderr)
+        return 1
 
     # LEARN: one route event per completed workflow run
     _record_route_event(learner, job, decision, result["verdict"])

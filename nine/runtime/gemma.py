@@ -2,9 +2,13 @@
 
 nine's primary model is Gemini 3.5 Flash (mandatory). Gemma 4 gives the
 teach hop a second Google model, unlocking the Stage-3 judging bonus
-("+0.2 per additional Google AI model"). The call is a plain REST request so
-it needs no extra dependencies, and it degrades to deterministic output when
-no API key is set (the core loop must run offline / in CI).
+("+0.2 per additional Google AI model"). The call is a plain REST request
+so it needs no extra dependencies.
+
+Model-or-fail contract: gemma_generate returns None when no key / HTTP
+error / no candidates / exception. It never fabricates output — CALLERS
+must fail loud on None (see flagship._teach_gemma_node). There is no
+offline/deterministic lesson fallback.
 """
 from __future__ import annotations
 

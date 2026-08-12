@@ -36,12 +36,11 @@ def test_no_shell_injection_via_task(monkeypatch, tmp_path):
     client = _fresh_client(monkeypatch, tmp_path)
     evil = "build'; touch /tmp/nine_pwned; echo '"
     r = client.post("/v1/submit", json={"task": evil})
-    assert r.status_code == 200, r.text
+    # routes to build -> without a model the job fails loud (502); the raw
+    # task bytes still never reach a shell, and nothing is executed.
+    assert r.status_code == 502, r.text
+    assert "GEMINI_API_KEY" in r.json()["detail"]
     assert not Path("/tmp/nine_pwned").exists()
-    # the artifact should contain the RAW task (written by Python, byte-safe)
-    jid = r.json()["job_id"]
-    job = client.get(f"/v1/jobs/{jid}").json()
-    assert "input" in job
 
 
 def test_apikey_enforced_when_configured(monkeypatch, tmp_path):

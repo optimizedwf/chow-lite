@@ -81,19 +81,22 @@ def _build_adk_node() -> Node:
     puts ADK on the flagship user-facing path — the "mandatory agent
     framework" requirement is exercised by every real run, not just tests.
 
-    Offline/CI: with no GEMINI_API_KEY the node degrades to a deterministic
-    writer so the core loop and tests stay hermetic.
+    Model-or-fail: with no GEMINI_API_KEY the node raises WorkflowError and
+    the job fails loud. NEVER a canned solution.py — fabricated code would
+    be a lie in an evidence-gated system.
     """
-    from nine.runtime.adk_runtime import ADKAgentNode
+    from nine.runtime.workflows import WorkflowError
 
     def _run(inputs: dict, job_dir) -> dict:
+        from nine.runtime.adk_runtime import ADKAgentNode
+
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:200]
         if not os.environ.get("GEMINI_API_KEY"):
-            (job_dir / "solution.py").write_text(
-                "def answer():\n    # offline fallback (no GEMINI_API_KEY)\n"
-                "    return 42\n", encoding="utf-8")
-            return {"output": "offline fallback: wrote solution.py"}
+            raise WorkflowError(
+                "build requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
+                "fallback, nine is model-driven"
+            )
 
         from google.adk.agents import LlmAgent
         from google.adk.models import Gemini
@@ -124,8 +127,9 @@ def _build_adk_node() -> Node:
         node = ADKAgentNode(agent)
         return node(inputs, job_dir)
 
-    return Node(id="build", kind="tool", run=_run,
-                description="ADK LlmAgent writes real code (offline fallback)")
+    return Node(id="build", kind="tool", run=_run, max_retries=2,
+                retry_delay_seconds=1.0,
+                description="ADK LlmAgent writes real code (fails loud without a model)")
 
 
 def build_hop() -> Hop:
@@ -185,9 +189,14 @@ def review_hop() -> Hop:
 
 
 def _teach_gemma_node() -> Node:
-    """Teach hop backed by Gemma 4 (2nd Google model) when a key is present;
-    deterministic fallback keeps the core loop offline-friendly."""
+    """Teach hop backed by Gemma 4 (2nd Google model).
+
+    Model-or-fail: when gemma_generate returns None (no key, HTTP error,
+    no candidates) the node raises WorkflowError — the job fails loud.
+    NEVER a canned lesson: fabricated "lessons" would poison the LEARN loop.
+    """
     from nine.runtime.gemma import gemma_generate
+    from nine.runtime.workflows import WorkflowError
 
     def _run(inputs: dict, job_dir):
         task = inputs.get("task", "the completed task")
@@ -200,21 +209,20 @@ def _teach_gemma_node() -> Node:
             "candidate-only (human reviews before adoption)."
         )
         text = gemma_generate(prompt)
-        if text:
-            (job_dir / "TEACH.md").write_text(
-                "# Teach\n\n" + text + "\n\n"
-                "Status: candidate (reviewed by human before adoption)\n"
+        if not text:
+            raise WorkflowError(
+                "teach requires Gemma (gemma_generate returned None) — no "
+                "offline fallback, nine is model-driven"
             )
-        else:
-            (job_dir / "TEACH.md").write_text(
-                "# Teach\n"
-                "Lesson candidate: gate every hop on evidence before handoff.\n"
-                "Status: candidate (reviewed by human before adoption)\n"
-            )
+        (job_dir / "TEACH.md").write_text(
+            "# Teach\n\n" + text + "\n\n"
+            "Status: candidate (reviewed by human before adoption)\n"
+        )
         return {"output": "teach hop done"}
 
-    return Node(id="teach", kind="prompt", run=_run,
-                description="Gemma-4 lesson writer (deterministic fallback)")
+    return Node(id="teach", kind="prompt", run=_run, max_retries=2,
+                retry_delay_seconds=1.0,
+                description="Gemma-4 lesson writer (fails loud without a model)")
 
 
 def teach_hop() -> Hop:

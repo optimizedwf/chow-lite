@@ -1,6 +1,7 @@
 """Semantic memory layer tests — summarize node, MemoryGraph backends, DataHub stub.
 
-Hermetic: no GEMINI_API_KEY anywhere (deterministic extractive fallback).
+Hermetic: no GEMINI_API_KEY anywhere. Model-or-fail doctrine — model-backed
+hops are tested with monkeypatched fake models; without one they fail loud.
 """
 import os
 import sys
@@ -23,19 +24,66 @@ from nine.memory.graph import (
     get_memory_graph,
 )
 from nine.runtime.summarizer import build_summarize_node, summarize_text
-from nine.runtime.workflows import Workflow, WorkflowExecutor
+from nine.runtime.workflows import Workflow, WorkflowError, WorkflowExecutor
+
+
+def _install_fake_models(monkeypatch) -> None:
+    """Model-or-fail: hermetic tests inject fake models instead of relying
+    on removed offline fallbacks. Patches the module-global lookup points:
+      * summarizer.summarize_text          (research hop HANDOFF.md)
+      * flagship._build_adk_node           (build hop solution.py)
+      * gemma.gemma_generate               (teach hop TEACH.md)
+    """
+    from nine.chains import flagship
+    from nine.runtime import summarizer
+    from nine.runtime.workflows import Node
+
+    monkeypatch.setattr(
+        summarizer, "summarize_text",
+        lambda text, max_words=120, task="", api_key=None:
+        ("distilled findings about fooquark", "fake-gemini"),
+    )
+
+    def fake_build_run(inputs, job_dir):
+        (Path(job_dir) / "solution.py").write_text(
+            "def answer():\n    return 42\n", encoding="utf-8")
+        return {"output": "wrote solution.py"}
+
+    monkeypatch.setattr(
+        flagship, "_build_adk_node",
+        lambda: Node(id="build", kind="tool", run=fake_build_run,
+                     description="fake ADK node (hermetic test)"),
+    )
+    monkeypatch.setattr(
+        "nine.runtime.gemma.gemma_generate",
+        lambda prompt, model=None, api_key=None, timeout=90:
+        "gate every hop on evidence before handoff.",
+    )
+
 
 # ---------------------------------------------------------------- summarizer
 
-def test_summarize_text_deterministic_fallback():
-    text = "word " * 500
-    summary, model = summarize_text(text, max_words=120)
-    assert model == "deterministic-extractive"
-    assert len(summary.split()) <= 135
-    assert summary.startswith("word")
+def test_summarize_text_fails_loud_without_model():
+    """No offline/extractive fallback: without a key, summarize raises
+    WorkflowError instead of fabricating a head-copy summary."""
+    with pytest.raises(WorkflowError):
+        summarize_text("word " * 500, max_words=120)
 
 
-def test_summarize_node_writes_handoff_artifact(tmp_path):
+def test_summarize_text_uses_model(monkeypatch):
+    from nine.runtime import summarizer
+
+    monkeypatch.setattr(
+        summarizer, "_gemini_generate",
+        lambda prompt, api_key=None, timeout=90: "distilled insight: gate every hop on evidence",
+    )
+    summary, model = summarize_text("word " * 500, max_words=120)
+    assert model == summarizer.DEFAULT_MODEL
+    assert "distilled" in summary
+
+
+def test_summarize_node_writes_handoff_artifact(tmp_path, monkeypatch):
+    _install_fake_models(monkeypatch)
     wf = Workflow(id="research")
     wf.add_node(build_summarize_node("research.md", depends_on=[]))
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
@@ -52,7 +100,7 @@ def test_summarize_node_writes_handoff_artifact(tmp_path):
     assert (job_dir / "HANDOFF.md").exists()
     names = {a["name"] for a in ledger.get(job.job_id).artifacts}
     assert "HANDOFF.md" in names
-    assert "extractive" in (job_dir / "HANDOFF.md").read_text()
+    assert "distilled findings about fooquark" in (job_dir / "HANDOFF.md").read_text()
 
 
 def test_summarize_node_missing_source_fails_job(tmp_path):
@@ -214,7 +262,8 @@ class RecordingMemory:
         return []
 
 
-def test_flagship_chain_records_memories_with_handoff(tmp_path):
+def test_flagship_chain_records_memories_with_handoff(tmp_path, monkeypatch):
+    _install_fake_models(monkeypatch)
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     mem = RecordingMemory()
     ex = ChainExecutor(ledger, workdir=tmp_path / "work", memory=mem)
@@ -234,7 +283,8 @@ def test_flagship_chain_records_memories_with_handoff(tmp_path):
     assert all(s["task_redacted"] for s in mem.saved)
 
 
-def test_research_hop_with_datahub_node_ships(tmp_path):
+def test_research_hop_with_datahub_node_ships(tmp_path, monkeypatch):
+    _install_fake_models(monkeypatch)
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     hop = research_hop(include_datahub=True)
     job = ledger.submit("research", {"task": "inbox item"})

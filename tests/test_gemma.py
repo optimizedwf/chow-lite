@@ -1,4 +1,8 @@
-"""Gemma 4 helper tests — offline fallback + (keyed) live call."""
+"""Gemma 4 helper tests — honest None contract + (keyed) live call.
+
+gemma_generate returns None when no key/HTTP error/no candidates — it never
+fabricates. Callers (flagship._teach_gemma_node) fail loud on None.
+"""
 import os
 import sys
 from pathlib import Path

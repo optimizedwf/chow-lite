@@ -32,9 +32,16 @@ from nine.gates.evidence import (
 from nine.ledger.firestore_ledger import FirestoreLedger
 from nine.ledger.ledger import LedgerError
 from nine.router.classifier import Router
-from nine.runtime.workflows import Node, Workflow, WorkflowExecutor, write_demo_artifacts
+from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
 app = FastAPI(title="nine", version="0.1.0")
+
+
+@app.exception_handler(WorkflowError)
+async def _workflow_error_handler(request: Request, exc: WorkflowError) -> JSONResponse:
+    """Fail loud: a model-gated job that cannot run returns a clean 502 with
+    the reason — never a fabricated answer."""
+    return JSONResponse({"detail": str(exc)}, status_code=502)
 
 # Cloud Run serves a read-only filesystem except /tmp; K_SERVICE is set by
 # Cloud Run so data always lands on writable scratch. Override via NINE_DATA_DIR.
@@ -194,8 +201,11 @@ async def _guard(request: Request, call_next):
 
 
 def build_router() -> Router:
-    """Live Gemini 3.5 Flash routing when GEMINI_API_KEY is present;
-    deterministic keyword fallback keeps the API usable offline/CI."""
+    """Live Gemini 3.5 Flash routing when GEMINI_API_KEY is present; the
+    KeywordRouter substrate (learned catalog keywords) otherwise.
+
+    Routing-only: a keyword route still lands in a real, model-gated
+    workflow — nine never fabricates answers, it only decides the lane."""
     from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
 
     def _register(r: Router) -> None:
@@ -218,9 +228,9 @@ def build_router() -> Router:
 
             r = Router(model=_Model(), version="gemini-3.6-flash-live")
             _register(r)
-        except Exception as exc:  # noqa: BLE001 - deliberate keyword fallback when model router fails
+        except Exception as exc:  # noqa: BLE001 - routing degradation only (model output still required)
             # pragma: no cover - env-dependent
-            print(f"live router unavailable ({exc}); using keyword fallback",
+            print(f"live router unavailable ({exc}); using keyword substrate",
                   file=sys.stderr)
     return r
 
@@ -280,14 +290,15 @@ def submit(payload: SubmitRequest):
     if decision.workflow_id in WORKFLOWS:
         wf = WORKFLOWS[decision.workflow_id]()
     else:
-        # unregistered workflow_id: RCE-hardened Python collect node
-        # (task text written from Python, never into a shell command)
-        wf = Workflow(id=decision.workflow_id)
-        wf.add_node(Node(
-            id="collect", kind="tool",
-            run=lambda inputs, jd: write_demo_artifacts(
-                decision.workflow_id, task, Path(jd)),
-            description="collect task + write report artifact + EVAL.json (Python)"))
+        # unregistered workflow_id: fail loud. No collect node, no
+        # fabricated EVAL.json — the router must only emit registered ids.
+        from nine.runtime.workflows import WorkflowError
+
+        raise WorkflowError(
+            f"unregistered workflow id '{decision.workflow_id}' — no collect "
+            "fallback; nine is model-driven (router must only emit "
+            "registered ids)"
+        )
 
     from nine.registry import workflow_gate
 

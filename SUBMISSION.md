@@ -26,8 +26,9 @@ and get smarter from the trail.
 
 **nine** is that kernel, in ~2700 lines of Python, open source (MIT):
 
-- **ROUTE** — a Gemini 3.5 Flash router (with deterministic keyword fallback)
-  turns free-text tasks into typed `RouteDecision`s against a workflow catalog.
+- **ROUTE** — a Gemini 3.5 Flash router (KeywordRouter substrate when no
+  model is configured — routing only, never fabricated output) turns
+  free-text tasks into typed `RouteDecision`s against a workflow catalog.
 - **EXECUTE** — Google ADK 2 `LlmAgent` + `FunctionTool` run typed workflows
   (2–5 hops: `research→plan→build→review→teach`, or the Taskmaster demo lane
   `inbox→triage→task→report`). Every hop runs in the same job dir with
@@ -41,9 +42,10 @@ and get smarter from the trail.
 
 **Production shape.** Cloud Run + Firestore backend (FastAPI operator API:
 `/health`, `/v1/submit`, `/v1/jobs`, `/v1/stats`), Dockerfile, `gcloud`
-one-command deploy, scale-to-zero, secure API-key auth. Works offline with
-zero API keys (deterministic routing + bash hops) — CI-friendly and
-judge-friendly.
+one-command deploy, scale-to-zero, secure API-key auth. Model-or-fail
+doctrine: routing works without a key (it only picks a lane), but every
+hop that PRODUCES output requires its model and fails loud otherwise —
+CI-friendly and judge-friendly, with zero fabricated answers.
 
 **Dogfooding.** The repo's own roadmap, tracker, and this submission were
 managed with the same route→execute→verify→learn loop. 73/73 tests pass (5 live-gated skips);
@@ -89,7 +91,7 @@ the deployed API.
 |---|---|
 | Innovation & Operational Utility (40%) | autonomy kernel with evidence-gated SHIP/FIX/BLOCK; candidate-only learning loop; dogfooded on its own build |
 | Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + Gemini 3.5 + Cloud Run/Firestore; JSON Schema validation in tests |
-| Demo & Production Readiness (30%) | one-command demo, 96 tests, Dockerfile + deploy.sh, FastAPI operator API, offline fallback |
+| Demo & Production Readiness (30%) | one-command demo, 96 tests, Dockerfile + deploy.sh, FastAPI operator API, model-or-fail (no fabricated output) |
 
 ## 9. Post-submission freeze
 Video, repo, and live site are frozen after submission (Aug 31 17:00 PDT);

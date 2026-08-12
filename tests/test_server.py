@@ -1,6 +1,11 @@
 """Tests for the deployed FastAPI surface (deploy/server.py).
 
 Run with the repo on PYTHONPATH (pytest.ini / conftest handles it).
+
+Hermetic: keyword router + JSONL ledger, no Gemini quota/Firestore.
+Model-or-fail doctrine: model-backed lanes (build ADK, respond) run on
+monkeypatched fakes via _install_fakes(); without a model the API fails
+loud (502 WorkflowError) — never a fabricated answer.
 """
 import os
 import sys
@@ -20,6 +25,34 @@ from deploy.server import app
 client = TestClient(app)
 
 
+def _install_fakes(monkeypatch) -> None:
+    """Fake the model-backed hops the API may route to."""
+    from nine.chains import flagship
+    from nine.runtime import responder, summarizer
+    from nine.runtime.workflows import Node
+
+    monkeypatch.setattr(
+        responder, "respond_text",
+        lambda task, max_chars=600: ("a real model answer", "gemini"),
+    )
+    monkeypatch.setattr(
+        summarizer, "summarize_text",
+        lambda text, max_words=120, task="", api_key=None:
+        ("distilled findings about fooquark", "fake-gemini"),
+    )
+
+    def fake_build_run(inputs, job_dir):
+        (Path(job_dir) / "solution.py").write_text(
+            "def answer():\n    return 42\n", encoding="utf-8")
+        return {"output": "wrote solution.py"}
+
+    monkeypatch.setattr(
+        flagship, "_build_adk_node",
+        lambda: Node(id="build", kind="tool", run=fake_build_run,
+                     description="fake ADK node (hermetic test)"),
+    )
+
+
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200
@@ -28,7 +61,8 @@ def test_health():
     assert body["service"] == "nine"
 
 
-def test_submit_ships_job_and_returns_decision():
+def test_submit_ships_job_and_returns_decision(monkeypatch):
+    _install_fakes(monkeypatch)
     r = client.post("/v1/submit", json={"task": "build a tiny thing"})
     assert r.status_code == 200
     body = r.json()
@@ -47,9 +81,10 @@ def test_submit_requires_task():
     assert r.status_code == 422
 
 
-def test_casual_greeting_never_crashes():
-    # With the live model, "hello there" may route to respond (direct answer)
-    # or to a workflow; either is fine — it must never 500.
+def test_casual_greeting_never_crashes(monkeypatch):
+    # "hello there" routes to respond; with a model it ships a verified
+    # answer — it must never 500 or return an unverified reply.
+    _install_fakes(monkeypatch)
     r = client.post("/v1/submit", json={"task": "hello there"})
     assert r.status_code == 200
     body = r.json()
@@ -94,9 +129,10 @@ def test_submit_records_route_events_and_events_endpoint():
     assert stats["events"]["candidates"]["total"] >= 0
 
 
-def test_unknown_task_runs_respond_workflow():
+def test_unknown_task_runs_respond_workflow(monkeypatch):
     """No direct-answer escape hatch: unknown tasks run the respond workflow
     and are verified (SHIP) with a real response — never UNVERIFIED."""
+    _install_fakes(monkeypatch)
     before = client.get("/v1/events").json()["count"]
     r = client.post("/v1/submit", json={"task": "zzz qqq totally unknown"})
     assert r.status_code == 200
@@ -108,3 +144,14 @@ def test_unknown_task_runs_respond_workflow():
     ev = client.get("/v1/events").json()
     assert ev["count"] == before + 1
     assert ev["events"][-1]["verdict"] == "SHIP"
+
+
+def test_submit_without_model_fails_loud(monkeypatch):
+    """Model-or-fail: with no model configured, respond cannot run — the API
+    returns 502 with the reason, never a fabricated offline answer."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    # undo any fake respond_text (this test installs none)
+    r = client.post("/v1/submit", json={"task": "zzz qqq totally unknown"})
+    assert r.status_code == 502
+    body = r.json()
+    assert "GEMINI_API_KEY" in body["detail"]

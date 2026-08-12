@@ -178,8 +178,8 @@ class Learner:
         Rules (all conservative, all candidate-only):
           * a workflow that repeatedly BLOCKs on the same missing artifact
             -> candidate: add a gate check requiring that artifact
-          * a workflow that repeatedly routes to fallback-respond with low
-            confidence -> candidate: add keywords / re-describe workflow
+          * a workflow that repeatedly routes to respond (or any lane) with
+            low confidence -> candidate: add keywords / re-describe workflow
           * high-confidence routes that still FIX -> candidate: tighten gate
         """
         events = self.store.all()
@@ -212,8 +212,8 @@ class Learner:
                 # identical task routes with more certainty (kind=keyword).
                 # Only auto-applicable when the route DID reach a known
                 # workflow (the strongest unmatched task token becomes the
-                # keyword); fallback-respond has no target workflow, so its
-                # candidate requires a human decision.
+                # keyword); an unregistered workflow id has no target
+                # workflow, so its candidate requires a human decision.
                 from nine.registry import WORKFLOWS
 
                 kw = _derive_keyword(ev) if ev.workflow_id in WORKFLOWS else ""

@@ -39,7 +39,7 @@ self-hostable, scale-to-zero.
 
 | Phase | What happens | Backing tech |
 |---|---|---|
-| **ROUTE** | every task is classified to a workflow (intent router) | Gemini 3.5 Flash via ADK + deterministic keyword fallback |
+| **ROUTE** | every task is classified to a workflow (intent router) | Gemini 3.5 Flash via ADK + KeywordRouter substrate (routing only — output is always model-generated) |
 | **EXECUTE** | declarative workflow DAGs run typed nodes (`prompt`/`bash`/`tool`/`subagent`) | Google ADK 2.0 agents, artifact-passing contract |
 | **VERIFY** | evidence gate checks EVAL.json, required artifacts, exit codes | verdict: **SHIP / FIX / BLOCK** |
 | **LEARN** | route events -> improvement candidates (human-approved only) | append-only event store, never auto-applies |
@@ -58,8 +58,8 @@ hop reads the distilled brief instead of the full document:
 ```text
 research.md ──► summarize node ──► HANDOFF.md ──► plan ──► build ──► review ──► teach
                  (Gemini distill;                        (each hop: fresh context,
-                  deterministic fallback                  files are the interface)
-                  when no API key)
+                  fails loud without                       files are the interface)
+                  a model — never fabricated)
 ```
 
 Every shipped hop also records its **artifact summaries + lineage** into a
@@ -117,7 +117,7 @@ event + candidate counts.
 
 ```bash
 pip install -e .            # or: uv pip install -e .
-export GEMINI_API_KEY=...   # optional; deterministic routing works without it
+export GEMINI_API_KEY=...   # required for any output; routing works without it, execution never does
 nine submit "research the history of the typewriter"
 nine chain demo "respond to customer refund question"   # 3-hop demo lane
 nine chain flagship "build a calculator"                # 5-hop full chain
@@ -142,8 +142,8 @@ exits 0 and everyone assumes it worked.
 nine makes agents *trustworthy by construction*:
 
 1. **ROUTE** — every task is classified to a workflow by an intent router
-   (Gemini 3.5 Flash, with a deterministic keyword fallback so the core
-   works offline and in CI).
+   (Gemini 3.5 Flash, with the KeywordRouter substrate when no model is
+   configured — routing decides the lane, it never fabricates output).
 2. **EXECUTE** — workflows are declarative DAGs of typed nodes
    (`prompt` / `bash` / `tool` / `subagent`), with artifacts passed between
    nodes under a JSON-schema contract.

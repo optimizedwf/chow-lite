@@ -22,9 +22,15 @@ def call(method: str, path: str, payload: dict | None = None) -> dict:
     req = urllib.request.Request(url, data=data, method=method,
                                  headers={"Content-Type": "application/json"})
     t0 = time.time()
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        body = json.loads(resp.read())
-    return {"status": resp.status, "latency_ms": round((time.time() - t0) * 1000),
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = json.loads(resp.read())
+        status = resp.status
+    except urllib.error.HTTPError as exc:
+        # fail-loud doctrine: report the error body, don't crash the probe
+        body = json.loads(exc.read()) if exc.headers.get("Content-Type", "").startswith("application/json") else {"detail": str(exc)}
+        status = exc.code
+    return {"status": status, "latency_ms": round((time.time() - t0) * 1000),
             "body": body}
 
 

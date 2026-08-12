@@ -144,12 +144,13 @@ def test_keyword_candidate_from_low_confidence_route(tmp_path):
     assert c.params["task_hint"] == "study fooquark dynamics"
 
 
-def test_fallback_respond_candidate_is_human_owned(tmp_path):
-    """P2: conf-0 fallback has no target workflow -> keyword empty, so apply
+def test_unregistered_lane_candidate_is_human_owned(tmp_path):
+    """P2: a low-confidence route to an UNREGISTERED workflow id has no
+    keyword (respond is registered now — the universal lane), so apply
     refuses (a human must pick the workflow/keyword)."""
     store = RouteEventStore(tmp_path / "events.jsonl")
     _low_conf_event(store, task="zzz qqq something", conf=0.0,
-                    wf="fallback-respond", ev_id="ev-fb")
+                    wf="unregistered-lane", ev_id="ev-fb")
     cands = Learner(store).learn()
     assert len(cands) == 1
     c = cands[0]

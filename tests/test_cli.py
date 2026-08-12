@@ -1,4 +1,9 @@
-"""CLI end-to-end tests (hermetic: keyword router, temp ledger)."""
+"""CLI end-to-end tests (hermetic: keyword router, temp ledger).
+
+Model-or-fail doctrine: no GEMINI_API_KEY; the model-backed hops the CLI
+submits (research summarize, ADK build, Gemma teach, respond) run on
+monkeypatched fakes via the autouse fixture.
+"""
 import sys
 from pathlib import Path
 
@@ -14,6 +19,40 @@ def _isolated_catalog(tmp_path, monkeypatch):
     """Learn apply/revert writes the shared git-tracked catalog for real;
     point it at a temp file so tests never touch the repo catalog."""
     monkeypatch.setattr("nine.registry._CATALOG_PATH", tmp_path / "catalog.json")
+
+
+@pytest.fixture(autouse=True)
+def _fake_models(monkeypatch):
+    """Hermetic model fakes (no offline fallbacks exist anymore)."""
+    from nine.chains import flagship
+    from nine.runtime import responder, summarizer
+    from nine.runtime.workflows import Node
+
+    monkeypatch.setattr(
+        responder, "respond_text",
+        lambda task, max_chars=600: ("a real model answer", "gemini"),
+    )
+    monkeypatch.setattr(
+        summarizer, "summarize_text",
+        lambda text, max_words=120, task="", api_key=None:
+        ("distilled findings about fooquark", "fake-gemini"),
+    )
+
+    def fake_build_run(inputs, job_dir):
+        (Path(job_dir) / "solution.py").write_text(
+            "def answer():\n    return 42\n", encoding="utf-8")
+        return {"output": "wrote solution.py"}
+
+    monkeypatch.setattr(
+        flagship, "_build_adk_node",
+        lambda: Node(id="build", kind="tool", run=fake_build_run,
+                     description="fake ADK node (hermetic test)"),
+    )
+    monkeypatch.setattr(
+        "nine.runtime.gemma.gemma_generate",
+        lambda prompt, model=None, api_key=None, timeout=90:
+        "gate every hop on evidence before handoff.",
+    )
 
 
 def test_cli_help_ok():

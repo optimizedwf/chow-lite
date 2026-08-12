@@ -75,10 +75,12 @@ _HOPS: dict[str, Callable] = {
 def workflow_gate(workflow_id: str):
     """EvidenceGate for a single-hop workflow, from the HOP's own gate checks.
 
-    The generic gate (eval-json + exit-codes) is only correct for the
-    fallback collect node, which writes EVAL.json itself; document hops
-    (research.md / review.md / TEACH.md) certify by artifact, and the build
-    hop by independent self-test EVAL.json — each hop declares what counts.
+    The generic gate (eval-json + exit-codes) is only correct for hops whose
+    nodes write EVAL.json from their ACTUAL run; document hops (research.md /
+    review.md / TEACH.md) certify by artifact, and the build hop by
+    independent self-test EVAL.json — each hop declares what counts. There is
+    no "collect node": every workflow id the router can select has a real,
+    model-gated workflow.
     """
     from nine.gates.evidence import EvidenceGate
 

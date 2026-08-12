@@ -1,5 +1,10 @@
 
-"""Chain engine tests — 5-hop flagship chain + demo lane (no API key needed)."""
+"""Chain engine tests — 5-hop flagship chain + demo lane (no API key needed).
+
+Hermetic: no GEMINI_API_KEY anywhere. Model-or-fail doctrine — model-backed
+hops (summarize / ADK build / Gemma teach) run with monkeypatched fakes;
+without one they fail loud.
+"""
 import sys
 from pathlib import Path
 
@@ -18,10 +23,39 @@ from nine.gates.evidence import (
     required_artifact_check,
 )
 from nine.ledger.ledger import JSONLLedger
-from nine.runtime.workflows import Node, Workflow, WorkflowExecutor
+from nine.runtime.workflows import Node, Workflow, WorkflowError, WorkflowExecutor
 
 
-def test_flagship_chain_ships_all_hops(tmp_path):
+def _install_fake_models(monkeypatch) -> None:
+    """Inject fake models for the model-backed hops (see test_memory.py)."""
+    from nine.chains import flagship
+    from nine.runtime import summarizer
+
+    monkeypatch.setattr(
+        summarizer, "summarize_text",
+        lambda text, max_words=120, task="", api_key=None:
+        ("distilled findings about fooquark", "fake-gemini"),
+    )
+
+    def fake_build_run(inputs, job_dir):
+        (Path(job_dir) / "solution.py").write_text(
+            "def answer():\n    return 42\n", encoding="utf-8")
+        return {"output": "wrote solution.py"}
+
+    monkeypatch.setattr(
+        flagship, "_build_adk_node",
+        lambda: Node(id="build", kind="tool", run=fake_build_run,
+                     description="fake ADK node (hermetic test)"),
+    )
+    monkeypatch.setattr(
+        "nine.runtime.gemma.gemma_generate",
+        lambda prompt, model=None, api_key=None, timeout=90:
+        "gate every hop on evidence before handoff.",
+    )
+
+
+def test_flagship_chain_ships_all_hops(tmp_path, monkeypatch):
+    _install_fake_models(monkeypatch)
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     ex = ChainExecutor(ledger, workdir=tmp_path / "work")
 
@@ -145,9 +179,10 @@ def test_fix_loop_retries_on_failed_check_not_just_missing_artifact(tmp_path):
     assert calls["n"] == 2  # first attempt failed the gate, second shipped
 
 
-def test_registry_dispatch_produces_distinct_artifacts(tmp_path):
+def test_registry_dispatch_produces_distinct_artifacts(tmp_path, monkeypatch):
     """research/build/review must produce DIFFERENT artifacts (P1-3 fix:
     previously every workflow_id produced byte-identical output)."""
+    _install_fake_models(monkeypatch)
     from nine.registry import WORKFLOWS
     from nine.runtime.workflows import WorkflowExecutor
 
@@ -170,10 +205,33 @@ def test_registry_dispatch_produces_distinct_artifacts(tmp_path):
     assert results["research"] != results["build"] != results["review"]
 
 
-def test_adk_build_hop_offline_ships_with_independent_eval(tmp_path, monkeypatch):
-    """Build hop without API key: deterministic writer + INDEPENDENT
-    self-test node writes EVAL.json from the ACTUAL run result."""
+def test_adk_build_hop_fails_loud_without_model(tmp_path, monkeypatch):
+    """No offline fallback: without GEMINI_API_KEY the build hop raises
+    WorkflowError — never a canned solution.py ("return 42")."""
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    from nine.chains.flagship import build_hop
+
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    gate = EvidenceGate()
+    gate.register_check("eval-json", eval_json_check())
+    gate.register_check("exit-codes", exit_codes_check())
+    gate.register_check("artifacts", required_artifact_check(["solution.py", "EVAL.json"]))
+    ex = WorkflowExecutor(ledger, gate, workdir=tmp_path / "work")
+    job = ledger.submit("build", {"task": "build a tiny thing"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "task.txt").write_text("build a tiny thing\n")
+
+    with pytest.raises(WorkflowError):
+        ex.execute(build_hop().workflow, job, {"task": "build a tiny thing"})
+    assert job.status == "failed"
+    assert not (job_dir / "solution.py").exists()
+
+
+def test_adk_build_hop_ships_with_fake_model_and_independent_eval(tmp_path, monkeypatch):
+    """With a model, the build hop SHIPs and the INDEPENDENT self-test node
+    writes EVAL.json from the ACTUAL run result (builder never self-certifies)."""
+    _install_fake_models(monkeypatch)
     from nine.chains.flagship import build_hop
 
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")

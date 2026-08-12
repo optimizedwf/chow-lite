@@ -135,7 +135,7 @@ is scripted and LEARN is inert.
 ### P1 — Real agentic EXECUTE: flagship "build" hop becomes genuinely model-driven (IMPACT: high · EFFORT: M, 2–3 days)
 - Replace the canned `build` bash node in `nine/chains/flagship.py` with an **ADK `LlmAgent`** (`model=Gemini(model="gemini-3.6-flash")`, `tools=[FunctionTool(run_python), FunctionTool(read_task)]`) that reads `task.txt`+`PLAN.md`, writes real `solution.py`, and runs it.
 - **Independence is the point**: EVAL.json is written by a *separate* `self-test` node that executes the code and records pass/fail — the coding node must NOT write its own EVAL.json (today it does; a judge will notice self-certification). Gate then requires `eval-json` + `exit-codes` as today.
-- Offline fallback: keep the deterministic node when no key is present (a `make_build_hop(with_adk=bool(key))` switch) so CI/offline tests stay green.
+- Model-or-fail (2026-08-12 directive): NO offline fallback anywhere — a missing key raises WorkflowError and the job fails loud; hermetic tests inject fake models instead.
 - Bonus within same effort: research hop gains a `FunctionTool` that fetches one real URL — "interacts with different apps" language for the rubric.
 - Why: fixes the ADK-in-main-path Stage-1 weakness (§2-4), delivers "Proof of Action" (unedited live execution producing real code + real test results), and is the single biggest Innovation point gain.
 
@@ -183,5 +183,5 @@ is scripted and LEARN is inert.
 1. **Deploy** — `gcloud auth login` → fix `deploy/deploy.sh` (add `GEMINI_API_KEY` from secret) → `bash deploy/deploy.sh` → confirm `/health` and a live submit show `router: gemini-3.6-flash-live`. (Adam, ~30 min; everything else waits on this)
 2. **Submit the credit form** (Aug 28 12:00 PT deadline; track **TASKMASTER**, 1–2 sentence pitch from runbook).
 3. **Record GCP proof**: browser `.run.app` + Cloud Run dashboard + `python deploy/demo_probe.py <URL>`; commit `docs/GCP-PROOF.md`; assemble `docs/demo-video-final.mp4` (≤2:30).
-4. **P1 build hop** — ADK `LlmAgent` + `FunctionTool` writes real `solution.py`; independent `self-test` node writes EVAL.json; gate verifies; offline fallback preserved; ADK test extends to the flagship path.
+4. **P1 build hop** — ADK `LlmAgent` + `FunctionTool` writes real `solution.py`; independent `self-test` node writes EVAL.json; gate verifies; no offline fallback (fails loud without a key); ADK test extends to the flagship path.
 5. **Submission hygiene** — fix title/tests/LOC/claims/runbook; add disclosure note; update SUBMISSION.md checklist; re-run full suite.

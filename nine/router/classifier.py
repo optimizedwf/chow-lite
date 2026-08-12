@@ -1,8 +1,13 @@
 """Intent classifier — the ROUTE step of the nine loop.
 
-Takes a task description and classifies it to a workflow using a Gemini model
-(with a deterministic keyword fallback so the core loop works even without
-network/model access).
+Takes a task description and classifies it to a workflow using a Gemini
+model, with the deterministic KeywordRouter as the routing substrate (it is
+also the LEARN loop's write target: catalog.json keywords are learned, and
+every task must still route to a model-gated workflow for execution).
+
+Scope note: routing determinism is NOT output fabrication. The router may
+decide without a model, but every workflow it can select (respond included)
+requires a model at EXECUTE time — nine never fabricates answers.
 
 Output conforms to schemas/route-decision.schema.json.
 """
@@ -57,9 +62,9 @@ def redact(text: str) -> str:
 
 
 class KeywordRouter:
-    """Deterministic fallback router: keyword -> workflow.
+    """Deterministic routing substrate: keyword -> workflow.
 
-    Used when no model is available (offline / CI / tests) and as a
+    Used always as the routing backbone (CI/tests included) and as a
     baseline for the model router. Workflows are registered by id with
     a list of trigger keywords and a description.
     """
@@ -162,7 +167,7 @@ class GeminiRouter:
 
 
 class Router:
-    """Router facade: model first, deterministic keyword fallback.
+    """Router facade: model first, keyword substrate fallback (routing only).
 
     Emits a schema-conformant RouteDecision with secret-redacted task text.
     """
