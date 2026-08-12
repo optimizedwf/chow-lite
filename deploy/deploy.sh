@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Deploy chow-lite to Cloud Run + Firestore (Google Cloud).
-# Prereqs: gcloud CLI, billing-enabled project, GOOGLE_APPLICATION_CREDENTIALS set.
+# Prereqs: gcloud CLI + `gcloud auth login`, billing-enabled project.
 set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:?set PROJECT_ID (e.g. chow-lite-2026)}"
