@@ -34,8 +34,8 @@ def _diagnose_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:500]
-        fix_dir = str(inputs.get("fix_directive", ""))[:500]
+        task = str(inputs.get("task", ""))[:1500]
+        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not os.environ.get("GEMINI_API_KEY"):
             raise WorkflowError(
                 "debug requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
@@ -117,8 +117,8 @@ def _patch_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:500]
-        fix_dir = str(inputs.get("fix_directive", ""))[:500]
+        task = str(inputs.get("task", ""))[:1500]
+        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not os.environ.get("GEMINI_API_KEY"):
             raise WorkflowError(
                 "debug requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
@@ -195,6 +195,11 @@ def _build_verify_command() -> str:
         "s/import solution/import patch/g' test_solution.py > test_patch.py; "
         "  python3 -B -m pytest test_patch.py --tb=short -q > test_output.log 2>&1; "
         "  rc=$?; "
+        "  if grep -qE 'error|no tests ran|collection' test_output.log; then "
+        "  printf '{\"checks\":[{\"name\":\"patch-verified\",\"passed\":false,"
+        "\"message\":\"pytest collection error\"}],\"exit_code\":1}' > EVAL.json; "
+        "  exit 0; "
+        "  fi; "
         "  if [ $rc -eq 0 ]; then "
         "  printf '{\"checks\":[{\"name\":\"patch-verified\",\"passed\":true,"
         "\"message\":\"all tests pass with patch\"}],\"exit_code\":0}' > EVAL.json; "
@@ -243,12 +248,15 @@ def debug_hop() -> Hop:
     ))
     return Hop(
         id="debug", workflow=wf,
-        required_artifacts=["ROOT_CAUSE.md", "patch.py", "EVAL.json"],
+        # ROOT_CAUSE.md is advisory, NOT gate evidence: a perfect patch must
+        # SHIP even when the diagnose agent never wrote the diagnosis doc.
+        # The verify node's EVAL.json is the only fix evidence that matters.
+        required_artifacts=["patch.py", "EVAL.json"],
         gate_checks={
             "eval-json": eval_json_check(),
             "exit-codes": exit_codes_check(),
             "artifacts": required_artifact_check(
-                ["ROOT_CAUSE.md", "patch.py", "EVAL.json"]
+                ["patch.py", "EVAL.json"]
             ),
         },
         max_fix_loops=2,

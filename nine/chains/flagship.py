@@ -91,7 +91,7 @@ def _build_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:200]
+        task = str(inputs.get("task", ""))[:1500]
         if not os.environ.get("GEMINI_API_KEY"):
             raise WorkflowError(
                 "build requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
@@ -132,6 +132,44 @@ def _build_adk_node() -> Node:
                 description="ADK LlmAgent writes real code (fails loud without a model)")
 
 
+def _build_self_test_command() -> str:
+    """Independent self-test for the build hop.
+
+    When a test_solution.py exists in the job dir (e.g. seeded by the
+    bench harness or a previous test hop), run pytest so a buggy/unchanged
+    solution.py cannot pass on exit-code alone. Otherwise fall back to
+    running solution.py. Always writes EVAL.json; the gate decides.
+    """
+    return (
+        "if [ -f test_solution.py ]; then\n"
+        "  python3 -B -m pytest test_solution.py --tb=short -q > test_output.log 2>&1; rc=$?;\n"
+        "  if grep -qE 'error|no tests ran|collection' test_output.log; then\n"
+        "    printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":false,"
+        "\"message\":\"pytest collection error\"}],\"exit_code\":1}' > EVAL.json;\n"
+        "  elif [ $rc -eq 0 ]; then\n"
+        "    passed=$(grep -c ' PASSED' test_output.log 2>/dev/null) || true; passed=${passed:-0};\n"
+        "    printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":true,"
+        "\"message\":\"%s test(s) passed\"}],\"exit_code\":0}' \"$passed\" > EVAL.json;\n"
+        "  else\n"
+        "    failed=$(grep -c 'FAILED' test_output.log 2>/dev/null) || true; failed=${failed:-0};\n"
+        "    passed=$(grep -c ' PASSED' test_output.log 2>/dev/null) || true; passed=${passed:-0};\n"
+        "    printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":false,"
+        "\"message\":\"%s test(s) failed, %s passed\"}],\"exit_code\":%s}'"
+        " \"$failed\" \"$passed\" \"$rc\" > EVAL.json;\n"
+        "  fi\n"
+        "else\n"
+        "  python3 -B solution.py > build.log 2>&1; rc=$?;\n"
+        "  if [ $rc -eq 0 ]; then\n"
+        "    printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":true,"
+        "\"message\":\"exit 0\"}],\"exit_code\":0}' > EVAL.json;\n"
+        "  else\n"
+        "    printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":false,"
+        "\"message\":\"exit %s\"}],\"exit_code\":%s}' \"$rc\" \"$rc\" > EVAL.json;\n"
+        "  fi\n"
+        "fi"
+    )
+
+
 def build_hop() -> Hop:
     wf = Workflow(id="build", description="Implement per plan with self-test")
     # ADK agent writes solution.py (real code); the self-test node below is
@@ -141,18 +179,10 @@ def build_hop() -> Hop:
     wf.add_node(_build_adk_node())
     wf.add_node(Node(
         id="self-test", kind="bash",
-        command=(
-            "python3 -B solution.py > build.log 2>&1; rc=$?; "
-            "if [ $rc -eq 0 ]; then "
-            "  printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":true,"
-            "\"message\":\"exit 0\"}],\"exit_code\":0}' > EVAL.json; "
-            "else "
-            "  printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":false,"
-            "\"message\":\"exit %s\"}],\"exit_code\":%s}' \"$rc\" \"$rc\" > EVAL.json; "
-            "fi"
-        ),
+        command=_build_self_test_command(),
         depends_on=["build"],
-        description="Independent self-test: runs solution.py, writes EVAL.json",
+        description="Independent self-test: pytest (when tests exist) else "
+                    "solution.py run, writes EVAL.json",
     ))
     return Hop(
         id="build", workflow=wf,

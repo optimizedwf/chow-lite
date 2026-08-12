@@ -117,6 +117,20 @@ class ADKAgentNode:
                 if texts:
                     final_text = texts[0]
 
+        if not events or not (final_text or function_calls):
+            # An empty agent stream is NOT success: ADK yields an empty
+            # stream (no text, no tool calls) instead of raising on Gemini
+            # free-tier quota exhaustion (429 RESOURCE_EXHAUSTED) or an
+            # unhelpful model turn. Treat it as a retryable failure so the
+            # executor retries and then fails LOUD — never a silent pass
+            # that SHIPs the unmodified artifact or burns fix loops.
+            hint = f" (last error: {last_exc})" if last_exc is not None else ""
+            raise RuntimeError(
+                f"ADK agent produced no output for task: {task[:120]!r}{hint} "
+                "- empty stream (often Gemini 429 quota exhaustion; retry "
+                "after quota reset)"
+            )
+
         # write the agent's output as an artifact for the evidence gate
         out_path = job_dir / "agent_output.md"
         out_path.write_text(

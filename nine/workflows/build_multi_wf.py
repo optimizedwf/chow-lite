@@ -37,7 +37,7 @@ def _build_multi_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:400]
+        task = str(inputs.get("task", ""))[:1500]
         if not os.environ.get("GEMINI_API_KEY"):
             raise WorkflowError(
                 "build-multi requires GEMINI_API_KEY (ADK LlmAgent) - no "

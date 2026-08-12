@@ -42,9 +42,36 @@ def _ledger(args) -> JSONLLedger:
     return JSONLLedger(args.ledger)
 
 
+def _routing_model():
+    """Model-first routing when a Gemini key is present; else None.
+
+    The CLI router MUST use the model when available (bench finding): the
+    keyword substrate alone misroutes on substrings ("implement" inside
+    "implementation"), and eval metadata would lie about which lane served
+    the job. Any model error degrades to the deterministic keyword
+    substrate inside Router.classify — routing never crashes the loop.
+    """
+    if not os.environ.get("GEMINI_API_KEY"):
+        return None
+    try:
+        from google import genai
+
+        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+
+        class _RoutingModel:
+            def generate_content(self, prompt):
+                return client.models.generate_content(
+                    model="gemini-3.6-flash", contents=prompt
+                )
+
+        return _RoutingModel()
+    except ImportError:
+        return None
+
+
 def build_default_router() -> Router:
     from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
-    r = Router()
+    r = Router(model=_routing_model())
     for wf_id, kws in KEYWORDS.items():
         r.register(wf_id, kws, HOP_DESCRIPTIONS.get(wf_id, ""))
     return r
