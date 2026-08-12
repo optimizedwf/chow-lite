@@ -31,6 +31,7 @@ from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
 from nine.workflows.build_multi_wf import build_multi_hop
 from nine.workflows.debug_wf import debug_hop
+from nine.workflows.refactor_wf import refactor_hop
 from nine.workflows.review_multi_wf import review_multi_hop
 from nine.workflows.test_wf import test_hop
 
@@ -69,6 +70,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "test": _wf(test_hop),
     "build-multi": _wf(build_multi_hop),
     "debug": _wf(debug_hop),
+    "refactor": _wf(refactor_hop),
     "teach": _wf(teach_hop),
     "respond": respond_workflow,
 }
@@ -83,6 +85,7 @@ _HOPS: dict[str, Callable] = {
     "test": test_hop,
     "build-multi": build_multi_hop,
     "debug": debug_hop,
+    "refactor": refactor_hop,
     "teach": teach_hop,
 }
 
@@ -128,6 +131,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
                      "review my code", "deep review", "review pr"],
     "test": ["test", "write tests", "pytest", "unit test", "make tests"],
     "debug": ["debug", "fix bug", "fix the bug", "bug", "diagnose", "root cause", "broken", "patch", "not working", "error", "crash", "failing"],
+    "refactor": ["refactor", "restructure", "reorganize", "clean up the code", "improve the structure", "split the module", "extract functions", "rename internals"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -141,6 +145,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "review-multi": "4-dimensional review (security/bugs/quality/arch) merged into REVIEW.md.",
     "test": "Write and run pytest tests (test_solution.py + EVAL.json).",
     "debug": "Root-cause a failure, write ROOT_CAUSE.md, patch, and verify.",
+    "refactor": "Restructure code per REFACTOR_PLAN.md, show DIFF.md, apply, and verify behavior intact.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
