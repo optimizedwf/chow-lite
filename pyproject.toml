@@ -8,6 +8,9 @@ license = { text = "MIT" }
 dependencies = [
     "google-adk>=2.0.0",
     "google-genai>=1.0.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "google-cloud-firestore>=2.16",
 ]
 
 [project.optional-dependencies]

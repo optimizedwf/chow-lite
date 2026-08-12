@@ -1,0 +1,33 @@
+# Cloud Run deployment — scale-to-zero, pay-only-when-used.
+# Deploy:  gcloud run deploy chow-lite --source . --region us-central1 \
+#            --allow-unauthenticated --min-instances 0 --max-instances 2 \
+#            --set-env-vars GEMINI_MODEL=gemini-3.5-flash
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: chow-lite
+  labels:
+    app: chow-lite
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "2"
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 8
+      timeoutSeconds: 300
+      containers:
+        - image: gcr.io/PROJECT_ID/chow-lite
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+          env:
+            - name: GEMINI_MODEL
+              value: "gemini-3.5-flash"
+            - name: FIRESTORE_COLLECTION
+              value: "chowlite-jobs"
