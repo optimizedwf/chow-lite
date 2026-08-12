@@ -142,7 +142,7 @@ def build_hop() -> Hop:
     wf.add_node(Node(
         id="self-test", kind="bash",
         command=(
-            "python3 solution.py > build.log 2>&1; rc=$?; "
+            "python3 -B solution.py > build.log 2>&1; rc=$?; "
             "if [ $rc -eq 0 ]; then "
             "  printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":true,"
             "\"message\":\"exit 0\"}],\"exit_code\":0}' > EVAL.json; "

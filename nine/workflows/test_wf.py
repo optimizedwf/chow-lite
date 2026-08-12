@@ -115,7 +115,7 @@ def _build_test_runner_command() -> str:
     # pytest exits non-zero on test failures, so we always write EVAL.json
     # and exit 0 so the gate can evaluate.
     return (
-        "python3 -m pytest test_solution.py --tb=short -q > test_output.log 2>&1; "
+        "python3 -B -m pytest test_solution.py --tb=short -q > test_output.log 2>&1; "
         'rc=$?; '
         "if [ $rc -eq 0 ]; then "
         '  echo \'{"checks":[{"name":"tests-pass","passed":true,"message":"all tests passed"}],"exit_code":0}\' > EVAL.json; '
