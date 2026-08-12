@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/optimizedwf/chow-lite/schemas/artifact-manifest.schema.json",
+  "title": "ArtifactManifest",
+  "description": "A produced artifact and its evidence (checksum, size) for artifact-passing between workflow nodes.",
+  "type": "object",
+  "required": [
+    "name",
+    "path",
+    "kind",
+    "sha256",
+    "size",
+    "produced_by",
+    "produced_at"
+  ],
+  "properties": {
+    "name": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "document",
+        "code",
+        "data",
+        "media",
+        "report",
+        "config",
+        "other"
+      ]
+    },
+    "sha256": {
+      "type": "string"
+    },
+    "size": {
+      "type": "integer"
+    },
+    "produced_by": {
+      "type": "string",
+      "description": "Node id that produced this artifact"
+    },
+    "produced_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "schema": {
+      "type": "string",
+      "description": "Optional JSON schema ref the artifact must conform to"
+    }
+  }
+}

@@ -1,0 +1,24 @@
+[project]
+name = "chowlite"
+version = "0.1.0"
+description = "Router-first, evidence-gated agent operating system on Google ADK"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "google-adk>=2.0.0",
+    "google-genai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+chow = "chowlite.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["chowlite*"]

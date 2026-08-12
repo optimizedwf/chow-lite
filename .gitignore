@@ -1,0 +1,32 @@
+# secrets — never commit
+.env
+.env.*
+*.pem
+*.key
+*secrets*
+.agent-vault/
+.chow-secrets/
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# runtime state
+jobs/*.jsonl
+jobs/*.json
+!jobs/.gitkeep
+memory/
+!memory/.gitkeep
+*.log
+
+# os
+.DS_Store
+
+# runtime workdir
+work/

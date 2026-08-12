@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/optimizedwf/chow-lite/schemas/agent-job.schema.json",
+  "title": "AgentJob",
+  "description": "Durable job record in the chow-lite job ledger. A job is one execution of a workflow.",
+  "type": "object",
+  "required": [
+    "job_id",
+    "workflow_id",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "job_id": {
+      "type": "string"
+    },
+    "workflow_id": {
+      "type": "string"
+    },
+    "chain_id": {
+      "type": "string",
+      "description": "If part of a chain, the chain id"
+    },
+    "status": {
+      "enum": [
+        "submitted",
+        "routing",
+        "running",
+        "awaiting_evidence",
+        "shipped",
+        "fixing",
+        "blocked",
+        "cancelled",
+        "recovered",
+        "archived",
+        "failed"
+      ]
+    },
+    "input": {
+      "type": "object",
+      "description": "Task input (redacted)"
+    },
+    "route_decision": {
+      "$ref": "route-decision.schema.json"
+    },
+    "artifacts": {
+      "type": "array",
+      "items": {
+        "$ref": "artifact-manifest.schema.json"
+      }
+    },
+    "verdicts": {
+      "type": "array",
+      "items": {
+        "$ref": "evidence-verdict.schema.json"
+      }
+    },
+    "attempts": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Execution attempts (fix loops)"
+    },
+    "max_fix_loops": {
+      "type": "integer"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "completed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "metadata": {
+      "type": "object"
+    }
+  }
+}

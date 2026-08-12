@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/optimizedwf/chow-lite/schemas/route-decision.schema.json",
+  "title": "RouteDecision",
+  "description": "Output of the chow-lite router: classification of a task to a workflow.",
+  "type": "object",
+  "required": [
+    "decision_id",
+    "task_redacted",
+    "workflow_id",
+    "confidence",
+    "reason",
+    "decided_at",
+    "router_version"
+  ],
+  "properties": {
+    "decision_id": {
+      "type": "string",
+      "description": "UUID of this decision"
+    },
+    "task_redacted": {
+      "type": "string",
+      "description": "Redacted task text (no secrets)"
+    },
+    "workflow_id": {
+      "type": "string",
+      "description": "ID of the selected workflow, e.g. chow-research-v1"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "reason": {
+      "type": "string"
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Other workflows considered"
+    },
+    "decided_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "router_version": {
+      "type": "string"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model used for classification"
+    }
+  }
+}
