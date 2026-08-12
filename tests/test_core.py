@@ -224,8 +224,11 @@ if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
 
 
-def test_model_crash_falls_back_to_keywords():
+def test_model_crash_falls_back_to_keywords(monkeypatch):
     """A model exception (quota 429, timeout) must never crash routing."""
+    import chowlite.router.classifier as _c
+
+    monkeypatch.setattr(_c, "_RETRY_DELAYS", (0.01, 0.01))
     from chowlite.router.classifier import Router
 
     class ExplodingModel:

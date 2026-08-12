@@ -72,17 +72,34 @@ class ADKAgentNode:
         self._ensure_session(user_id, session_id)
 
         # sync run(): local-testing convenience API that drains the async
-        # generator for us (verified on google-adk 2.6.3)
-        events = list(
-            self.runner.run(
-                user_id=user_id,
-                session_id=session_id,
-                new_message=types.Content(
-                    role="user",
-                    parts=[types.Part.from_text(text=task)],
-                ),
-            )
-        )
+        # generator for us (verified on google-adk 2.6.3). Retry transient
+        # quota/availability errors (429/503 are normal on Gemini free tier).
+        import time
+
+        events: list[Any] = []
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                events = list(
+                    self.runner.run(
+                        user_id=user_id,
+                        session_id=session_id,
+                        new_message=types.Content(
+                            role="user",
+                            parts=[types.Part.from_text(text=task)],
+                        ),
+                    )
+                )
+                break
+            except Exception as exc:  # noqa: BLE001 - transient API errors
+                last_exc = exc
+                if attempt == 2:
+                    break
+                time.sleep(2.0 * (attempt + 1))
+        if last_exc is not None and not events:
+            # surface the error so the evidence gate sees a FIX/BLOCK,
+            # never a fabricated SHIP
+            raise last_exc
 
         final_text = ""
         function_calls: list[str] = []

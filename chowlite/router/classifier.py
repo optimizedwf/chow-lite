@@ -89,6 +89,20 @@ class KeywordRouter:
         return best_id, best_score, best_kw
 
 
+_RETRY_DELAYS = (1.5, 3.0)  # seconds between retries (tests may shrink)
+
+
+def _non_retryable(exc: Exception) -> bool:
+    """True for client-side errors that retrying cannot fix (bad key, etc.)."""
+    name = type(exc).__name__
+    if name in ("InvalidArgument", "PermissionDenied", "Unauthenticated",
+                "ApiKeyNotFoundError", "ValueError", "TypeError"):
+        return True
+    # google.genai errors carry status_code (e.g. 400 bad request)
+    code = getattr(exc, "status_code", None) or getattr(exc, "code", None)
+    return isinstance(code, int) and 400 <= code < 500 and code not in (408, 429)
+
+
 class GeminiRouter:
     """Model router using Gemini 3.5 Flash via the Gemini API.
 
@@ -99,6 +113,24 @@ class GeminiRouter:
     def __init__(self, model: Any, workflows: dict[str, dict] | None = None) -> None:
         self.model = model
         self.workflows = workflows or {}
+
+    def _generate(self, prompt: str):
+        """generate_content with timeout + retry/backoff on transient errors.
+
+        Free-tier Gemini is quota'd (20 req/day, 5 req/min): 429/503 are
+        NORMAL and retryable, so one burst must not silently drop the model
+        route in favor of keywords.
+        """
+        import time
+
+        for attempt in range(len(_RETRY_DELAYS) + 1):
+            try:
+                return self.model.generate_content(prompt)
+            except Exception as exc:  # noqa: BLE001 - transient API errors retried
+                if attempt >= len(_RETRY_DELAYS) or _non_retryable(exc):
+                    raise
+                time.sleep(_RETRY_DELAYS[attempt])
+        raise RuntimeError("unreachable")
 
     def classify(self, task: str) -> tuple[str, float, str]:
         catalog = "\n".join(
@@ -112,7 +144,7 @@ class GeminiRouter:
             "Respond with JSON only: "
             '{"workflow_id": "...", "confidence": 0.0-1.0, "reason": "..."}'
         )
-        resp = self.model.generate_content(prompt)
+        resp = self._generate(prompt)
         try:
             txt = resp.text.strip()
             # strip markdown fences if present
