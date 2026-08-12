@@ -15,8 +15,10 @@ Design note: this is a *declarative* engine — workflows are data, not code.
 from __future__ import annotations
 
 import hashlib
+import os
 import random
 import subprocess as sp
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -114,9 +116,16 @@ class WorkflowExecutor:
         if node.kind == "bash":
             if not node.command:
                 raise WorkflowError(f"node {node.id}: bash node needs command")
+            # bash nodes resolve `python` to the SAME interpreter running
+            # nine (venv), so scripts can rely on project deps (pandas,
+            # matplotlib) without hard-coding an absolute interpreter path.
+            bash_env = dict(os.environ)
+            pybin = str(Path(sys.executable).parent)
+            bash_env["PATH"] = pybin + os.pathsep + bash_env.get("PATH", "")
             res = sp.run(
                 node.command, shell=True, cwd=job_dir, capture_output=True,
                 text=True, timeout=node.timeout_seconds, check=False,
+                env=bash_env,
             )
             return {"exit_code": res.returncode, "stdout": res.stdout[-2000:],
                     "stderr": res.stderr[-2000:]}

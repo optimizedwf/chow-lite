@@ -29,6 +29,7 @@ from nine.chains.flagship import (
 )
 from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
+from nine.workflows.analyze_wf import analyze_hop
 from nine.workflows.build_multi_wf import build_multi_hop
 from nine.workflows.compare_wf import compare_hop
 from nine.workflows.debug_wf import debug_hop
@@ -79,6 +80,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "review-multi": _wf(review_multi_hop),
     "test": _wf(test_hop),
     "build-multi": _wf(build_multi_hop),
+    "analyze": _wf(analyze_hop),
     "compare": _wf(compare_hop),
     "debug": _wf(debug_hop),
     "draft": _wf(draft_hop),
@@ -165,6 +167,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "draft": ["draft", "draft this", "write a draft", "write a proposal", "write an article", "write a spec", "first draft", "outline and draft", "write a plan"],
     "draft-email": ["draft an email", "write an email", "email reply", "compose an email", "outreach email", "follow up email", "email to", "reply to this email", "draft a response", "cold email"],
     "ideate": ["ideate", "brainstorm", "come up with ideas", "idea for", "give me ideas", "what should i build", "generate ideas", "think of an idea", "new product idea", "spark ideas"],
+    "analyze": ["analyze", "analyze the data", "analyze this dataset", "explore the data", "data analysis", "what does the data show", "insights from", "analyze the csv", "explore the dataset", "look at the data"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -189,6 +192,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "draft": "Draft -> review -> revise: DRAFT.md + REVIEW.md + REVISION_LOG.md.",
     "draft-email": "Tone-aware email: draft -> reviewtone -> revise -> DRAFT.md.",
     "ideate": "Idea -> expand -> challenge -> refine: IDEA_BRIEF.md + VIABILITY.json.",
+    "analyze": "Dataset -> explore -> insights: INSIGHTS.md + chart.png.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
