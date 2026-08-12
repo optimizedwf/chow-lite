@@ -1,4 +1,4 @@
-"""FastAPI server — the Cloud Run entrypoint for chow-lite.
+"""FastAPI server — the Cloud Run entrypoint for nine.
 
 Exposes the operator API over HTTP so anyone can submit tasks, inspect
 jobs, and see evidence verdicts. This is the surface the demo video shows
@@ -24,28 +24,28 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from chowlite.gates.evidence import (
+from nine.gates.evidence import (
     EvidenceGate,
     eval_json_check,
     exit_codes_check,
 )
-from chowlite.ledger.firestore_ledger import FirestoreLedger
-from chowlite.ledger.ledger import LedgerError
-from chowlite.router.classifier import Router
-from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor, write_demo_artifacts
+from nine.ledger.firestore_ledger import FirestoreLedger
+from nine.ledger.ledger import LedgerError
+from nine.router.classifier import Router
+from nine.runtime.workflows import Node, Workflow, WorkflowExecutor, write_demo_artifacts
 
-app = FastAPI(title="chow-lite", version="0.1.0")
+app = FastAPI(title="nine", version="0.1.0")
 
 # Cloud Run serves a read-only filesystem except /tmp; K_SERVICE is set by
-# Cloud Run so data always lands on writable scratch. Override via CHOW_DATA_DIR.
+# Cloud Run so data always lands on writable scratch. Override via NINE_DATA_DIR.
 _RUNTIME = Path(os.environ.get(
-    "CHOW_DATA_DIR",
-    "/tmp/chow-lite" if os.environ.get("K_SERVICE") else ".",
+    "NINE_DATA_DIR",
+    "/tmp/nine" if os.environ.get("K_SERVICE") else ".",
 ))
 LEDGER_PATH = _RUNTIME / "jobs" / "ledger.jsonl"
 WORKDIR = _RUNTIME / "work"
 EVENTS_PATH = _RUNTIME / "jobs" / "events.jsonl"
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
 
 
 _ledger: Any | None = None
@@ -57,7 +57,7 @@ _ledger_failed = False
 def get_learner():
     """Durable LEARN store (JSONL in the runtime data dir; Firestore events
     are a future step — the route-event log is append-only and small)."""
-    from chowlite.learn.learner import Learner, RouteEventStore
+    from nine.learn.learner import Learner, RouteEventStore
 
     return Learner(RouteEventStore(EVENTS_PATH))
 def get_ledger():
@@ -71,14 +71,14 @@ def get_ledger():
     if _ledger is not None and not _ledger_failed:
         return _ledger
     if _ledger_failed:
-        from chowlite.ledger.ledger import JSONLLedger
+        from nine.ledger.ledger import JSONLLedger
 
         return JSONLLedger(LEDGER_PATH)
     try:
         from google.cloud import firestore  # noqa: F401
 
         candidate = FirestoreLedger(
-            collection=os.environ.get("FIRESTORE_COLLECTION", "chowlite-jobs")
+            collection=os.environ.get("FIRESTORE_COLLECTION", "nine-jobs")
         )
         _ledger = _LazyFallbackLedger(candidate)
         return _ledger
@@ -87,11 +87,11 @@ def get_ledger():
         # P1-7: durability degradation must be LOUD, not silent — the Cloud
         # Run log shows exactly why we fell back to local JSONL state.
         print(
-            f"[chow-lite] WARNING: Firestore unavailable ({type(exc).__name__}: "
+            f"[nine] WARNING: Firestore unavailable ({type(exc).__name__}: "
             f"{exc}); falling back to LOCAL JSONL ledger at {LEDGER_PATH}. "
             "Jobs will NOT survive a container restart.", flush=True
         )
-        from chowlite.ledger.ledger import JSONLLedger
+        from nine.ledger.ledger import JSONLLedger
 
         return JSONLLedger(LEDGER_PATH)
 
@@ -115,7 +115,7 @@ class _LazyFallbackLedger:
             return self._fallback
 
     def __getattr__(self, name: str):
-        from chowlite.ledger.ledger import JSONLLedger
+        from nine.ledger.ledger import JSONLLedger
 
         primary_attr = getattr(self._primary, name)
 
@@ -125,7 +125,7 @@ class _LazyFallbackLedger:
             except Exception as exc:  # noqa: BLE001 - switch to JSONL on any query failure
                 if self._fallback is None:
                     print(
-                        f"[chow-lite] WARNING: Firestore query failed "
+                        f"[nine] WARNING: Firestore query failed "
                         f"({type(exc).__name__}: {exc}); switching to LOCAL JSONL "
                         f"ledger at {LEDGER_PATH}. Jobs will NOT survive a "
                         "container restart.", flush=True
@@ -142,14 +142,14 @@ class SubmitRequest(BaseModel):
 
 
 # --- lightweight auth + rate limiting (demo-appropriate; no OAuth needed) ---
-_API_KEY = os.environ.get("CHOW_API_KEY", "")
+_API_KEY = os.environ.get("NINE_API_KEY", "")
 MAX_BODY_BYTES = 1_048_576  # 1 MiB
 RATE_LIMIT = {"window_s": 60.0, "max": 30}
 _hits: dict[str, deque] = defaultdict(deque)
 
 
 def _check_auth(x_api_key: str | None) -> JSONResponse | None:
-    """Enforce X-API-Key only when CHOW_API_KEY is configured (demo default:
+    """Enforce X-API-Key only when NINE_API_KEY is configured (demo default:
     unset = open. Set it before deploying publicly.)"""
     if _API_KEY and (x_api_key is None or x_api_key != _API_KEY):
         return JSONResponse({"detail": "missing/invalid X-API-Key"}, status_code=401)
@@ -188,7 +188,7 @@ async def _guard(request: Request, call_next):
 def build_router() -> Router:
     """Live Gemini 3.5 Flash routing when GEMINI_API_KEY is present;
     deterministic keyword fallback keeps the API usable offline/CI."""
-    from chowlite.registry import HOP_DESCRIPTIONS, KEYWORDS
+    from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
 
     def _register(r: Router) -> None:
         for wf_id, kws in KEYWORDS.items():
@@ -205,10 +205,10 @@ def build_router() -> Router:
             class _Model:
                 def generate_content(self, prompt):
                     return client.models.generate_content(
-                        model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),
+                        model=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"),
                         contents=prompt)
 
-            r = Router(model=_Model(), version="gemini-3.5-flash-live")
+            r = Router(model=_Model(), version="gemini-3.6-flash-live")
             _register(r)
         except Exception as exc:  # noqa: BLE001 - deliberate keyword fallback when model router fails
             # pragma: no cover - env-dependent
@@ -229,7 +229,7 @@ def build_gate() -> EvidenceGate:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "chow-lite", "model": MODEL}
+    return {"status": "ok", "service": "nine", "model": MODEL}
 
 
 @app.post("/v1/submit")
@@ -248,11 +248,11 @@ def submit(payload: SubmitRequest):
 
     # dispatch through the shared registry: the demo lane and the flagship
     # hops run their REAL multi-hop chains / workflows, not a canned echo.
-    from chowlite.registry import CHAINS, WORKFLOWS
+    from nine.registry import CHAINS, WORKFLOWS
 
     gate = build_gate()
     if decision.workflow_id in CHAINS:
-        from chowlite.chains.chain import ChainExecutor
+        from nine.chains.chain import ChainExecutor
         chain = CHAINS[decision.workflow_id]()
         job_dir = WORKDIR / job.job_id
         job_dir.mkdir(parents=True, exist_ok=True)
@@ -281,7 +281,7 @@ def submit(payload: SubmitRequest):
                 decision.workflow_id, task, Path(jd)),
             description="collect task + write report artifact + EVAL.json (Python)"))
 
-    from chowlite.registry import workflow_gate
+    from nine.registry import workflow_gate
 
     gate = workflow_gate(decision.workflow_id) or build_gate()
     ex = WorkflowExecutor(ledger, gate, workdir=WORKDIR)
@@ -298,7 +298,7 @@ def submit(payload: SubmitRequest):
 def _record_route_event(learner, job, decision, verdict: dict) -> None:
     """Append one route event (chain runs record per-hop events inside
     ChainExecutor; direct answers get verdict UNVERIFIED with no job)."""
-    from chowlite.learn.learner import RouteEvent
+    from nine.learn.learner import RouteEvent
 
     eval_results = verdict.get("eval_results") or {}
     learner.observe(

@@ -1,6 +1,6 @@
 """FirestoreLedger tests with a stubbed google.cloud.firestore client.
 
-We monkeypatch chowlite.ledger.firestore_ledger's firestore import so no
+We monkeypatch nine.ledger.firestore_ledger's firestore import so no
 credentials/emulator are needed.
 """
 import sys
@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pytest
 
-from chowlite.ledger.firestore_ledger import FirestoreLedger
+from nine.ledger.firestore_ledger import FirestoreLedger
 
 
 class FakeDoc:
@@ -81,7 +81,7 @@ def fake_firestore(monkeypatch):
 
 
 def test_firestore_ledger_submit_and_fetch(fake_firestore):
-    led = FirestoreLedger(collection="chowlite-jobs")
+    led = FirestoreLedger(collection="nine-jobs")
     job = led.submit("research", {"task": "x"})
     got = led.get(job.job_id)
     assert got.job_id == job.job_id
@@ -90,7 +90,7 @@ def test_firestore_ledger_submit_and_fetch(fake_firestore):
 
 
 def test_firestore_ledger_update_and_stats(fake_firestore):
-    led = FirestoreLedger(collection="chowlite-jobs")
+    led = FirestoreLedger(collection="nine-jobs")
     job = led.submit("build", {"task": "y"})
     job.transition("routing")
     job.transition("running")
@@ -103,7 +103,7 @@ def test_firestore_ledger_update_and_stats(fake_firestore):
 
 
 def test_firestore_ledger_discover(fake_firestore):
-    led = FirestoreLedger(collection="chowlite-jobs")
+    led = FirestoreLedger(collection="nine-jobs")
     led.submit("research", {"task": "a"})
     led.submit("research", {"task": "b"})
     jobs = led.discover()
@@ -111,7 +111,7 @@ def test_firestore_ledger_discover(fake_firestore):
 
 
 def test_firestore_ledger_artifacts_and_cancel(fake_firestore):
-    led = FirestoreLedger(collection="chowlite-jobs")
+    led = FirestoreLedger(collection="nine-jobs")
     job = led.submit("build", {"task": "y"})
     job.artifacts = [{"name": "EVAL.json", "size": 3, "sha256": "abc", "produced_by": "build"}]
     led.update(job)

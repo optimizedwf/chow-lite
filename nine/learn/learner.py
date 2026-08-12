@@ -10,7 +10,7 @@ This is the honest version of "self-improving agents": the system learns
 from its own outcomes, but a human owns the changes. No silent feedback
 loops, no drift.
 
-Output schema: chowlite/schemas/route-event.schema.json
+Output schema: nine/schemas/route-event.schema.json
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from chowlite.schema_validation import validate
+from nine.schema_validation import validate
 
 
 @dataclass
@@ -214,7 +214,7 @@ class Learner:
                 # workflow (the strongest unmatched task token becomes the
                 # keyword); fallback-respond has no target workflow, so its
                 # candidate requires a human decision.
-                from chowlite.registry import WORKFLOWS
+                from nine.registry import WORKFLOWS
 
                 kw = _derive_keyword(ev) if ev.workflow_id in WORKFLOWS else ""
                 self._suggest(
@@ -248,9 +248,9 @@ def _derive_keyword(ev: RouteEvent) -> str:
     """Longest informative token in the task not already routing the workflow.
 
     The human owns the final choice (candidate-only doctrine); this just
-    makes the candidate actionable for `chow learn apply`.
+    makes the candidate actionable for `nine learn apply`.
     """
-    from chowlite.registry import KEYWORDS
+    from nine.registry import KEYWORDS
 
     existing = set(KEYWORDS.get(ev.workflow_id, []))
     toks = [

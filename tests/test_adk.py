@@ -1,7 +1,7 @@
 """ADK 2.0 integration test — requires GEMINI_API_KEY (skips otherwise).
 
 Verifies the mandatory Google agent framework requirement end-to-end:
-Gemini 3.5 Flash via ADK -> real tool call -> chow-lite workflow engine
+Gemini 3.5 Flash via ADK -> real tool call -> nine workflow engine
 -> evidence gate -> SHIP.
 
 Run:  GEMINI_API_KEY=... python -m pytest tests/test_adk.py -v
@@ -26,10 +26,10 @@ def test_adk_agent_tool_call_and_ship(tmp_path):
     from google.adk.models import Gemini
     from google.adk.tools import FunctionTool
 
-    from chowlite.gates.evidence import EvidenceGate, eval_json_check, exit_codes_check
-    from chowlite.ledger.ledger import JSONLLedger
-    from chowlite.runtime.adk_runtime import make_adk_node
-    from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor
+    from nine.gates.evidence import EvidenceGate, eval_json_check, exit_codes_check
+    from nine.ledger.ledger import JSONLLedger
+    from nine.runtime.adk_runtime import make_adk_node
+    from nine.runtime.workflows import Node, Workflow, WorkflowExecutor
 
     def get_stock_price(ticker: str) -> str:
         """Look up the current price of a stock ticker."""
@@ -38,7 +38,7 @@ def test_adk_agent_tool_call_and_ship(tmp_path):
 
     agent = LlmAgent(
         name="market_agent",
-        model=Gemini(model="gemini-3.5-flash"),
+        model=Gemini(model="gemini-3.6-flash"),
         instruction="You are a market research agent. Use tools. Be concise.",
         tools=[FunctionTool(get_stock_price)],
     )

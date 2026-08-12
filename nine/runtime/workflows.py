@@ -1,4 +1,4 @@
-"""Workflow engine — the EXECUTE step of the chow-lite loop.
+"""Workflow engine — the EXECUTE step of the nine loop.
 
 A workflow is a DAG of typed nodes:
     prompt  — LLM step (Gemini 3.5 Flash via ADK or raw API)
@@ -22,8 +22,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from chowlite.gates.evidence import EvidenceGate
-from chowlite.ledger.ledger import Job, JSONLLedger
+from nine.gates.evidence import EvidenceGate
+from nine.ledger.ledger import Job, JSONLLedger
 
 
 class WorkflowError(Exception):

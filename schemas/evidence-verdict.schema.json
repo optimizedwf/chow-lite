@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/optimizedwf/chow-lite/schemas/evidence-verdict.schema.json",
+  "$id": "https://github.com/optimizedwf/nine/schemas/evidence-verdict.schema.json",
   "title": "EvidenceVerdict",
   "description": "Evidence-gated verdict: an exit code is NOT success. SHIP only with passing evidence.",
   "type": "object",

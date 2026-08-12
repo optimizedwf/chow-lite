@@ -16,14 +16,14 @@ pytestmark = pytest.mark.skipif(
 def _router():
     from google import genai
 
-    from chowlite.router.classifier import Router
+    from nine.router.classifier import Router
 
     client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
 
     class Model:
         def generate_content(self, prompt):
             return client.models.generate_content(
-                model="gemini-3.5-flash", contents=prompt
+                model="gemini-3.6-flash", contents=prompt
             )
 
     r = Router(model=Model(), version="live-test")

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""chow-lite live demo — the Taskmaster lane in one command.
+"""nine live demo — the Taskmaster lane in one command.
 
 Shows the full loop: inbox -> triage -> task -> report, with the job
 ledger, route events, and the SHIP verdict with evidence. This is the
@@ -11,10 +11,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-from chowlite.chains.chain import ChainExecutor
-from chowlite.chains.flagship import demo_lane
-from chowlite.learn.learner import Learner, RouteEventStore
-from chowlite.ledger.ledger import JSONLLedger
+from nine.chains.chain import ChainExecutor
+from nine.chains.flagship import demo_lane
+from nine.learn.learner import Learner, RouteEventStore
+from nine.ledger.ledger import JSONLLedger
 
 
 def main() -> int:
@@ -32,7 +32,7 @@ def main() -> int:
         (job_dir / "inbox.txt").write_text(task + "\n")
         (job_dir / "task.txt").write_text(task + "\n")
 
-        print("== chow-lite demo: inbox -> triage -> task -> report ==")
+        print("== nine demo: inbox -> triage -> task -> report ==")
         print(f"task: {task}\n")
         res = ex.execute(demo_lane(), job, {"task": task})
 

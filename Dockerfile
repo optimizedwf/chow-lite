@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git curl && \
     rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
-COPY chowlite ./chowlite
+COPY nine ./nine
 COPY schemas ./schemas
 COPY deploy ./deploy
 

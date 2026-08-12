@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Deploy chow-lite to Cloud Run + Firestore (Google Cloud).
+# Deploy nine to Cloud Run + Firestore (Google Cloud).
 # Prereqs: gcloud CLI + `gcloud auth login`, billing-enabled project.
 set -euo pipefail
 
-PROJECT_ID="${PROJECT_ID:?set PROJECT_ID (e.g. chow-lite-2026)}"
+PROJECT_ID="${PROJECT_ID:?set PROJECT_ID (e.g. nine-2026)}"
 REGION="${REGION:-us-central1}"
-SERVICE="${SERVICE:-chow-lite}"
+SERVICE="${SERVICE:-nine}"
 
 echo "==> Enabling APIs"
 gcloud services enable run.googleapis.com firestore.googleapis.com     --project "$PROJECT_ID"
@@ -32,7 +32,7 @@ fi
 echo "==> Deploying $SERVICE to Cloud Run"
 gcloud run deploy "$SERVICE" --source . --region "$REGION" --project "$PROJECT_ID" \
     --allow-unauthenticated --min-instances 0 --max-instances 2 \
-    --set-env-vars GEMINI_MODEL=gemini-3.5-flash,FIRESTORE_COLLECTION=chowlite-jobs \
+    --set-env-vars GEMINI_MODEL=gemini-3.6-flash,FIRESTORE_COLLECTION=nine-jobs \
     $SECRETS
 
 echo "==> Applying Firestore rules"

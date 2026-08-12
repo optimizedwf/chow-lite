@@ -1,7 +1,7 @@
-# chow-lite — Architecture & Code-Quality Audit (TASKMASTER track)
+# nine — Architecture & Code-Quality Audit (TASKMASTER track)
 
 **Reviewer:** senior software architect, judging as a Google SWE (Architecture = 30%)
-**Repo:** github.com/optimizedwf/chow-lite (MIT) — `/Users/adam26/chow-work/chow-lite`
+**Repo:** github.com/optimizedwf/nine (MIT) — `/Users/adam26/nine-work/nine`
 **Scope:** every Python file (~3,087 LOC incl. tests/deploy), all 5 JSON schemas, README, SUBMISSION.md, docs/architecture.svg, Dockerfile, deploy scripts, pyproject.toml.
 
 **Method:** read every file; ran the stable test suite (27 passed / 5 skipped offline); verified ADK API usage against the installed `google-adk 2.6.3`; reproduced the P0/P1 findings with executable repros (shell injection, chain-job status, FIX-loop behavior, ADK session reuse, empty-artifact gate).
@@ -10,9 +10,9 @@
 
 ## Executive summary
 
-chow-lite has a genuinely coherent core idea — *exit code ≠ success; nothing ships without evidence* — and the ROUTE → EXECUTE → VERIFY → LEARN loop is honestly implemented for the deterministic path. The state machine, append-only JSONL ledger, artifact manifest with sha256, per-hop gates, and the candidate-only learner are all defensible design. The ADK 2 integration is *API-correct* (verified against google-adk 2.6.3: `InMemoryRunner.run` is sync, `create_session` is a coroutine, `Event.content`/`is_final_response`/`part.function_call` all exist).
+nine has a genuinely coherent core idea — *exit code ≠ success; nothing ships without evidence* — and the ROUTE → EXECUTE → VERIFY → LEARN loop is honestly implemented for the deterministic path. The state machine, append-only JSONL ledger, artifact manifest with sha256, per-hop gates, and the candidate-only learner are all defensible design. The ADK 2 integration is *API-correct* (verified against google-adk 2.6.3: `InMemoryRunner.run` is sync, `create_session` is a coroutine, `Event.content`/`is_final_response`/`part.function_call` all exist).
 
-But the submission has **two P0s (unauthenticated command injection on the deployed API; a Docker image that cannot boot), several P1s where the code contradicts its own doctrine** (chain jobs never leave `submitted` in the durable ledger; FIX loops don't retry on gate-check failures; `chow submit` ignores the router; learner candidates evaporate; "schema-validated" claims with zero validation code), and a **public repo that does not match the working tree** (20 modified files + untracked tests, despite "repo frozen after submission").
+But the submission has **two P0s (unauthenticated command injection on the deployed API; a Docker image that cannot boot), several P1s where the code contradicts its own doctrine** (chain jobs never leave `submitted` in the durable ledger; FIX loops don't retry on gate-check failures; `nine submit` ignores the router; learner candidates evaporate; "schema-validated" claims with zero validation code), and a **public repo that does not match the working tree** (20 modified files + untracked tests, despite "repo frozen after submission").
 
 Verdict: strong narrative and demo-ability, but the architecture score will be capped by the gaps between claims and code. The Top-5 fix list at the end is the highest-leverage response to a picky judge.
 
@@ -29,14 +29,14 @@ cmd = (f"echo '{task[:200]}' > task.txt; "
        f"printf '{eval_json}' > EVAL.json")
 ```
 
-`deploy/deploy.sh:20` deploys with `--allow-unauthenticated`, and there is **no authentication on any FastAPI endpoint** (no API key, no header check, no Firestore-auth gating). **Reproduced:** submitting `x'; touch /tmp/chowlite_pwned; echo '` executes the injected command with exit 0 and creates the file. Even innocuous tasks break the shell quoting: `"what's the weather"` makes the command exit 2 and produce no `task.txt`. The same pattern exists in `chowlite/cli.py:115-121` (`cmd_submit`), which is less severe (local CLI) but still wrong.
+`deploy/deploy.sh:20` deploys with `--allow-unauthenticated`, and there is **no authentication on any FastAPI endpoint** (no API key, no header check, no Firestore-auth gating). **Reproduced:** submitting `x'; touch /tmp/nine_pwned; echo '` executes the injected command with exit 0 and creates the file. Even innocuous tasks break the shell quoting: `"what's the weather"` makes the command exit 2 and produce no `task.txt`. The same pattern exists in `nine/cli.py:115-121` (`cmd_submit`), which is less severe (local CLI) but still wrong.
 
 This is the first thing a security-conscious judge will find: a public, unauthenticated endpoint that runs attacker-controlled shell on a GCP service account.
 
 **Fix:** never shell-interpolate user input. Write the task to `task.txt` with `Path.write_text()` from Python and have the bash node read it (the flagship chains already use this file-interface pattern); or pass the task via `argv` to a non-interpolated script. Add an API-key middleware (`X-API-Key` check against an env var) on `/v1/*`, and use a least-privilege service account.
 
 ### P0-2. The Docker image cannot boot — `deploy/` is neither copied nor packaged
-`Dockerfile:9-13` copies only `pyproject.toml`, `README.md`, `chowlite/`, `schemas/`; `pyproject.toml:27` packages only `include = ["chowlite*"]`; yet `Dockerfile:19` runs `CMD ["uvicorn", "deploy.server:app", ...]`. `deploy/` is not in the image and not a Python package → `ModuleNotFoundError: No module named 'deploy'` at container start. `gcloud run deploy --source .` (deploy.sh:19) would build this and crash-loop; the README/SUBMISSION "production shape" story falls apart in front of the judge.
+`Dockerfile:9-13` copies only `pyproject.toml`, `README.md`, `nine/`, `schemas/`; `pyproject.toml:27` packages only `include = ["nine*"]`; yet `Dockerfile:19` runs `CMD ["uvicorn", "deploy.server:app", ...]`. `deploy/` is not in the image and not a Python package → `ModuleNotFoundError: No module named 'deploy'` at container start. `gcloud run deploy --source .` (deploy.sh:19) would build this and crash-loop; the README/SUBMISSION "production shape" story falls apart in front of the judge.
 
 **Fix:** `COPY deploy ./deploy` in the Dockerfile (and/or add `deploy` to `packages.find.include`), and add a `python -c "import deploy.server"` smoke check to the build. Add a container boot test to CI.
 
@@ -45,7 +45,7 @@ This is the first thing a security-conscious judge will find: a public, unauthen
 ## P1 — should-fix
 
 ### P1-1. Chain jobs never leave `submitted` — the durable ledger lies about the flagship feature
-`ChainExecutor.execute` (`chowlite/chains/chain.py:81-164`) never transitions the chain `job` through the lifecycle. It only calls `self.ledger.update(job)` (line 162). **Reproduced:** after a successful 3-hop `demo_lane()` run the returned `res["final"] == "SHIPPED"`, but `ledger.get(job_id).status == "submitted"` and `verdicts == []`. The chain-level verdict exists only in the in-memory return value; the durable record — the system's centerpiece — says "submitted" for a finished (or blocked) chain. A judge reading the ledger after the demo will see exactly this.
+`ChainExecutor.execute` (`nine/chains/chain.py:81-164`) never transitions the chain `job` through the lifecycle. It only calls `self.ledger.update(job)` (line 162). **Reproduced:** after a successful 3-hop `demo_lane()` run the returned `res["final"] == "SHIPPED"`, but `ledger.get(job_id).status == "submitted"` and `verdicts == []`. The chain-level verdict exists only in the in-memory return value; the durable record — the system's centerpiece — says "submitted" for a finished (or blocked) chain. A judge reading the ledger after the demo will see exactly this.
 
 **Fix:** drive the chain job through `running → awaiting_evidence → shipped | blocked`, append the final chain verdict to `job.verdicts`, and write `completed_at` (reuse `Job.transition`, which already enforces the legal-transition table).
 
@@ -56,8 +56,8 @@ Related: on the final attempt the hop job is left dangling in `fixing` status (`
 
 **Fix:** retry on the verdict itself (`verdict == "FIX"`) bounded by `hop.max_fix_loops`; pass `fix_directive` into `node_inputs` and document it; transition the last hop attempt to `blocked` when the chain blocks.
 
-### P1-3. `chow submit` ignores the router — ROUTE is decorative in the primary CLI path
-`cmd_submit` (`cli.py:113-128`) builds one hard-coded "collect" bash node for **every** `workflow_id` (research/build/review all produce identical `FINAL_REPORT.md` + `EVAL.json`). **Reproduced:** `chow submit "research the history of the typewriter"` and `chow submit "review the code quality"` produce byte-identical artifacts; only the recorded `workflow_id` differs. The router's decision — the entire ROUTE phase — does not select any behavior. Meanwhile the *real* workflows (flagship chain, demo lane, research workflow) live in a separate registry that `submit` never touches. The workflow catalog is also triplicated: `cli.py:41-51`, `deploy/server.py:52-94`, `demo_live.py:22-38` define different registries (the server's `inbox-triage-task-report` keywords don't exist in `chow submit`, so `chow submit "customer refund…"` falls back to `fallback-respond`).
+### P1-3. `nine submit` ignores the router — ROUTE is decorative in the primary CLI path
+`cmd_submit` (`cli.py:113-128`) builds one hard-coded "collect" bash node for **every** `workflow_id` (research/build/review all produce identical `FINAL_REPORT.md` + `EVAL.json`). **Reproduced:** `nine submit "research the history of the typewriter"` and `nine submit "review the code quality"` produce byte-identical artifacts; only the recorded `workflow_id` differs. The router's decision — the entire ROUTE phase — does not select any behavior. Meanwhile the *real* workflows (flagship chain, demo lane, research workflow) live in a separate registry that `submit` never touches. The workflow catalog is also triplicated: `cli.py:41-51`, `deploy/server.py:52-94`, `demo_live.py:22-38` define different registries (the server's `inbox-triage-task-report` keywords don't exist in `nine submit`, so `nine submit "customer refund…"` falls back to `fallback-respond`).
 
 **Fix:** map `workflow_id → Workflow` in one shared catalog module and have `cmd_submit` dispatch to the registered workflow (or document `submit` as a demo stub and require `chain` for real work). Single source of truth for the catalog.
 
@@ -97,7 +97,7 @@ README ("route-decision (schema-validated)", "artifact manifest (JSON schema val
 - **P2-9 `redact()` gaps:** no AWS `AKIA…`, `Authorization: Basic`, `ghp_` full-token coverage; and raw tasks are stored unredacted in `Job.input` (P1-6) and in `node_inputs`/artifacts.
 - **P2-10 CLI exit-code semantics:** `cmd_submit` returns 0 even when the job is BLOCKED/failed (only the print shows the verdict); `cmd_chain` returns 2 on block — inconsistent. Also `recover()` only flips a status flag; nothing re-executes the job (recovery is a stub).
 - **P2-11 `demo_live.py:22-25` raises `KeyError` on `os.environ["GEMINI_API_KEY"]`** when the key is unset, contradicting its own docstring ("Falls back to deterministic routing when no GEMINI_API_KEY is set"). Use `os.environ.get(...)`.
-- **P2-12 Claim/code drift in docs:** README says "25 tests"/"22 passing tests" (actual stable suite: 27 passed / 5 skipped; 37 with untracked files); SUBMISSION says "27/27" and "~1,200 lines" (actual ~3,087 incl. tests); README claims "ADK observability for traces" and "ADK evaluate maps to the evidence gate" — no such code exists; `cloud-run.yaml:22` has a literal `gcr.io/PROJECT_ID/chow-lite` placeholder and is **not** used by `deploy.sh` (`--source` buildpacks), so the README's "Deployment: deploy/cloud-run.yaml" is misleading.
+- **P2-12 Claim/code drift in docs:** README says "25 tests"/"22 passing tests" (actual stable suite: 27 passed / 5 skipped; 37 with untracked files); SUBMISSION says "27/27" and "~1,200 lines" (actual ~3,087 incl. tests); README claims "ADK observability for traces" and "ADK evaluate maps to the evidence gate" — no such code exists; `cloud-run.yaml:22` has a literal `gcr.io/PROJECT_ID/nine` placeholder and is **not** used by `deploy.sh` (`--source` buildpacks), so the README's "Deployment: deploy/cloud-run.yaml" is misleading.
 - **P2-13 Untested (stable suite):** FirestoreLedger (no test in committed repo — the untracked `test_firestore.py` appeared during this review), ADK multi-job/session reuse (P1-4), the FIX→retry→SHIP happy path (only the BLOCK path is tested), shell-quoting/injection (P0-1), chain-job lifecycle (P1-1), learner candidate persistence, node timeouts, concurrent JSONL appends. `test_server.py` (untracked) even asserts `status_code in (200, 404)` — a test that cannot fail.
 - **P2-14 Git hygiene vs. the "frozen repo" claim:** working tree has 20 modified files + 3 untracked test files vs. HEAD; the public repo (54 files, commit `d7acf3a`) is **stale relative to the code under submission**. Commit the working tree or explicitly freeze.
 - **P2-15 `make_adk_node` returns an ad-hoc dict** (`adk_runtime.py:114-123`) that callers manually unpack into `Node(...)`; and `kind="subagent"` executes identically to `tool`/`prompt` in `workflows.py:116-120` — "subagent" is a label, not an abstraction. Either make it return a real `Node` or delete it.
@@ -109,7 +109,7 @@ README ("route-decision (schema-validated)", "artifact manifest (JSON schema val
 
 1. **Kill the RCE (P0-1 + P0-2):** never shell-interpolate user task (write files from Python; read `task.txt` in nodes), add API-key auth middleware, and make the Docker image boot (`COPY deploy ./deploy` + package fix). A judge that deploys this gets a crash-loop or a pwned endpoint — everything else is moot.
 2. **Make the chain's durable record truthful (P1-1 + P1-2):** transition the chain job to `shipped`/`blocked` with a final verdict, retry FIX on the *verdict* (not missing artifacts), and resolve dangling `fixing` hop jobs. The ledger is the demo's centerpiece; it must not say `submitted` after SHIPPED.
-3. **Wire ROUTE → EXECUTE → LEARN for real (P1-3 + P1-5):** single workflow catalog; `chow submit` dispatches by `workflow_id`; `RouteEvent` carries the actual decision/confidence and redacted task; persist learner candidates.
+3. **Wire ROUTE → EXECUTE → LEARN for real (P1-3 + P1-5):** single workflow catalog; `nine submit` dispatches by `workflow_id`; `RouteEvent` carries the actual decision/confidence and redacted task; persist learner candidates.
 4. **Either implement or retract "schema-validated" (P1-6):** add `jsonschema` validation at the four boundaries (and fix `attempts>=1`, unredacted `input`), or soften all claims in README/SUBMISSION.
 5. **Fix the ADK node for multi-job reuse (P1-4):** per-session-id session creation or `auto_create_session=True`, surface empty-event/error cases, and add a non-keyed ADK test (fake model) so the mandatory-ADK story is testable in CI.
 
@@ -127,7 +127,7 @@ README ("route-decision (schema-validated)", "artifact manifest (JSON schema val
 
 - **Unauthenticated /v1/submit with shell interpolation** = instant RCE finding (P0-1) — and the Docker image doesn't boot (P0-2), so the live-GCP-proof segment can't be reproduced from the repo.
 - **The durable ledger lies:** chain jobs stay `submitted` even when the run shipped (P1-1); hop jobs dangle in `fixing`; FIX loops don't actually retry on the failure mode that matters (P1-2).
-- **ROUTE is decorative in `chow submit`** (P1-3): "router-first" but the router's output selects nothing.
+- **ROUTE is decorative in `nine submit`** (P1-3): "router-first" but the router's output selects nothing.
 - **"Schema-validated" with zero validation code** (P1-6) — a claim a picky judge will test with `grep`.
 - **LEARN output evaporates** and is fed hardcoded confidence (P1-5) — the "self-improvement" story is a demo, not a system.
 - **Public repo ≠ working tree** with "frozen after submission" in the docs (P2-14).

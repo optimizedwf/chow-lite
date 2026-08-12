@@ -20,7 +20,7 @@ One code per entrant; first-come; auto-declined without track+pitch.
 - Form: https://forms.gle/5PtXmw1dSbDnpYke9  (Resources tab; = old riGhgDSHkHeMx8Ca6 link)
 - Track: **TASKMASTER**
 - Suggested pitch (1–2 sentences, paste):
-  > "chow-lite: an open-source, evidence-gated agent operating system
+  > "nine: an open-source, evidence-gated agent operating system
   > (ROUTE→EXECUTE→VERIFY→LEARN) on Google ADK 2 + Gemini 3.5 Flash.
   > Autonomous multi-hop workflows with SHIP/FIX/BLOCK evidence gates,
   > deployed on Cloud Run + Firestore."
@@ -33,9 +33,9 @@ gcloud 580.0.0 is **already installed** on this Mac. You just auth:
 gcloud auth login            # browser sign-in, use the billing account
 gcloud auth application-default login
 gcloud config set project <your-project-id>   # or create one:
-gcloud projects create chow-lite-$(date +%s) --name="chow-lite"
+gcloud projects create nine-$(date +%s) --name="nine"
 gcloud services enable run.googleapis.com firestore.googleapis.com
-cd ~/chow-work/chow-lite
+cd ~/nine-work/nine
 bash deploy/deploy.sh        # one-command Cloud Run deploy (scale-to-zero)
 ```
 

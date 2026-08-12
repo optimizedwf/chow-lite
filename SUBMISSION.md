@@ -1,7 +1,7 @@
-# chow-lite — All Things Agentic 2026 Submission Pack
+# nine — All Things Agentic 2026 Submission Pack
 
-> Track: **TASKMASTER** — "Bring Your Own Friction": chow-lite eats its own
-> dogfood. The agent that built this repo used chow-lite-style discipline
+> Track: **TASKMASTER** — "Bring Your Own Friction": nine eats its own
+> dogfood. The agent that built this repo used nine-style discipline
 > (route → execute → verify → learn) to ship it.
 > `created for purposes of entering this hackathon` — see git history (all
 > commits Aug 3–31, 2026 submission period).
@@ -9,7 +9,7 @@
 ---
 
 ## 1. Devpost title (≤60 chars)
-**chow-lite — an evidence-gated agent OS (ROUTE→EXECUTE→VERIFY→LEARN)**
+**nine — an evidence-gated agent OS (ROUTE→EXECUTE→VERIFY→LEARN)**
 
 ## 2. Tagline
 Open-source agent operating system on Google ADK 2 + Gemini 3.5 Flash: every
@@ -24,7 +24,7 @@ call, one answer, no proof it did anything. Real autonomous work needs a
 **kernel**: decide what to do, do it in a typed pipeline, *prove* it happened,
 and get smarter from the trail.
 
-**chow-lite** is that kernel, in ~2700 lines of Python, open source (MIT):
+**nine** is that kernel, in ~2700 lines of Python, open source (MIT):
 
 - **ROUTE** — a Gemini 3.5 Flash router (with deterministic keyword fallback)
   turns free-text tasks into typed `RouteDecision`s against a workflow catalog.
@@ -51,10 +51,10 @@ every CLI run ships a full artifact trail.
 
 **Try it (5 minutes, no key needed):**
 ```bash
-git clone https://github.com/optimizedwf/chow-lite
-cd chow-lite && pip install -e .
+git clone https://github.com/optimizedwf/nine
+cd nine && pip install -e .
 python demo.py "plan a weekend trip to Big Sur"    # full loop, SHIP verdict
-chow chain flagship "build a calculator"            # 5-hop chain
+nine chain flagship "build a calculator"            # 5-hop chain
 ```
 
 ## 4. Architecture diagram
@@ -66,12 +66,12 @@ Cloud Run dashboard / `.run.app` URL in a browser + a live submit through
 the deployed API.
 
 ## 6. Links
-- Repo: https://github.com/optimizedwf/chow-lite (public, MIT)
-- Live site: https://chow-lite-<hash>.run.app (fill after deploy)
+- Repo: https://github.com/optimizedwf/nine (public, MIT)
+- Live site: https://nine-<hash>.run.app (fill after deploy)
 - YouTube: (fill after upload)
 
 ## 7. Required tech checklist (all three mandatory)
-- [x] **Gemini 3.5+ via Gemini API** — `gemini-3.5-flash` (live-tested router
+- [x] **Gemini 3.5+ via Gemini API** — `gemini-3.6-flash` (live-tested router
       + ADK agent; see `tests/test_router_live.py`, `tests/test_adk.py`)
 - [x] **Google agent framework: ADK** — `google-adk` 2.6.x, `LlmAgent`,
       `FunctionTool`, `InMemoryRunner`
@@ -79,7 +79,7 @@ the deployed API.
       cloud-run.yaml, firestore.rules, deploy.sh)
 
 ## 8. Judging rubric mapping
-| Criterion (weight) | How chow-lite hits it |
+| Criterion (weight) | How nine hits it |
 |---|---|
 | Innovation & Operational Utility (40%) | autonomy kernel with evidence-gated SHIP/FIX/BLOCK; candidate-only learning loop; dogfooded on its own build |
 | Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + Gemini 3.5 + Cloud Run/Firestore; JSON Schema validation in tests |

@@ -21,7 +21,7 @@
   <rect width="1200" height="760" fill="url(#bg)"/>
 
   <!-- Title -->
-  <text x="60" y="56" font-size="30" font-weight="bold" fill="#f5f5f7">chow-lite</text>
+  <text x="60" y="56" font-size="30" font-weight="bold" fill="#f5f5f7">nine</text>
   <text x="60" y="84" font-size="15" fill="#8b8fa3">ROUTE → EXECUTE → VERIFY → LEARN — an evidence-gated agent OS on Google ADK 2.0</text>
 
   <!-- Phase 1: ROUTE -->
@@ -149,5 +149,5 @@
 
   <!-- footer -->
   <text x="60" y="730" font-size="12" fill="#6b7280">An exit code is not success. Nothing ships without evidence.</text>
-  <text x="1000" y="730" font-size="12" fill="#6b7280">MIT · github.com/optimizedwf/chow-lite</text>
+  <text x="1000" y="730" font-size="12" fill="#6b7280">MIT · github.com/optimizedwf/nine</text>
 </svg>

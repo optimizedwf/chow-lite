@@ -1,16 +1,16 @@
 """Google ADK 2.0 integration — the Google agent framework layer.
 
-chow-lite is built ON Google ADK 2.0 (the required "agent framework" for
-the hackathon). This module adapts ADK agents into chow-lite workflow nodes:
+nine is built ON Google ADK 2.0 (the required "agent framework" for
+the hackathon). This module adapts ADK agents into nine workflow nodes:
 
     * an ADK agent (with tools, sessions, memory) can be a `subagent` node
-    * ADK sessions/memory map to the chow-lite job ledger (durable state)
-    * ADK evaluate maps to the chow-lite evidence gate
+    * ADK sessions/memory map to the nine job ledger (durable state)
+    * ADK evaluate maps to the nine evidence gate
     * ADK observability traces are emitted per job
 
 Verified against google-adk 2.6.3 (2026-08-12):
-    agents/routing          -> chow-lite Router
-    agents/workflow-agents  -> chow-lite WorkflowExecutor
+    agents/routing          -> nine Router
+    agents/workflow-agents  -> nine WorkflowExecutor
     sessions/memory         -> job ledger + persistent state
     evaluate                -> evidence gate
     deploy/cloud-run        -> deploy/cloud-run.yaml
@@ -35,14 +35,14 @@ def adk_available() -> bool:
 
 
 class ADKAgentNode:
-    """Adapts a Google ADK 2.0 LlmAgent into a chow-lite workflow node.
+    """Adapts a Google ADK 2.0 LlmAgent into a nine workflow node.
 
     The node runs the ADK agent via InMemoryRunner (sync convenience API),
     collects the final response text + all function calls as evidence, and
     returns a dict the WorkflowExecutor can register as artifacts.
     """
 
-    def __init__(self, agent: Any, app_name: str = "chow-lite") -> None:
+    def __init__(self, agent: Any, app_name: str = "nine") -> None:
         from google.adk.runners import InMemoryRunner
 
         self.agent = agent
@@ -67,7 +67,7 @@ class ADKAgentNode:
         from google.genai import types
 
         task = inputs.get("task", "")
-        user_id = "chow-lite"
+        user_id = "nine"
         session_id = f"job-{inputs.get('job_id', 'default')}"
         self._ensure_session(user_id, session_id)
 
@@ -131,7 +131,7 @@ class ADKAgentNode:
 
 
 def make_adk_node(agent: Any, description: str = "ADK agent step") -> dict[str, Any]:
-    """Return a chow-lite Node spec (kind='subagent') wrapping an ADK agent."""
+    """Return a nine Node spec (kind='subagent') wrapping an ADK agent."""
     adapter = ADKAgentNode(agent)
     name = getattr(agent, "name", "adk_node")
     return {
@@ -143,7 +143,7 @@ def make_adk_node(agent: Any, description: str = "ADK agent step") -> dict[str, 
 
 
 def register_adk_agents(router: Any, agents: list[Any]) -> None:
-    """Register ADK agents into the chow-lite router catalog."""
+    """Register ADK agents into the nine router catalog."""
     for agent in agents:
         name = getattr(agent, "name", "adk_agent")
         desc = getattr(agent, "description", "") or "ADK agent"

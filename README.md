@@ -1,6 +1,6 @@
-# chow-lite 🍜
+# nine
 <p align="center">
-  <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/chow-lite/ci.yml?branch=main&label=CI" alt="CI">
+  <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/nine/ci.yml?branch=main&label=CI" alt="CI">
   <img src="https://img.shields.io/badge/tests-63%20passing-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
@@ -10,7 +10,12 @@
 
 **A router-first, evidence-gated agent operating system.**
 Tasks come in → the router picks the right workflow → the workflow runs →
-the evidence gate refuses to say "done" without proof.
+the evidence gate refuses to say "done" without proof. Nothing ships until
+it's done **to the nines**.
+
+*Model-agnostic by design: defaults to the latest Gemini Flash, works with
+any provider through Google ADK's model registry — set `GEMINI_MODEL` (and
+the matching API key) to pin a different model.*
 
 ```
   ROUTE → EXECUTE → VERIFY → LEARN
@@ -19,7 +24,7 @@ the evidence gate refuses to say "done" without proof.
 > "An exit code is not success. A receipt is UNVERIFIED until the expected
 > artifact and validation produce an evidence-backed SHIP/FIX/BLOCK."
 
-chow-lite is the open-source, lightweight version of the agent harness that
+nine is the open-source, lightweight version of the agent harness that
 runs our own multi-lane agent operation. It is built **on Google ADK 2.0 +
 Gemini 3.5 Flash + Cloud Run + Firestore** — no vendor lock-in, MIT licensed,
 self-hostable, scale-to-zero.
@@ -28,7 +33,7 @@ self-hostable, scale-to-zero.
 
 ## Architecture
 
-![chow-lite architecture](docs/architecture.png)
+![nine architecture](docs/architecture.png)
 
 **One loop, four phases, zero blind trust:**
 
@@ -46,23 +51,23 @@ every handoff — nothing ships without evidence, at any stage.
 
 Every submit path (CLI, server, chains, direct answers) appends a **route
 event** to `jobs/events.jsonl` — the task, the routed workflow, the router's
-confidence, and the verdict. `chow learn scan` turns weak signals into
+confidence, and the verdict. `nine learn scan` turns weak signals into
 **improvement candidates**:
 
 ```bash
-$ chow submit "study quantum chromodynamics"
+$ nine submit "study quantum chromodynamics"
   -> research  (confidence 0.179)
-$ chow learn scan
+$ nine learn scan
   cand-…  [keyword]  pending
       route to 'research' at confidence 0.18 (low);
       add keyword 'chromodynamics' or re-describe the workflow
       params: {"workflow_id": "research", "keyword": "chromodynamics", …}
-$ chow learn apply cand-…
+$ nine learn apply cand-…
   # regression suite runs BEFORE and AFTER the catalog change
-  # commits chowlite/router/catalog.json (git-tracked, rollback = git revert)
-$ chow submit "chromodynamics of gauge fields"
+  # commits nine/router/catalog.json (git-tracked, rollback = git revert)
+$ nine submit "chromodynamics of gauge fields"
   -> research  (confidence 0.467)   # 2.6× more confident, same workflow
-$ chow learn revert cand-…          # remove the override, re-gated, committed
+$ nine learn revert cand-…          # remove the override, re-gated, committed
 ```
 
 Doctrine: **the loop never changes behavior silently.** Apply/revert are
@@ -77,14 +82,14 @@ event + candidate counts.
 ```bash
 pip install -e .            # or: uv pip install -e .
 export GEMINI_API_KEY=...   # optional; deterministic routing works without it
-chow submit "research the history of the typewriter"
-chow chain demo "respond to customer refund question"   # 3-hop demo lane
-chow chain flagship "build a calculator"                # 5-hop full chain
-chow stats
+nine submit "research the history of the typewriter"
+nine chain demo "respond to customer refund question"   # 3-hop demo lane
+nine chain flagship "build a calculator"                # 5-hop full chain
+nine stats
 ```
 
 Everything ships with a full artifact trail and a SHIP/FIX/BLOCK verdict per
-job — see `chow status <job_id>` and `chow artifacts <job_id>`.
+job — see `nine status <job_id>` and `nine artifacts <job_id>`.
 
 ## Submission pack (All Things Agentic 2026)
 
@@ -98,7 +103,7 @@ Most "agents" are chatbots in a trench coat: they talk, they don't do.
 And the ones that do act usually **claim success without proof** — a script
 exits 0 and everyone assumes it worked.
 
-chow-lite makes agents *trustworthy by construction*:
+nine makes agents *trustworthy by construction*:
 
 1. **ROUTE** — every task is classified to a workflow by an intent router
    (Gemini 3.5 Flash, with a deterministic keyword fallback so the core
@@ -119,23 +124,23 @@ chow-lite makes agents *trustworthy by construction*:
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 
-chow submit "research the latest agent frameworks"
+nine submit "research the latest agent frameworks"
 # → route decision (workflow_id: research)
 # → workflow runs, produces research.md + EVAL.json
 # → evidence gate: SHIP (all evidence checks passed)
 # → job ledger: submitted → routing → running → awaiting_evidence → shipped
 
-chow discover              # list jobs
-chow status <job_id>       # full job record + verdicts
-chow artifacts <job_id>    # artifact manifest (sha256, size, producer)
-chow cancel <job_id>       # cancel
-chow recover <job_id>      # recover a blocked/failed job
-chow stats                 # ledger stats
+nine discover              # list jobs
+nine status <job_id>       # full job record + verdicts
+nine artifacts <job_id>    # artifact manifest (sha256, size, producer)
+nine cancel <job_id>       # cancel
+nine recover <job_id>      # recover a blocked/failed job
+nine stats                 # ledger stats
 ```
 
 ## Required tech (hackathon rules compliance)
 
-| Requirement | chow-lite uses |
+| Requirement | nine uses |
 |---|---|
 | Gemini 3.5 or newer | Gemini 3.5 Flash via Gemini API (router + agent steps) |
 | Google agent framework | **Google ADK 2.0** (agents, routing, workflow-agents, sessions/memory, evaluate, observability) |
@@ -170,7 +175,7 @@ commit credentials.
 ## Repository layout
 
 ```
-chowlite/
+nine/
   router/classifier.py    intent classifier + route-decision contract
   ledger/ledger.py        durable job ledger (JSONL + Firestore adapters)
   gates/evidence.py       SHIP/FIX/BLOCK evidence gate (EVAL.json, exit codes)
@@ -201,4 +206,4 @@ tests/                    25 tests (router, ledger, gates, executor, chains, lea
 
 ## License
 
-MIT © 2026 Adam Norman & Chow
+MIT © 2026 Adam Norman & Nine

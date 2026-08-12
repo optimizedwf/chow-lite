@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""chow-lite LIVE demo — model-routed, evidence-gated, learning.
+"""nine LIVE demo — model-routed, evidence-gated, learning.
 
 Same loop as demo.py but the ROUTE step is a real Gemini 3.5 Flash call
 and the teach hop uses Gemma 4 (second Google model). Falls back to
@@ -12,11 +12,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-from chowlite.chains.chain import ChainExecutor
-from chowlite.chains.flagship import demo_lane, research_plan_build_review_teach
-from chowlite.learn.learner import Learner, RouteEventStore
-from chowlite.ledger.ledger import JSONLLedger
-from chowlite.router.classifier import Router
+from nine.chains.chain import ChainExecutor
+from nine.chains.flagship import demo_lane, research_plan_build_review_teach
+from nine.learn.learner import Learner, RouteEventStore
+from nine.ledger.ledger import JSONLLedger
+from nine.router.classifier import Router
 
 
 def _model_router() -> Router:
@@ -27,10 +27,10 @@ def _model_router() -> Router:
     class Model:
         def generate_content(self, prompt):
             return client.models.generate_content(
-                model="gemini-3.5-flash", contents=prompt
+                model="gemini-3.6-flash", contents=prompt
             )
 
-    r = Router(model=Model(), version="gemini-3.5-flash-live")
+    r = Router(model=Model(), version="gemini-3.6-flash-live")
     r.register("inbox-triage-task-report", ["trip", "plan", "refund", "customer", "inbox"],
                "Taskmaster lane: inbox -> triage -> task -> report.")
     r.register("research-plan-build-review-teach", ["build", "research", "implement", "code"],

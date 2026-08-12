@@ -3,13 +3,13 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from chowlite.chains.chain import Chain, Hop
-from chowlite.gates.evidence import (
+from nine.chains.chain import Chain, Hop
+from nine.gates.evidence import (
     eval_json_check,
     exit_codes_check,
     required_artifact_check,
 )
-from chowlite.runtime.workflows import Node, Workflow
+from nine.runtime.workflows import Node, Workflow
 
 # ---------------------------------------------------------------- hops
 
@@ -66,7 +66,7 @@ def _build_adk_node() -> Node:
     Offline/CI: with no GEMINI_API_KEY the node degrades to a deterministic
     writer so the core loop and tests stay hermetic.
     """
-    from chowlite.runtime.adk_runtime import ADKAgentNode
+    from nine.runtime.adk_runtime import ADKAgentNode
 
     def _run(inputs: dict, job_dir) -> dict:
         job_dir = Path(job_dir)
@@ -92,9 +92,9 @@ def _build_adk_node() -> Node:
 
         agent = LlmAgent(
             name="coder",
-            model=Gemini(model="gemini-3.5-flash"),
+            model=Gemini(model="gemini-3.6-flash"),
             instruction=(
-                "You are the build hop of chow-lite, an evidence-gated agent OS.\n"
+                "You are the build hop of nine, an evidence-gated agent OS.\n"
                 "Read the task and plan, then write ONE runnable Python module "
                 "`solution.py` that solves the task. Use the write_file tool. "
                 "Keep the code simple, dependency-free, and correct — an "
@@ -169,12 +169,12 @@ def review_hop() -> Hop:
 def _teach_gemma_node() -> Node:
     """Teach hop backed by Gemma 4 (2nd Google model) when a key is present;
     deterministic fallback keeps the core loop offline-friendly."""
-    from chowlite.runtime.gemma import gemma_generate
+    from nine.runtime.gemma import gemma_generate
 
     def _run(inputs: dict, job_dir):
         task = inputs.get("task", "the completed task")
         prompt = (
-            "You are the teach hop of chow-lite, an evidence-gated agent OS.\n"
+            "You are the teach hop of nine, an evidence-gated agent OS.\n"
             "Write a concise lesson (<=120 words, markdown) an agent should "
             "remember from this run.\n"
             "Task: " + task + "\n"

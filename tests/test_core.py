@@ -1,4 +1,4 @@
-"""chow-lite core test suite — router, ledger, gates, workflow executor.
+"""nine core test suite — router, ledger, gates, workflow executor.
 
 Run:  python -m pytest tests/ -v
 """
@@ -10,15 +10,15 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from chowlite.gates.evidence import (
+from nine.gates.evidence import (
     EvidenceGate,
     eval_json_check,
     exit_codes_check,
     required_artifact_check,
 )
-from chowlite.ledger.ledger import InvalidTransition, JSONLLedger
-from chowlite.router.classifier import Router, redact
-from chowlite.runtime.workflows import Node, Workflow, WorkflowError, WorkflowExecutor
+from nine.ledger.ledger import InvalidTransition, JSONLLedger
+from nine.router.classifier import Router, redact
+from nine.runtime.workflows import Node, Workflow, WorkflowError, WorkflowExecutor
 
 # ---------- router ----------
 
@@ -226,10 +226,10 @@ if __name__ == "__main__":
 
 def test_model_crash_falls_back_to_keywords(monkeypatch):
     """A model exception (quota 429, timeout) must never crash routing."""
-    import chowlite.router.classifier as _c
+    import nine.router.classifier as _c
 
     monkeypatch.setattr(_c, "_RETRY_DELAYS", (0.01, 0.01))
-    from chowlite.router.classifier import Router
+    from nine.router.classifier import Router
 
     class ExplodingModel:
         def generate_content(self, prompt):
@@ -238,7 +238,7 @@ def test_model_crash_falls_back_to_keywords(monkeypatch):
     r = Router()
     r.register("research", ["research", "investigate"])
     r.register("build", ["build", "implement"])
-    from chowlite.router.classifier import GeminiRouter
+    from nine.router.classifier import GeminiRouter
 
     r.model_router = GeminiRouter(ExplodingModel(), r.workflows)
     d = r.classify("research the printing press")
@@ -248,7 +248,7 @@ def test_model_crash_falls_back_to_keywords(monkeypatch):
 
 
 def test_model_unknown_workflow_falls_back_to_keywords():
-    from chowlite.router.classifier import GeminiRouter, Router
+    from nine.router.classifier import GeminiRouter, Router
 
     class LyingModel:
         def generate_content(self, prompt):

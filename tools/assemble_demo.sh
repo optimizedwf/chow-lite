@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Assemble the final chow-lite demo video from segments.
+# Assemble the final nine demo video from segments.
 # Place the recorded GCP segment at demo_capture/gcp_segment.mp4 then run:
 #   bash tools/assemble_demo.sh
 set -euo pipefail

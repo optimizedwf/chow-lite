@@ -3,7 +3,7 @@
 The JSONL ledger is the zero-dependency default (local/CI). For production
 deployment on Google Cloud, the same Job API is backed by Firestore:
 
-    collection: chowlite/jobs/{job_id}
+    collection: nine/jobs/{job_id}
     fields:     the full Job record (JSON-serializable)
 
 The API mirrors JSONLLedger so swapping backends is a one-line change.
@@ -17,13 +17,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from chowlite.ledger.ledger import Job, LedgerError
+from nine.ledger.ledger import Job, LedgerError
 
 
 class FirestoreLedger:
     """Firestore-backed ledger with the same API as JSONLLedger."""
 
-    def __init__(self, project: str | None = None, collection: str = "chowlite-jobs") -> None:
+    def __init__(self, project: str | None = None, collection: str = "nine-jobs") -> None:
         from google.cloud import firestore  # lazy import
 
         if project:

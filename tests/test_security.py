@@ -2,7 +2,7 @@
 
 Covers the P0 findings from review/REVIEW-SECURITY.md:
   1. RCE: user task bytes must never reach a shell (no command injection).
-  2. Auth: X-API-Key enforced when CHOW_API_KEY is set.
+  2. Auth: X-API-Key enforced when NINE_API_KEY is set.
   3. Rate limit + body-size cap.
   4. Data lands on writable scratch (/tmp) when running on Cloud Run.
 """
@@ -13,14 +13,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ["GEMINI_API_KEY"] = ""
-os.environ.setdefault("CHOW_API_KEY", "")
+os.environ.setdefault("NINE_API_KEY", "")
 os.environ.pop("K_SERVICE", None)
 
 
 def _fresh_client(monkeypatch, tmp_path, api_key=""):
-    """Import deploy.server fresh with a given CHOW_API_KEY + tmp runtime."""
-    monkeypatch.setenv("CHOW_API_KEY", api_key)
-    monkeypatch.setenv("CHOW_DATA_DIR", str(tmp_path))
+    """Import deploy.server fresh with a given NINE_API_KEY + tmp runtime."""
+    monkeypatch.setenv("NINE_API_KEY", api_key)
+    monkeypatch.setenv("NINE_DATA_DIR", str(tmp_path))
     for m in list(sys.modules):
         if m.startswith("deploy"):
             del sys.modules[m]
@@ -34,10 +34,10 @@ def _fresh_client(monkeypatch, tmp_path, api_key=""):
 def test_no_shell_injection_via_task(monkeypatch, tmp_path):
     """A task that would break out of a shell must not execute anything."""
     client = _fresh_client(monkeypatch, tmp_path)
-    evil = "build'; touch /tmp/chowlite_pwned; echo '"
+    evil = "build'; touch /tmp/nine_pwned; echo '"
     r = client.post("/v1/submit", json={"task": evil})
     assert r.status_code == 200, r.text
-    assert not Path("/tmp/chowlite_pwned").exists()
+    assert not Path("/tmp/nine_pwned").exists()
     # the artifact should contain the RAW task (written by Python, byte-safe)
     jid = r.json()["job_id"]
     job = client.get(f"/v1/jobs/{jid}").json()
@@ -71,11 +71,11 @@ def test_payload_size_capped(monkeypatch, tmp_path):
 
 
 def test_runtime_dir_uses_scratch_on_cloudrun(monkeypatch, tmp_path):
-    monkeypatch.setenv("K_SERVICE", "chow-lite")
+    monkeypatch.setenv("K_SERVICE", "nine")
     client = _fresh_client(monkeypatch, tmp_path)
     r = client.get("/health")
     assert r.status_code == 200
-    # ledger written inside CHOW_DATA_DIR (tmp), not repo root
+    # ledger written inside NINE_DATA_DIR (tmp), not repo root
     import deploy.server as srv
 
     assert str(srv.LEDGER_PATH).startswith(str(tmp_path))

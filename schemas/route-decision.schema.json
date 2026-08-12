@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/optimizedwf/chow-lite/schemas/route-decision.schema.json",
+  "$id": "https://github.com/optimizedwf/nine/schemas/route-decision.schema.json",
   "title": "RouteDecision",
-  "description": "Output of the chow-lite router: classification of a task to a workflow.",
+  "description": "Output of the nine router: classification of a task to a workflow.",
   "type": "object",
   "required": [
     "decision_id",
@@ -24,7 +24,7 @@
     },
     "workflow_id": {
       "type": "string",
-      "description": "ID of the selected workflow, e.g. research/build/review (see chowlite/registry.py)"
+      "description": "ID of the selected workflow, e.g. research/build/review (see nine/registry.py)"
     },
     "confidence": {
       "type": "number",

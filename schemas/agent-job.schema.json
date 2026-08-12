@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/optimizedwf/chow-lite/schemas/agent-job.schema.json",
+  "$id": "https://github.com/optimizedwf/nine/schemas/agent-job.schema.json",
   "title": "AgentJob",
-  "description": "Durable job record in the chow-lite job ledger. A job is one execution of a workflow.",
+  "description": "Durable job record in the nine job ledger. A job is one execution of a workflow.",
   "type": "object",
   "required": [
     "job_id",

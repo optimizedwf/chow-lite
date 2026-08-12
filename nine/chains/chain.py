@@ -25,10 +25,10 @@ from datetime import UTC
 from pathlib import Path
 from typing import Any
 
-from chowlite.gates.evidence import EvidenceGate
-from chowlite.learn.learner import RouteEvent
-from chowlite.ledger.ledger import Job, JSONLLedger
-from chowlite.runtime.workflows import Workflow, WorkflowError, WorkflowExecutor
+from nine.gates.evidence import EvidenceGate
+from nine.learn.learner import RouteEvent
+from nine.ledger.ledger import Job, JSONLLedger
+from nine.runtime.workflows import Workflow, WorkflowError, WorkflowExecutor
 
 
 class ChainError(Exception):
@@ -146,8 +146,8 @@ class ChainExecutor:
         # didn't supply one, derive a deterministic keyword decision from
         # the shared registry so the LEARN loop always sees real values.
         if decision is None:
-            from chowlite.registry import HOP_DESCRIPTIONS, KEYWORDS
-            from chowlite.router.classifier import Router
+            from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
+            from nine.router.classifier import Router
 
             _r = Router()
             for wf_id, kws in KEYWORDS.items():
@@ -189,7 +189,7 @@ class ChainExecutor:
                 # (P1-5: real confidence/router_version from the ROUTE step;
                 # task text is redact()ed, not just truncated)
                 if self.learner is not None:
-                    from chowlite.router.classifier import redact
+                    from nine.router.classifier import redact
 
                     self.learner.observe(
                         RouteEvent(

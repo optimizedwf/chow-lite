@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/optimizedwf/chow-lite/schemas/route-event.schema.json",
+  "$id": "https://github.com/optimizedwf/nine/schemas/route-event.schema.json",
   "title": "RouteEvent",
   "description": "One recorded route decision + evidence verdict, used by the LEARN loop.",
   "type": "object",

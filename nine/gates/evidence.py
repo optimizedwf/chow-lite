@@ -1,4 +1,4 @@
-"""Evidence gate — the VERIFY step of the chow-lite loop.
+"""Evidence gate — the VERIFY step of the nine loop.
 
 An exit code is not success. A job is UNVERIFIED until the evidence gate
 produces a verdict from artifacts:
@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from chowlite.schema_validation import validate
+from nine.schema_validation import validate
 
 GATE_VERSION = "0.1.0"
 

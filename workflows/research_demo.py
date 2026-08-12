@@ -1,6 +1,6 @@
 """Example workflow — a 2-node "research + verify" DAG.
 
-Workflows in chow-lite are DATA, not code: this file just constructs a
+Workflows in nine are DATA, not code: this file just constructs a
 Workflow object (typed nodes + dependencies). The engine executes it in
 topological order, registers artifacts, and runs the evidence gate.
 
@@ -12,13 +12,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from chowlite.gates.evidence import (
+from nine.gates.evidence import (
     EvidenceGate,
     exit_codes_check,
     required_artifact_check,
 )
-from chowlite.ledger.ledger import JSONLLedger
-from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor
+from nine.ledger.ledger import JSONLLedger
+from nine.runtime.workflows import Node, Workflow, WorkflowExecutor
 
 
 def build_research_workflow() -> Workflow:

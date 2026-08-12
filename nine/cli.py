@@ -1,20 +1,20 @@
-"""chow-lite CLI — the operator interface.
+"""nine CLI — the operator interface.
 
-    chow submit  "<task>"           submit a task (router -> workflow -> run)
-    chow chain <chain_id> "<task>"  run a multi-hop chain (flagship / demo)
-    chow status  <job_id>           job status
-    chow discover [--status X]      list jobs
-    chow artifacts <job_id>         list job artifacts
-    chow cancel <job_id>            cancel a job
-    chow recover <job_id>           recover a blocked/failed job
-    chow stats                      ledger stats
+    nine submit  "<task>"           submit a task (router -> workflow -> run)
+    nine chain <chain_id> "<task>"  run a multi-hop chain (flagship / demo)
+    nine status  <job_id>           job status
+    nine discover [--status X]      list jobs
+    nine artifacts <job_id>         list job artifacts
+    nine cancel <job_id>            cancel a job
+    nine recover <job_id>           recover a blocked/failed job
+    nine stats                      ledger stats
 
 Chains:
     flagship   research -> plan -> build -> review -> teach (5 hops)
     demo       inbox -> triage -> task -> report (demo lane)
 
 Exit codes: 0 ok, 1 error. (An exit code is NOT task success — check
-`chow status` for the SHIP/FIX/BLOCK verdict.)
+`nine status` for the SHIP/FIX/BLOCK verdict.)
 """
 from __future__ import annotations
 
@@ -24,14 +24,14 @@ import os
 import sys
 from pathlib import Path
 
-from chowlite.gates.evidence import (
+from nine.gates.evidence import (
     EvidenceGate,
     eval_json_check,
     exit_codes_check,
 )
-from chowlite.ledger.ledger import JSONLLedger, LedgerError
-from chowlite.router.classifier import Router
-from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor, write_demo_artifacts
+from nine.ledger.ledger import JSONLLedger, LedgerError
+from nine.router.classifier import Router
+from nine.runtime.workflows import Node, Workflow, WorkflowExecutor, write_demo_artifacts
 
 DEFAULT_LEDGER = "jobs/ledger.jsonl"
 
@@ -41,7 +41,7 @@ def _ledger(args) -> JSONLLedger:
 
 
 def build_default_router() -> Router:
-    from chowlite.registry import HOP_DESCRIPTIONS, KEYWORDS
+    from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
     r = Router()
     for wf_id, kws in KEYWORDS.items():
         r.register(wf_id, kws, HOP_DESCRIPTIONS.get(wf_id, ""))
@@ -50,8 +50,8 @@ def build_default_router() -> Router:
 
 def cmd_chain(args) -> int:
     """Run a named chain end-to-end with per-hop evidence gates."""
-    from chowlite.chains.chain import ChainExecutor
-    from chowlite.chains.flagship import demo_lane, research_plan_build_review_teach
+    from nine.chains.chain import ChainExecutor
+    from nine.chains.flagship import demo_lane, research_plan_build_review_teach
 
     chains = {
         "flagship": research_plan_build_review_teach,
@@ -116,10 +116,10 @@ def cmd_submit(args) -> int:
     # dispatch through the shared registry: real workflows/chains per
     # workflow_id (research != review != build); Python collect node is the
     # RCE-hardened fallback for unregistered ids.
-    from chowlite.registry import CHAINS, WORKFLOWS
+    from nine.registry import CHAINS, WORKFLOWS
 
     if decision.workflow_id in CHAINS:
-        from chowlite.chains.chain import ChainExecutor
+        from nine.chains.chain import ChainExecutor
         chain = CHAINS[decision.workflow_id]()
         cex = ChainExecutor(ledger, workdir=args.workdir, learner=learner)
         job_dir = Path(args.workdir) / job.job_id
@@ -140,7 +140,7 @@ def cmd_submit(args) -> int:
                              decision.workflow_id, args.task, Path(jd)),
                          description="collect task + write report artifact + EVAL.json (Python)"))
 
-    from chowlite.registry import workflow_gate
+    from nine.registry import workflow_gate
 
     gate = workflow_gate(decision.workflow_id) or build_default_gate()
     executor = WorkflowExecutor(ledger, gate)
@@ -157,7 +157,7 @@ def cmd_submit(args) -> int:
 def _record_route_event(learner, job, decision, verdict: dict) -> None:
     """Append a route event for a one-shot workflow run (chain runs record
     per-hop events inside ChainExecutor). job is None for direct answers."""
-    from chowlite.learn.learner import RouteEvent
+    from nine.learn.learner import RouteEvent
 
     eval_results = verdict.get("eval_results") or {}
     learner.observe(
@@ -224,7 +224,7 @@ def cmd_stats(args) -> int:
 
 def _learner(args):
     """Route-event store + learner on the CLI's durable event log."""
-    from chowlite.learn.learner import Learner, RouteEventStore
+    from nine.learn.learner import Learner, RouteEventStore
 
     events_path = Path(args.events)
     return Learner(RouteEventStore(events_path))
@@ -254,7 +254,7 @@ def cmd_learn(args) -> int:
     if action == "candidates":
         cands = learner.cands.all()
         if not cands:
-            print("no improvement candidates yet (run: chow learn scan)")
+            print("no improvement candidates yet (run: nine learn scan)")
         for c in cands:
             _print_candidate(c)
         return 0
@@ -295,10 +295,10 @@ def _apply_candidate(learner, candidate_id: str) -> int:
     kw = cand.params.get("keyword", "")
     if cand.kind != "keyword" or not kw or not wf_id:
         print("this candidate is not auto-applicable (no actionable keyword); "
-              "edit chowlite/router/catalog.json manually, then chow learn apply")
+              "edit nine/router/catalog.json manually, then nine learn apply")
         return 2
 
-    from chowlite.registry import load_catalog, save_catalog
+    from nine.registry import load_catalog, save_catalog
 
     catalog = load_catalog()
     current = catalog.setdefault("keyword_overrides", {}).setdefault(wf_id, [])
@@ -327,7 +327,7 @@ def _apply_candidate(learner, candidate_id: str) -> int:
     _git_commit(f"learn apply {candidate_id}: add keyword '{kw}' to '{wf_id}'")
     learner.cands.update_status(candidate_id, "applied")
     print(f"applied {candidate_id}: keyword '{kw}' -> {wf_id}; "
-          f"catalog committed (rollback: chow learn revert {candidate_id})")
+          f"catalog committed (rollback: nine learn revert {candidate_id})")
     return 0
 
 
@@ -341,7 +341,7 @@ def _revert_candidate(learner, candidate_id: str) -> int:
         print(f"candidate {candidate_id} is {cand.status} (only applied can be reverted)")
         return 2
 
-    from chowlite.registry import load_catalog, save_catalog
+    from nine.registry import load_catalog, save_catalog
 
     wf_id = cand.params.get("workflow_id", "")
     kw = cand.params.get("keyword", "")
@@ -410,14 +410,14 @@ def _git_commit(message: str) -> None:
     import subprocess as _sp
 
     root = Path(__file__).resolve().parent.parent
-    _sp.run(["git", "-C", str(root), "add", "chowlite/router/catalog.json"], check=True)
+    _sp.run(["git", "-C", str(root), "add", "nine/router/catalog.json"], check=True)
     _sp.run(["git", "-C", str(root), "-c", "user.name=adamnorm4wd",
              "-c", "user.email=adamnorm4wd@atomicmail.io", "commit", "-m", message],
             check=True)
 
 
 def main(argv: list[str] | None = None) -> int:
-    p = argparse.ArgumentParser(prog="chow", description="chow-lite agent OS")
+    p = argparse.ArgumentParser(prog="nine", description="nine agent OS")
     p.add_argument("--ledger", default=DEFAULT_LEDGER, help="ledger path")
     p.add_argument("--events", default="jobs/events.jsonl", help="route-event store path")
     sub = p.add_subparsers(dest="cmd", required=True)

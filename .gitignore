@@ -5,7 +5,7 @@
 *.key
 *secrets*
 .agent-vault/
-.chow-secrets/
+.nine-secrets/
 
 # python
 __pycache__/

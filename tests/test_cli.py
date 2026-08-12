@@ -6,14 +6,14 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
-from chowlite.cli import main
+from nine.cli import main
 
 
 @pytest.fixture(autouse=True)
 def _isolated_catalog(tmp_path, monkeypatch):
     """Learn apply/revert writes the shared git-tracked catalog for real;
     point it at a temp file so tests never touch the repo catalog."""
-    monkeypatch.setattr("chowlite.registry._CATALOG_PATH", tmp_path / "catalog.json")
+    monkeypatch.setattr("nine.registry._CATALOG_PATH", tmp_path / "catalog.json")
 
 
 def test_cli_help_ok():
@@ -90,7 +90,7 @@ def test_cli_learn_apply_revert_gated_by_regression(tmp_path, monkeypatch):
     catalog, and reverts cleanly — with the gate+git monkeypatched so the
     unit test never spawns pytest or commits."""
 
-    import chowlite.cli as cli
+    import nine.cli as cli
 
     events = tmp_path / "events.jsonl"
     ledger = tmp_path / "ledger.jsonl"
@@ -114,7 +114,7 @@ def test_cli_learn_apply_revert_gated_by_regression(tmp_path, monkeypatch):
     commits = []
     monkeypatch.setattr(cli, "_git_commit", commits.append)
 
-    from chowlite.registry import load_catalog
+    from nine.registry import load_catalog
     # apply: catalog gains the keyword; candidate applied
     assert cli._apply_candidate(cli._learner(type("A", (), {"events": str(events)})()), cid) == 0
     cat = load_catalog()
@@ -133,7 +133,7 @@ def test_cli_learn_apply_revert_gated_by_regression(tmp_path, monkeypatch):
 
 def test_cli_learn_apply_refuses_non_applicable(tmp_path, monkeypatch):
     """fallback-respond candidates have no target workflow -> apply refuses."""
-    import chowlite.cli as cli
+    import nine.cli as cli
 
     events = tmp_path / "events.jsonl"
     ledger = tmp_path / "ledger.jsonl"

@@ -21,10 +21,10 @@ jobs:
         run: |
           uv pip install --python .venv/bin/python -e ".[dev]"
       - name: Lint (ruff)
-        run: .venv/bin/ruff check chowlite tests deploy workflows demo.py demo_live.py
+        run: .venv/bin/ruff check nine tests deploy workflows demo.py demo_live.py
       - name: Type check (mypy)
         run: |
-          .venv/bin/mypy chowlite deploy demo.py demo_live.py --ignore-missing-imports
+          .venv/bin/mypy nine deploy demo.py demo_live.py --ignore-missing-imports
         continue-on-error: true
       - name: Test (hermetic — live tests auto-skip without GEMINI_API_KEY)
         run: .venv/bin/pytest tests/ -q --tb=short

@@ -20,8 +20,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from chowlite.router.classifier import RouteDecision
-from chowlite.schema_validation import validate
+from nine.router.classifier import RouteDecision
+from nine.schema_validation import validate
 
 VALID_STATUSES = {
     "submitted", "routing", "running", "awaiting_evidence",
@@ -125,7 +125,7 @@ class JSONLLedger:
     """Zero-dependency JSONL-backed ledger. One JSON object per line.
 
     Append-only for auditability: transitions write a new line; the last
-    line for a job_id is the current state. (The internal chow design used
+    line for a job_id is the current state. (The internal nine design used
     JSONL for the same reason — audit + replay.)
     """
 

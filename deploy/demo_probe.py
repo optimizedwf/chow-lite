@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""GCP-proof probe — exercises the LIVE deployed chow-lite API.
+"""GCP-proof probe — exercises the LIVE deployed nine API.
 
 Run against the deployed Cloud Run URL (or local uvicorn):
     python deploy/demo_probe.py [BASE_URL]
@@ -29,7 +29,7 @@ def call(method: str, path: str, payload: dict | None = None) -> dict:
 
 
 def main() -> int:
-    print(f"$ chow probe {BASE}")
+    print(f"$ nine probe {BASE}")
     print("  (live on Google Cloud Run \u2014 Firestore-backed, built from GitHub main)\n")
 
     h = call("GET", "/health")
@@ -60,7 +60,7 @@ def main() -> int:
     st = call("GET", "/v1/stats")
     print(f"\n[GET /v1/stats]  {st['status']}  {st['latency_ms']}ms")
     print(f"  -> {json.dumps(st['body'])}")
-    print(f"\nOK \u2014 chow-lite is LIVE on {BASE}")
+    print(f"\nOK \u2014 nine is LIVE on {BASE}")
     return 0
 
 

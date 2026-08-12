@@ -1,4 +1,4 @@
-"""Intent classifier — the ROUTE step of the chow-lite loop.
+"""Intent classifier — the ROUTE step of the nine loop.
 
 Takes a task description and classifies it to a workflow using a Gemini model
 (with a deterministic keyword fallback so the core loop works even without
@@ -15,7 +15,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from chowlite.schema_validation import validate
+from nine.schema_validation import validate
 
 
 @dataclass
@@ -42,7 +42,7 @@ def redact(text: str) -> str:
     """Basic lexical redaction for credential-shaped strings.
 
     NOTE: this is not a security boundary — it reduces accidental secret
-    leakage in logs (matching the design of the internal chow router).
+    leakage in logs (matching the design of the internal nine router).
     """
     patterns = [
         (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+", "\\1=***"),
@@ -197,7 +197,7 @@ class Router:
         if self.model_router is not None:
             try:
                 wf_id, conf, reason = self.model_router.classify(task_red)
-                model_used = "gemini-3.5-flash"
+                model_used = "gemini-3.6-flash"
             except Exception as exc:  # noqa: BLE001 - quota/network errors must never crash the loop
                 fallback_note = (
                     f"model unavailable ({type(exc).__name__}); keyword fallback"

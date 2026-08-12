@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/optimizedwf/chow-lite/schemas/artifact-manifest.schema.json",
+  "$id": "https://github.com/optimizedwf/nine/schemas/artifact-manifest.schema.json",
   "title": "ArtifactManifest",
   "description": "A produced artifact and its evidence (checksum, size) for artifact-passing between workflow nodes.",
   "type": "object",

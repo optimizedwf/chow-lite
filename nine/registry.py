@@ -1,13 +1,13 @@
 """Single source of truth for the ROUTE -> execution catalog.
 
-Previously each entry point (chow submit, deploy/server.py, demo_live.py)
+Previously each entry point (nine submit, deploy/server.py, demo_live.py)
 carried its own hard-coded workflow registry, so the router's ROUTE decision
 selected no real behavior and research/review/build all produced
 byte-identical artifacts. Now the router decision dispatches HERE.
 
 Two mappings:
     WORKFLOWS: workflow_id -> single-hop Workflow factory
-               (used by `chow submit` / POST /v1/submit for one-shot runs)
+               (used by `nine submit` / POST /v1/submit for one-shot runs)
     CHAINS:    chain_id -> Chain factory
                (multi-hop chains with per-hop evidence gates)
 """
@@ -17,8 +17,8 @@ import json
 from collections.abc import Callable
 from pathlib import Path
 
-from chowlite.chains.chain import Chain
-from chowlite.chains.flagship import (
+from nine.chains.chain import Chain
+from nine.chains.flagship import (
     build_hop,
     demo_lane,
     research_hop,
@@ -26,7 +26,7 @@ from chowlite.chains.flagship import (
     review_hop,
     teach_hop,
 )
-from chowlite.runtime.workflows import Workflow
+from nine.runtime.workflows import Workflow
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
 
@@ -34,7 +34,7 @@ _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
 def load_catalog() -> dict:
     """Read the git-tracked router catalog (keyword/description overrides).
 
-    `chow learn apply` appends approved keyword suggestions here; rollback
+    `nine learn apply` appends approved keyword suggestions here; rollback
     is a git revert. The catalog is the ONLY file the LEARN loop may write —
     human-approvable, regression-gated changes live in git history.
     """
@@ -78,7 +78,7 @@ def workflow_gate(workflow_id: str):
     (research.md / review.md / TEACH.md) certify by artifact, and the build
     hop by independent self-test EVAL.json — each hop declares what counts.
     """
-    from chowlite.gates.evidence import EvidenceGate
+    from nine.gates.evidence import EvidenceGate
 
     factory = _HOPS.get(workflow_id)
     if factory is None:

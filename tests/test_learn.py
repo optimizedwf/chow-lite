@@ -6,17 +6,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
-from chowlite.chains.chain import ChainExecutor
-from chowlite.chains.flagship import demo_lane
-from chowlite.learn.learner import Learner, RouteEvent, RouteEventStore
-from chowlite.ledger.ledger import JSONLLedger
+from nine.chains.chain import ChainExecutor
+from nine.chains.flagship import demo_lane
+from nine.learn.learner import Learner, RouteEvent, RouteEventStore
+from nine.ledger.ledger import JSONLLedger
 
 
 @pytest.fixture(autouse=True)
 def _isolated_catalog(tmp_path, monkeypatch):
     """Every test writes to its OWN catalog (the router catalog is
     git-tracked + shared; learn apply/revert touches it for real)."""
-    monkeypatch.setattr("chowlite.registry._CATALOG_PATH", tmp_path / "catalog.json")
+    monkeypatch.setattr("nine.registry._CATALOG_PATH", tmp_path / "catalog.json")
 
 
 def test_route_event_store_roundtrip(tmp_path):
@@ -89,8 +89,8 @@ def test_learner_candidates_are_durable_and_idempotent(tmp_path):
 def test_chain_events_carry_real_route_decision(tmp_path):
     """P1-5: chain route events use the REAL confidence/router_version from
     the ROUTE step (previously hardcoded 0.5 / 'chain-v1')."""
-    from chowlite.registry import HOP_DESCRIPTIONS, KEYWORDS
-    from chowlite.router.classifier import Router
+    from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
+    from nine.router.classifier import Router
 
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     store = RouteEventStore(tmp_path / "events.jsonl")
