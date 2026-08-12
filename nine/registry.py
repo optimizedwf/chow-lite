@@ -29,6 +29,7 @@ from nine.chains.flagship import (
 )
 from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
+from nine.workflows.test_wf import test_hop
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
 
@@ -61,6 +62,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "plan": _wf(plan_hop),
     "build": _wf(build_hop),
     "review": _wf(review_hop),
+    "test": _wf(test_hop),
     "teach": _wf(teach_hop),
     "respond": respond_workflow,
 }
@@ -71,6 +73,7 @@ _HOPS: dict[str, Callable] = {
     "plan": plan_hop,
     "build": build_hop,
     "review": review_hop,
+    "test": test_hop,
     "teach": teach_hop,
 }
 
@@ -108,6 +111,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "plan": ["plan", "break down", "decompose", "roadmap", "step by step"],
     "build": ["build", "implement", "write code", "create the"],
     "review": ["review", "audit", "check the code", "qa"],
+    "test": ["test", "write tests", "pytest", "unit test", "make tests"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -117,6 +121,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "plan": "Break a task into ordered steps (PLAN.md + HANDOFF.md).",
     "build": "Implement per PLAN.md; write solution.py + EVAL.json.",
     "review": "Review a build; produce review.md verdict.",
+    "test": "Write and run pytest tests (test_solution.py + EVAL.json).",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
