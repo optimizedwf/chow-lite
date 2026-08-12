@@ -1,0 +1,5 @@
+# per-fixture job dirs are transient; results JSON is the scoreboard
+*/
+!results*.json
+!*.json
+!*.md

@@ -1,0 +1,23 @@
+[
+  {
+    "fixture": "bugfix-small-002",
+    "routed_workflow": "debug",
+    "router_model": "deterministic-keyword",
+    "verdict": "ERROR",
+    "verdict_summary": null,
+    "final_status": "failed-loud",
+    "attempts": 1,
+    "duration_s": 19.4,
+    "tests_passed": 2,
+    "tests_total": 9,
+    "check_exit": 1,
+    "timed_out": false,
+    "cli_error": "job 9e90739f-6734-4963-b817-44a07573af32 failed loud: node patch failed: node patch failed after 3 attempts: ADK agent produced no output for task: '# Eval Fixture: bugfix-small-002\\n\\n## Task Description\\n\\nFix the bug in the following Python function.\\n\\nThe function `norm' - empty stream (often Gemini 429 quota exhaustion; retry after quota reset)",
+    "job_id": "9e90739f-6734-4963-b817-44a07573af32",
+    "task_mode": "full",
+    "run_id": "smoke-slice22",
+    "test_solution_expected_tests": 9,
+    "candidate_file": "solution.py",
+    "candidate_unchanged_from_starter": true
+  }
+]
