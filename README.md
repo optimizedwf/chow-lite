@@ -110,12 +110,13 @@ tests/                    17 tests (router, ledger, gates, executor)
 
 ## Roadmap
 
-- [x] Core loop (router → workflow → gate → ledger) with 17 passing tests
-- [ ] Google ADK 2.0 agent integration (agents as `subagent` nodes)
+- [x] Core loop (router → workflow → gate → ledger) with 22 passing tests
+- [x] Google ADK 2.0 agent integration (agents as `subagent` nodes)
+- [x] 5-hop chain (research → plan → build → review → teach) + demo lane
+- [x] Cloud Run + Firestore deploy layer (Dockerfile, service, rules, API)
+- [ ] Live Cloud Run deployment (needs billing-enabled GCP project)
 - [ ] Firestore-backed ledger + route-event learning loop
-- [ ] Cloud Run deployment (scale-to-zero) + architecture diagram
-- [ ] 5-hop chain (research → plan → build → review → teach)
-- [ ] Example lane: inbox → triage → task → report
+- [ ] Architecture diagram + demo video
 
 ## License
 
