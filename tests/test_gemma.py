@@ -1,0 +1,30 @@
+"""Gemma 4 helper tests — offline fallback + (keyed) live call."""
+import os
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from chowlite.runtime.gemma import gemma_generate  # noqa: E402
+
+
+def test_gemma_generate_without_key_returns_none(monkeypatch):
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    assert gemma_generate("hi") is None
+
+
+def test_gemma_generate_bad_model_returns_none(monkeypatch):
+    if not os.environ.get("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set")
+    out = gemma_generate("hi", model="gemma-does-not-exist-xyz")
+    assert out is None
+
+
+def test_gemma_generate_live(monkeypatch):
+    if not os.environ.get("GEMINI_API_KEY"):
+        pytest.skip("GEMINI_API_KEY not set")
+    out = gemma_generate("Reply with exactly: GEMMA-OK")
+    assert out is not None
+    assert "GEMMA" in out.upper()

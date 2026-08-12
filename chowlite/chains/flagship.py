@@ -120,16 +120,42 @@ def review_hop() -> Hop:
     )
 
 
+def _teach_gemma_node() -> Node:
+    """Teach hop backed by Gemma 4 (2nd Google model) when a key is present;
+    deterministic fallback keeps the core loop offline-friendly."""
+    from chowlite.runtime.gemma import gemma_generate
+
+    def _run(inputs: dict, job_dir):
+        task = inputs.get("task", "the completed task")
+        prompt = (
+            "You are the teach hop of chow-lite, an evidence-gated agent OS.\n"
+            "Write a concise lesson (<=120 words, markdown) an agent should "
+            "remember from this run.\n"
+            "Task: " + task + "\n"
+            "Lesson style: one concrete, reusable behavioral rule, "
+            "candidate-only (human reviews before adoption)."
+        )
+        text = gemma_generate(prompt)
+        if text:
+            (job_dir / "TEACH.md").write_text(
+                "# Teach\n\n" + text + "\n\n"
+                "Status: candidate (reviewed by human before adoption)\n"
+            )
+        else:
+            (job_dir / "TEACH.md").write_text(
+                "# Teach\n"
+                "Lesson candidate: gate every hop on evidence before handoff.\n"
+                "Status: candidate (reviewed by human before adoption)\n"
+            )
+        return {"output": "teach hop done"}
+
+    return Node(id="teach", kind="prompt", run=_run,
+                description="Gemma-4 lesson writer (deterministic fallback)")
+
+
 def teach_hop() -> Hop:
     wf = Workflow(id="teach", description="Capture the lesson (candidate-only self-improvement)")
-    wf.add_node(Node(
-        id="teach", kind="bash",
-        command=(
-            "echo '# Teach' > TEACH.md; "
-            "echo 'Lesson candidate: gate every hop on evidence before handoff.' >> TEACH.md; "
-            "echo 'Status: candidate (reviewed by human before adoption)' >> TEACH.md"
-        ),
-    ))
+    wf.add_node(_teach_gemma_node())
     return Hop(
         id="teach", workflow=wf,
         required_artifacts=["TEACH.md"],
