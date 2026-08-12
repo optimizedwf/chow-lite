@@ -144,6 +144,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "document": ["document", "documentation", "docs", "readme", "docgen", "api doc", "api reference", "write the readme", "explain the codebase", "how do i use", "how to use"],
     "deploy-check": ["deploy", "deployment", "pre-deploy", "deploy check", "ready to ship", "production readiness", "ready for production", "release check", "go live", "launch check"],
     "research-quick": ["research", "quick research", "look into", "find out", "investigate briefly", "what does this code do", "research this", "5 minute research", "quick lookup"],
+    "research-deep": ["deep research", "thorough research", "comprehensive research", "deep dive", "research in depth", "iterative research", "critique my research", "in-depth analysis"],
     "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
     "respond": ["hello", "hi", "help", "what can you do"],
 }
@@ -161,6 +162,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "document": "Docgen for a codebase: inventory -> README.md + API.md.",
     "deploy-check": "Pre-deploy readiness: env scan + validate + risk review -> DEPLOY_CHECK.md Decision.",
     "research-quick": "Single-source quick research: plan -> findings -> receipt -> FINDINGS.md.",
+    "research-deep": "Iterative deep research: draft -> critique -> iterate -> synthesize -> FINDINGS.md.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
 }
