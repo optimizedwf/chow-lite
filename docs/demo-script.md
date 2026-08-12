@@ -1,66 +1,27 @@
-# Demo video script — chow-lite (≤4:00, public YouTube, LIVE GCP PROOF required)
+# Demo video script — chow-lite (final: ~2:25, ≤4:00 cap, public YouTube, LIVE GCP PROOF required)
 
 > Rules: only first 4 minutes evaluated; English; must show live Google Cloud
 > proof in footage (Cloud Run dashboard / .run.app URL in browser / Vertex logs).
 > Fresh video — do NOT reuse the DataHub Mr Chow film.
 
----
+## Timeline (2:25 total — draft v3 already assembled at docs/demo-video-v3.mp4)
 
-## Timeline (target 3:30 total)
+| Time | Section | Asset | VO |
+|------|---------|-------|----|
+| 0:00–0:03 | Title card | seg_title.mp4 (rendered) | — |
+| 0:03–1:10 | Terminal demo: live ROUTE (Gemini 3.5 Flash, conf 1.00) → 5-hop EXECUTE → VERIFY artifacts → LEARN events; then Taskmaster lane | seg_terminal.mp4 (66.8s, VO mixed) | "First, route..." (GuyNeural, already mixed) |
+| 1:10–1:57 | Architecture pan (ROUTE→EXECUTE→VERIFY→LEARN diagram), Gemma 4 teach hop, one-command API | arch_section.mp4 (47.1s, VO mixed) | "Under the hood..." (3 lines, already mixed) |
+| 1:57–2:22 | **LIVE GCP PROOF** — `chow probe https://chow-lite-<id>.run.app`: /health, /v1/submit x2 (real Gemini routing on the deployed API, both SHIP), /v1/jobs, /v1/stats (Firestore-backed) | gcp_segment.mp4 (record after deploy) | "And here is the same system, live on Google Cloud..." |
+| 2:22–2:25 | End card | seg_end.mp4 (rendered) | — |
 
-### 0:00–0:15 — Hook (title card + one line)
-- Card: "chow-lite — an evidence-gated agent OS"
-- VO: "Most agent demos are chatbot wraps — one prompt, one answer, no proof.
-  chow-lite is an agent operating system: it routes, executes, **verifies with
-  evidence**, and learns. Built for this hackathon on Google ADK 2, Gemini 3.5
-  Flash, and Cloud Run."
+## How to record the GCP segment (needs live deploy — Adam step 3)
+1. `gcloud auth login && bash deploy/deploy.sh` → get the `.run.app` URL.
+2. `python deploy/demo_probe.py https://chow-lite-XXXX.run.app | tee demo_capture/gcp_transcript.txt`
+3. Render gcp_transcript.txt with tools/terminal_template.html (Playwright → webm → mp4) as demo_capture/gcp_segment.mp4.
+4. `bash tools/assemble_demo.sh` → docs/demo-video-final.mp4.
+5. Upload PUBLIC to YouTube (title: "chow-lite — an evidence-gated agent OS (Google ADK + Gemini 3.5 Flash)"), paste URL into Devpost submission.
 
-### 0:15–0:50 — ROUTE (terminal, live)
-- `chow submit "research the history of the printing press"`
-- Show `chow status <job>` → decision JSON: workflow_id=research, confidence,
-  reason. VO: "A Gemini 3.5 Flash router turns free text into a typed route
-  decision against a workflow catalog — with deterministic fallback when no
-  key is set, so judges can run it offline."
-
-### 0:50–1:50 — EXECUTE (terminal, live, the money shot)
-- `python demo.py "plan a weekend trip to Big Sur"`
-- Let it run: inbox → triage → task → report, each hop printing SHIP.
-- VO: "The Taskmaster lane: an inbox arrives, the agent triages it, executes
-  the task, and writes a report. Every hop is a typed step in Google ADK —
-  an LlmAgent calling a FunctionTool — and every hop runs in the same job
-  directory, so state flows: the triage output feeds the task, the task
-  output feeds the report."
-- Cut to `chow artifacts <job>` showing sha256 + sizes.
-
-### 1:50–2:30 — VERIFY (screenshot of EVAL.json + verdict)
-- Show `chow chain flagship "build a calculator"` (5 hops) finishing with
-  SHIPPED and the artifact rollup.
-- Show EVAL.json + the evidence gate checks. VO: "Each hop has an evidence
-  gate: required artifacts must exist with content and checksums, exit codes
-  must be zero. Verdicts are SHIP, FIX, or BLOCK — fix loops retry, then
-  block rather than lie."
-
-### 2:30–3:00 — LIVE GCP PROOF (REQUIRED)
-- Browser: open `https://chow-lite-<hash>.run.app/health` → JSON status 200.
-- Browser: Cloud Run dashboard showing the chow-lite service + request count.
-- `curl -X POST <url>/v1/submit ...` then `curl <url>/v1/jobs/<id>` → SHIP.
-- VO: "The same kernel runs on Cloud Run with Firestore — live, scale-to-zero,
-  verified by the operator API you just watched execute a real job."
-
-### 3:00–3:30 — LEARN + close
-- Show `events.jsonl` route events + learner candidates.
-- VO: "Every route decision is logged; the learner proposes improvements —
-  candidates only, never silent self-modification."
-- Card: repo URL github.com/optimizedwf/chow-lite, MIT, 27/27 tests.
-- VO: "An agent OS that proves its work and gets smarter — route, execute,
-  verify, learn."
-
----
-
-## Recording notes
-- Record terminal in 4K/60 if possible; use a clean theme, large monospace.
-- VO: en-US-GuyNeural or en-US-ChristopherNeural via edge-tts (same as DataHub
-  pipeline) then mix with ffmpeg; or record live VO for energy.
-- Add captions (YouTube auto-captions OK but review).
-- After upload: set PUBLIC (unlisted does NOT count), add "created for
-  purposes of entering this hackathon" to description, link on Devpost form.
+## Segment inventory (all rendered, in demo_capture/ + docs/)
+- docs/demo-video-v2.mp4 — title + terminal + end (72.8s, standalone)
+- docs/demo-video-v3.mp4 — title + terminal + arch + end (119.9s, GCP slot pending)
+- tools/terminal_template.html + tools/build_terminal_segment.sh + tools/assemble_demo.sh

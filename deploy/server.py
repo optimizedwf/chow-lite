@@ -14,6 +14,7 @@ Endpoints:
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
@@ -46,6 +47,8 @@ def get_ledger():
 
 
 def build_router() -> Router:
+    """Live Gemini 3.5 Flash routing when GEMINI_API_KEY is present;
+    deterministic keyword fallback keeps the API usable offline/CI."""
     r = Router()
     r.register("research", ["research", "investigate", "find out", "study"],
                "Produce a findings document (research.md).")
@@ -53,8 +56,38 @@ def build_router() -> Router:
                "Implement from a plan; produce build artifacts + EVAL.json.")
     r.register("review", ["review", "audit", "check the code", "qa"],
                "Review a build; produce review.md verdict.")
+    r.register("inbox-triage-task-report",
+               ["trip", "plan", "refund", "customer", "inbox"],
+               "Taskmaster lane: inbox -> triage -> task -> report.")
     r.register("respond", ["hello", "hi", "help", "what can you do"],
                "Direct answer; no execution run.")
+    key = os.environ.get("GEMINI_API_KEY")
+    if key:
+        try:
+            from google import genai
+            client = genai.Client(api_key=key)
+
+            class _Model:
+                def generate_content(self, prompt):
+                    return client.models.generate_content(
+                        model=os.environ.get("GEMINI_MODEL", "gemini-3.5-flash"),
+                        contents=prompt)
+
+            r = Router(model=_Model(), version="gemini-3.5-flash-live")
+            r.register("research", ["research", "investigate", "find out", "study"],
+                       "Produce a findings document (research.md).")
+            r.register("build", ["build", "implement", "write code", "create the"],
+                       "Implement from a plan; produce build artifacts + EVAL.json.")
+            r.register("review", ["review", "audit", "check the code", "qa"],
+                       "Review a build; produce review.md verdict.")
+            r.register("inbox-triage-task-report",
+                       ["trip", "plan", "refund", "customer", "inbox"],
+                       "Taskmaster lane: inbox -> triage -> task -> report.")
+            r.register("respond", ["hello", "hi", "help", "what can you do"],
+                       "Direct answer; no execution run.")
+        except Exception as exc:  # pragma: no cover - env-dependent
+            print(f"live router unavailable ({exc}); using keyword fallback",
+                  file=sys.stderr)
     return r
 
 
@@ -98,7 +131,12 @@ def submit(payload: dict):
     gate = build_gate()
     ex = WorkflowExecutor(ledger, gate, workdir=WORKDIR)
     result = ex.execute(wf, job, {"task": task})
-    return {"job_id": job.job_id, "status": job.status, "verdict": result["verdict"]}
+    return {
+        "job_id": job.job_id,
+        "status": job.status,
+        "verdict": result["verdict"],
+        "decision": decision.to_dict(),
+    }
 
 
 @app.get("/v1/jobs")
