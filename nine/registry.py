@@ -29,6 +29,7 @@ from nine.chains.flagship import (
 )
 from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
+from nine.workflows.build_multi_wf import build_multi_hop
 from nine.workflows.debug_wf import debug_hop
 from nine.workflows.test_wf import test_hop
 
@@ -64,6 +65,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "build": _wf(build_hop),
     "review": _wf(review_hop),
     "test": _wf(test_hop),
+    "build-multi": _wf(build_multi_hop),
     "debug": _wf(debug_hop),
     "teach": _wf(teach_hop),
     "respond": respond_workflow,
@@ -76,6 +78,7 @@ _HOPS: dict[str, Callable] = {
     "build": build_hop,
     "review": review_hop,
     "test": test_hop,
+    "build-multi": build_multi_hop,
     "debug": debug_hop,
     "teach": teach_hop,
 }
@@ -113,6 +116,7 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "research": ["research", "investigate", "find out", "study"],
     "plan": ["plan", "break down", "decompose", "roadmap", "step by step"],
     "build": ["build", "implement", "write code", "create the"],
+    "build-multi": ["multi-file", "multifile", "multi file", "multiple files", "scaffold", "full project", "project scaffold"],
     "review": ["review", "audit", "check the code", "qa"],
     "test": ["test", "write tests", "pytest", "unit test", "make tests"],
     "debug": ["debug", "fix bug", "fix the bug", "bug", "diagnose", "root cause", "broken", "patch", "not working", "error", "crash", "failing"],
@@ -124,6 +128,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "research": "Produce a findings document (research.md).",
     "plan": "Break a task into ordered steps (PLAN.md + HANDOFF.md).",
     "build": "Implement per PLAN.md; write solution.py + EVAL.json.",
+    "build-multi": "Scaffold a multi-file project under solution/ (main.py + package + tests).",
     "review": "Review a build; produce review.md verdict.",
     "test": "Write and run pytest tests (test_solution.py + EVAL.json).",
     "debug": "Root-cause a failure, write ROOT_CAUSE.md, patch, and verify.",

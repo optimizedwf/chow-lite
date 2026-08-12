@@ -120,9 +120,13 @@ def _build_test_runner_command() -> str:
         "if [ $rc -eq 0 ]; then "
         '  echo \'{"checks":[{"name":"tests-pass","passed":true,"message":"all tests passed"}],"exit_code":0}\' > EVAL.json; '
         "else "
-        '  failed=$(grep -c "FAILED" test_output.log 2>/dev/null || echo 0); '
-        '  passed=$(grep -c " PASSED" test_output.log 2>/dev/null || echo 0); '
-        '  echo \'{"checks":[{"name":"tests-pass","passed":false,"message":"\'"$failed"\' test(s) failed, \'"$passed"\' passed"}],"exit_code":\'"$rc"\'}\' > EVAL.json; '
+        "  failed=$(grep -c 'FAILED' test_output.log 2>/dev/null) || true; "
+        "  failed=${failed:-0}; "
+        "  passed=$(grep -c ' PASSED' test_output.log 2>/dev/null) || true; "
+        "  passed=${passed:-0}; "
+        "  printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":false,"
+        "\"message\":\"%s test(s) failed, %s passed\"}],\"exit_code\":%s}'"
+        " \"$failed\" \"$passed\" \"$rc\" > EVAL.json; "
         "  exit 0; "
         "fi"
     )
