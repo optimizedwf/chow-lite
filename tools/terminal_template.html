@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><style>
+  html,body{margin:0;padding:0;background:#0b1020;height:100%;overflow:hidden}
+  #stage{display:flex;align-items:center;justify-content:center;height:100%;font-family:'SF Mono','Menlo','Monaco',monospace}
+  .win{width:1080px;height:680px;background:#0d1226;border-radius:14px;border:1px solid #2a3554;
+       box-shadow:0 20px 60px rgba(0,0,0,.6);overflow:hidden;display:flex;flex-direction:column}
+  .titlebar{display:flex;align-items:center;gap:8px;padding:12px 16px;background:#141a33;
+            border-bottom:1px solid #232d4e;font-size:13px;color:#8fa3d0}
+  .dot{width:12px;height:12px;border-radius:50%}
+  .dot.r{background:#ff5f57}.dot.y{background:#febc2e}.dot.g{background:#28c840}
+  .ttl{flex:1;text-align:center;font-size:13px;letter-spacing:.5px}
+  #term{padding:18px 20px;overflow:hidden;flex:1;font-size:15.5px;line-height:1.55;color:#c9d6f0;white-space:pre-wrap;word-break:break-all}
+  .c{color:#4fc1ff}.g{color:#34d399}.y{color:#fbbf24}.m{color:#e879f9}.dim{color:#64748b}
+  .shp{color:#111;background:#22c55e;padding:0 6px;border-radius:4px;font-weight:bold}
+  #cursor{display:inline-block;width:9px;height:17px;background:#4fc1ff;vertical-align:-2px;animation:bl 1s steps(1) infinite}
+  @keyframes bl{50%{opacity:0}}
+</style></head><body><div id="stage"><div class="win">
+  <div class="titlebar"><div class="dot r"></div><div class="dot y"></div><div class="dot g"></div>
+    <div class="ttl">chow-lite — live demo · zsh</div></div>
+  <div id="term"></div>
+</div></div>
+<script>
+const TL = [[0.2, "\u001b[1;36mchow-lite\u001b[0m \u2014 evidence-gated agent OS \u00b7 live demo (Gemini 3.5 Flash + ADK 2 + Gemma 4)", 1.2], [1.5, "== ROUTE ==", 0.18], [2.03, "task:        build a small calculator with tests", 0.8], [3.18, "workflow:    research-plan-build-review-teach", 0.75], [4.28, "confidence:  0.95", 0.28], [4.92, "reason:      The task requires software development ('build a small calculator') along with verification ('with tests'). This aligns perfectly with the flagship engineering chain which covers planning, implementation (build), verification (review), and potentially explaining the codebase (teach).", 4.95], [10.22, "router:      gemini-3.5-flash-live", 0.57], [11.13, "", 0.12], [11.6, "== EXECUTE ==", 0.22], [12.17, "FINAL: SHIPPED", 0.23], [12.75, "  research:1: SHIP", 0.3], [13.4, "  plan:1: SHIP", 0.23], [13.99, "  build:1: SHIP", 0.25], [14.59, "  review:1: SHIP", 0.27], [15.2, "  teach:1: SHIP", 0.25], [15.8, "", 0.12], [16.27, "== VERIFY ==", 0.2], [16.82, "  _task              6fe867be6c3e  36B  by research", 0.85], [18.02, "  research.md        cdd61cabe4f4  126B  by research", 0.87], [19.24, "  PLAN.md            b17b591f6ae4  119B  by plan", 0.8], [20.39, "  EVAL.json          128d49c6cca3  78B  by build", 0.8], [21.54, "  solution.py        70f0e8b9e59c  55B  by build", 0.8], [22.69, "  build.log          c28282c3c9a6  13B  by self-test", 0.87], [23.91, "  review.md          82e0eb479389  81B  by review", 0.82], [25.07, "  TEACH.md           a8f913cdd299  3892B  by teach", 0.83], [26.26, "", 0.12], [26.73, "== LEARN ==", 0.18], [27.26, "route events recorded: 5", 0.4], [28.01, "  research-plan-build-review-teach::research -> SHIP conf=0.50 @ 2026-08-12T07:25:04", 1.4], [29.76, "  research-plan-build-review-teach::plan -> SHIP conf=0.50 @ 2026-08-12T07:25:04", 1.33], [31.44, "  research-plan-build-review-teach::build -> SHIP conf=0.50 @ 2026-08-12T07:25:04", 1.35], [33.14, "improvement candidates: 0 (candidate-only, human applies)", 0.95], [34.44, "", 0.12], [35.91, "== ROUTE ==", 0.18], [36.45, "task:        handle a customer refund question from the inbox", 1.02], [37.81, "workflow:    inbox-triage-task-report", 0.62], [38.78, "confidence:  1.00", 0.28], [39.41, "reason:      The task explicitly starts in the 'inbox' and involves a standard operational customer service request (handling a refund question), which perfectly maps to the inbox -> triage -> task -> report sequence.", 3.62], [43.38, "router:      gemini-3.5-flash-live", 0.57], [44.3, "", 0.12], [44.77, "== EXECUTE ==", 0.22], [45.33, "FINAL: SHIPPED", 0.23], [45.92, "  triage:1: SHIP", 0.27], [46.53, "  task:1: SHIP", 0.23], [47.12, "  report:1: SHIP", 0.27], [47.73, "", 0.12], [48.2, "== VERIFY ==", 0.2], [48.75, "  _task              9b6085a18887  49B  by triage", 0.82], [49.92, "  triage.md          23e4a4849254  38B  by triage", 0.82], [51.09, "  EVAL.json          3207826e9b7d  55B  by task", 0.78], [52.22, "  task_result.md     0a09f3a2f77e  115B  by task", 0.8], [53.37, "  FINAL_REPORT.md    5dd6f5925583  180B  by report", 0.83], [54.55, "", 0.12], [55.02, "== LEARN ==", 0.18], [55.56, "route events recorded: 3", 0.4], [56.31, "  inbox-triage-task-report::triage -> SHIP conf=0.50 @ 2026-08-12T07:25:27", 1.23], [57.89, "  inbox-triage-task-report::task -> SHIP conf=0.50 @ 2026-08-12T07:25:27", 1.2], [59.44, "  inbox-triage-task-report::report -> SHIP conf=0.50 @ 2026-08-12T07:25:27", 1.23], [61.02, "improvement candidates: 0 (candidate-only, human applies)", 0.95], [62.32, "", 0.12]];
+const term = document.getElementById('term');
+let li = 0, ci = 0, current = '', lineStart = 0;
+function esc(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function style(s){
+  // minimal ANSI: [1;36m -> <span class=c>
+  s = esc(s);
+  s = s.replace(/\u001b\[1;36m/g,'<span class="c">').replace(/\u001b\[0m/g,'</span>');
+  return s;
+}
+function paint(){
+  let html = '';
+  for (let i = 0; i <= li; i++){
+    if (i < li) html += style(TL[i][1]) + '\n';
+    else {
+      const seg = TL[i][1].slice(0, ci);
+      html += style(seg);
+      if (i === TL.length-1 && ci >= TL[i][1].length) html += '<span id="cursor"></span>';
+    }
+  }
+  term.innerHTML = html;
+  term.scrollTop = term.scrollHeight;   // autoscroll so later lines stay visible
+}
+function step(){
+  const now = (performance.now()/1000) - t0;
+  // advance until next line due
+  while (li < TL.length-1 && now >= TL[li+1][0]) { li++; }
+  if (li >= TL.length) { paint(); return; }
+  const line = TL[li][1], due = TL[li][0], dur = TL[li][2];
+  ci = Math.min(line.length, Math.floor((now-due)/dur * line.length));
+  paint();
+}
+let t0 = 0;
+requestAnimationFrame(function loop(){
+  if (!t0) t0 = performance.now()/1000;
+  step();
+  requestAnimationFrame(loop);
+});
+</script></body></html>
