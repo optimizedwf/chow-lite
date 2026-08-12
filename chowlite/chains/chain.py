@@ -86,7 +86,8 @@ class ChainExecutor:
 
         for idx, hop in enumerate(chain.hops):
             gate = self._gate_for(hop)
-            ex = WorkflowExecutor(self.ledger, gate, workdir=self.workdir)
+            ex = WorkflowExecutor(self.ledger, gate, workdir=self.workdir,
+                                  job_dir_override=job_dir)
             # chain prefix on the workflow id so ledger records are traceable
             wf_id = f"{chain.id}::{hop.id}"
 

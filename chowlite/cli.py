@@ -1,12 +1,17 @@
 """chow-lite CLI — the operator interface.
 
     chow submit  "<task>"           submit a task (router -> workflow -> run)
+    chow chain <chain_id> "<task>"  run a multi-hop chain (flagship / demo)
     chow status  <job_id>           job status
     chow discover [--status X]      list jobs
     chow artifacts <job_id>         list job artifacts
     chow cancel <job_id>            cancel a job
     chow recover <job_id>           recover a blocked/failed job
     chow stats                      ledger stats
+
+Chains:
+    flagship   research -> plan -> build -> review -> teach (5 hops)
+    demo       inbox -> triage -> task -> report (demo lane)
 
 Exit codes: 0 ok, 1 error. (An exit code is NOT task success — check
 `chow status` for the SHIP/FIX/BLOCK verdict.)
@@ -44,6 +49,43 @@ def build_default_router() -> Router:
     r.register("respond", ["hello", "hi", "help", "what can you do"],
                "Direct answer; no execution run.")
     return r
+
+
+def cmd_chain(args) -> int:
+    """Run a named chain end-to-end with per-hop evidence gates."""
+    from chowlite.chains.chain import ChainExecutor
+    from chowlite.chains.flagship import demo_lane, research_plan_build_review_teach
+
+    chains = {
+        "flagship": research_plan_build_review_teach,
+        "demo": demo_lane,
+        "inbox-triage-task-report": demo_lane,
+        "research-plan-build-review-teach": research_plan_build_review_teach,
+    }
+    if args.chain_id not in chains:
+        print(f"unknown chain '{args.chain_id}'; choices: {sorted(chains)}", file=sys.stderr)
+        return 1
+
+    ledger = _ledger(args)
+    chain = chains[args.chain_id]()
+    ex = ChainExecutor(ledger, workdir=args.workdir)
+
+    # seed the chain job dir with the task input file
+    job = ledger.submit(chain.id, input={"task": args.task})
+    job_dir = Path(args.workdir) / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "task.txt").write_text(args.task + "\n")
+    if chain.id == "inbox-triage-task-report":
+        (job_dir / "inbox.txt").write_text(args.task + "\n")
+
+    res = ex.execute(chain, job, {"task": args.task})
+    print(f"chain={chain.id} job={job.job_id} final={res['final']}")
+    for hop, info in res["hop_results"].items():
+        print(f"  {hop}: {info['verdict']}")
+    print("\nartifacts:")
+    for a in ledger.get(job.job_id).artifacts:
+        print(f"  {a['name']}  {a['sha256'][:12]}  {a['size']}B  by {a['produced_by']}")
+    return 0 if res["final"] == "SHIPPED" else 2
 
 
 def build_default_gate() -> EvidenceGate:
@@ -138,6 +180,9 @@ def main(argv: list[str] | None = None) -> int:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("submit"); s.add_argument("task"); s.set_defaults(fn=cmd_submit)
+    s = sub.add_parser("chain"); s.add_argument("chain_id"); s.add_argument("task")
+    s.add_argument("--ledger", default=DEFAULT_LEDGER)
+    s.add_argument("--workdir", default="work"); s.set_defaults(fn=cmd_chain)
     s = sub.add_parser("status"); s.add_argument("job_id"); s.set_defaults(fn=cmd_status)
     s = sub.add_parser("discover"); s.add_argument("--status", default=None); s.set_defaults(fn=cmd_discover)
     s = sub.add_parser("artifacts"); s.add_argument("job_id"); s.set_defaults(fn=cmd_artifacts)

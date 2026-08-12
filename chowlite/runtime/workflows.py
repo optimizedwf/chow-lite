@@ -90,11 +90,14 @@ class WorkflowExecutor:
         ledger: JSONLLedger,
         gate: EvidenceGate,
         workdir: str | Path = "work",
+        job_dir_override: str | Path | None = None,
     ) -> None:
         self.ledger = ledger
         self.gate = gate
         self.workdir = Path(workdir)
         self.workdir.mkdir(parents=True, exist_ok=True)
+        # chains run every hop in ONE shared directory so artifacts hand off
+        self.job_dir_override = Path(job_dir_override) if job_dir_override else None
 
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
@@ -127,7 +130,7 @@ class WorkflowExecutor:
         job.attempts += 1
         self.ledger.update(job)
 
-        job_dir = self.workdir / job.job_id
+        job_dir = self.job_dir_override or (self.workdir / job.job_id)
         job_dir.mkdir(parents=True, exist_ok=True)
 
         node_outputs: dict[str, Any] = {}
