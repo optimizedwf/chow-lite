@@ -1,21 +1,7 @@
-"""The flagship 5-hop chain: research -> plan -> build -> review -> teach.
-
-This is chow-lite's answer to "what does a real agent OS do with a task?"
-It mirrors how the internal Chow fleet runs multi-lane operations (the
-research-plan-build-review-teach loop), rebuilt fresh in the open on
-Google ADK 2.0 — concepts, not code.
-
-Each hop has an evidence gate:
-    research: research.md must exist and be non-empty
-    plan:     PLAN.md must exist and reference the research findings
-    build:    EVAL.json with >=1 passing check + exit code 0
-    review:   review.md must say PASS (QA is a gate, not a suggestion)
-    teach:    TEACH.md must exist (the system learns candidate lessons)
-
-A hop that fails its gate re-runs up to max_fix_loops; if it still fails
-the chain BLOCKs. Nothing ships without evidence.
-"""
 from __future__ import annotations
+
+import os
+from pathlib import Path
 
 from chowlite.chains.chain import Chain, Hop
 from chowlite.gates.evidence import (
@@ -69,23 +55,82 @@ def plan_hop() -> Hop:
     )
 
 
+def _build_adk_node() -> Node:
+    """Build hop backed by a REAL Google ADK 2.0 LlmAgent.
+
+    The agent (Gemini 3.5 Flash via google-adk) reads task.txt + PLAN.md and
+    uses a FunctionTool `write_file` to write actual code (solution.py). This
+    puts ADK on the flagship user-facing path — the "mandatory agent
+    framework" requirement is exercised by every real run, not just tests.
+
+    Offline/CI: with no GEMINI_API_KEY the node degrades to a deterministic
+    writer so the core loop and tests stay hermetic.
+    """
+    from chowlite.runtime.adk_runtime import ADKAgentNode
+
+    def _run(inputs: dict, job_dir) -> dict:
+        job_dir = Path(job_dir)
+        task = str(inputs.get("task", ""))[:200]
+        if not os.environ.get("GEMINI_API_KEY"):
+            (job_dir / "solution.py").write_text(
+                "def answer():\n    # offline fallback (no GEMINI_API_KEY)\n"
+                "    return 42\n", encoding="utf-8")
+            return {"output": "offline fallback: wrote solution.py"}
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models import Gemini
+        from google.adk.tools import FunctionTool
+
+        def write_file(path: str, content: str) -> str:
+            """Write a source file into the build workspace (job dir)."""
+            (job_dir / path).write_text(content, encoding="utf-8")
+            return f"wrote {path} ({len(content)} bytes)"
+
+        plan = ""
+        if (job_dir / "PLAN.md").exists():
+            plan = (job_dir / "PLAN.md").read_text(encoding="utf-8")[:800]
+
+        agent = LlmAgent(
+            name="coder",
+            model=Gemini(model="gemini-3.5-flash"),
+            instruction=(
+                "You are the build hop of chow-lite, an evidence-gated agent OS.\n"
+                "Read the task and plan, then write ONE runnable Python module "
+                "`solution.py` that solves the task. Use the write_file tool. "
+                "Keep the code simple, dependency-free, and correct — an "
+                "independent self-test will run it next.\n"
+                f"Task: {task}\nPlan:\n{plan or '(none)'}"
+            ),
+            tools=[FunctionTool(write_file)],
+        )
+        node = ADKAgentNode(agent)
+        return node(inputs, job_dir)
+
+    return Node(id="build", kind="tool", run=_run,
+                description="ADK LlmAgent writes real code (offline fallback)")
+
+
 def build_hop() -> Hop:
     wf = Workflow(id="build", description="Implement per plan with self-test")
-    wf.add_node(Node(
-        id="build", kind="bash",
-        command=(
-            "echo 'def answer():' > solution.py; "
-            "echo '    # Solution per PLAN.md' >> solution.py; "
-            "echo '    return 42' >> solution.py; "
-            "python3 -c 'import json; "
-            "json.dump({\"checks\":[{\"name\":\"unit-test\",\"passed\":True,"
-            "\"message\":\"answer()==42\"}]}, open(\"EVAL.json\",\"w\"))'"
-        ),
-    ))
+    # ADK agent writes solution.py (real code); the self-test node below is
+    # INDEPENDENT of the agent and writes EVAL.json from the ACTUAL run
+    # result — the builder never certifies its own output (kills
+    # self-certification, gives the review hop real evidence to cite).
+    wf.add_node(_build_adk_node())
     wf.add_node(Node(
         id="self-test", kind="bash",
-        command="python3 solution.py && echo 'self-test OK' > build.log",
+        command=(
+            "python3 solution.py > build.log 2>&1; rc=$?; "
+            "if [ $rc -eq 0 ]; then "
+            "  printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":true,"
+            "\"message\":\"exit 0\"}],\"exit_code\":0}' > EVAL.json; "
+            "else "
+            "  printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":false,"
+            "\"message\":\"exit %s\"}],\"exit_code\":%s}' \"$rc\" \"$rc\" > EVAL.json; "
+            "fi"
+        ),
         depends_on=["build"],
+        description="Independent self-test: runs solution.py, writes EVAL.json",
     ))
     return Hop(
         id="build", workflow=wf,

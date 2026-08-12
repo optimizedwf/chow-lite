@@ -143,7 +143,8 @@ class WorkflowExecutor:
         for nid in order:
             node = workflow.nodes[nid]
             # gather upstream inputs
-            node_inputs = {"task": inputs.get("task", ""), "node": nid}
+            node_inputs = {"task": inputs.get("task", ""), "node": nid,
+                           "job_id": job.job_id}
             for dep in node.depends_on:
                 if dep in node_outputs:
                     node_inputs[dep] = node_outputs[dep]

@@ -28,7 +28,6 @@ from chowlite.gates.evidence import (
     EvidenceGate,
     eval_json_check,
     exit_codes_check,
-    required_artifact_check,
 )
 from chowlite.ledger.firestore_ledger import FirestoreLedger
 from chowlite.ledger.ledger import LedgerError
@@ -167,18 +166,14 @@ async def _guard(request: Request, call_next):
 def build_router() -> Router:
     """Live Gemini 3.5 Flash routing when GEMINI_API_KEY is present;
     deterministic keyword fallback keeps the API usable offline/CI."""
+    from chowlite.registry import HOP_DESCRIPTIONS, KEYWORDS
+
+    def _register(r: Router) -> None:
+        for wf_id, kws in KEYWORDS.items():
+            r.register(wf_id, kws, HOP_DESCRIPTIONS.get(wf_id, ""))
+
     r = Router()
-    r.register("research", ["research", "investigate", "find out", "study"],
-               "Produce a findings document (research.md).")
-    r.register("build", ["build", "implement", "write code", "create the"],
-               "Implement from a plan; produce build artifacts + EVAL.json.")
-    r.register("review", ["review", "audit", "check the code", "qa"],
-               "Review a build; produce review.md verdict.")
-    r.register("inbox-triage-task-report",
-               ["trip", "plan", "refund", "customer", "inbox"],
-               "Taskmaster lane: inbox -> triage -> task -> report.")
-    r.register("respond", ["hello", "hi", "help", "what can you do"],
-               "Direct answer; no execution run.")
+    _register(r)
     key = os.environ.get("GEMINI_API_KEY")
     if key:
         try:
@@ -192,17 +187,7 @@ def build_router() -> Router:
                         contents=prompt)
 
             r = Router(model=_Model(), version="gemini-3.5-flash-live")
-            r.register("research", ["research", "investigate", "find out", "study"],
-                       "Produce a findings document (research.md).")
-            r.register("build", ["build", "implement", "write code", "create the"],
-                       "Implement from a plan; produce build artifacts + EVAL.json.")
-            r.register("review", ["review", "audit", "check the code", "qa"],
-                       "Review a build; produce review.md verdict.")
-            r.register("inbox-triage-task-report",
-                       ["trip", "plan", "refund", "customer", "inbox"],
-                       "Taskmaster lane: inbox -> triage -> task -> report.")
-            r.register("respond", ["hello", "hi", "help", "what can you do"],
-                       "Direct answer; no execution run.")
+            _register(r)
         except Exception as exc:  # noqa: BLE001 - deliberate keyword fallback when model router fails
             # pragma: no cover - env-dependent
             print(f"live router unavailable ({exc}); using keyword fallback",
@@ -211,9 +196,11 @@ def build_router() -> Router:
 
 
 def build_gate() -> EvidenceGate:
+    """Generic single-shot gate. Per-hop gates live in the chain/hop
+    definitions (ChainExecutor._gate_for); this one only verifies that
+    EVAL.json exists with passing checks and no bash node crashed."""
     gate = EvidenceGate()
     gate.register_check("eval-json", eval_json_check())
-    gate.register_check("artifacts", required_artifact_check(["FINAL_REPORT.md"]))
     gate.register_check("exit-codes", exit_codes_check())
     return gate
 
@@ -236,15 +223,40 @@ def submit(payload: SubmitRequest):
     job.attach_route_decision(decision)
     ledger.update(job)
 
-    # demo workflow: deterministic node + evidence gate.
-    # RCE-hardened: task text is written from Python, never interpolated
-    # into a shell command.
-    wf = Workflow(id=decision.workflow_id)
-    wf.add_node(Node(
-        id="collect", kind="tool",
-        run=lambda inputs, jd: write_demo_artifacts(
-            decision.workflow_id, task, Path(jd)),
-        description="collect task + write report artifact + EVAL.json (Python)"))
+    # dispatch through the shared registry: the demo lane and the flagship
+    # hops run their REAL multi-hop chains / workflows, not a canned echo.
+    from chowlite.registry import CHAINS, WORKFLOWS
+
+    gate = build_gate()
+    if decision.workflow_id in CHAINS:
+        from chowlite.chains.chain import ChainExecutor
+        chain = CHAINS[decision.workflow_id]()
+        job_dir = WORKDIR / job.job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "task.txt").write_text(task + "\n")
+        if decision.workflow_id == "inbox-triage-task-report":
+            (job_dir / "inbox.txt").write_text(task + "\n")
+        cex = ChainExecutor(ledger, workdir=WORKDIR)
+        res = cex.execute(chain, job, {"task": task})
+        return {
+            "job_id": job.job_id,
+            "status": job.status,
+            "final": res["final"],
+            "verdict": res.get("verdict", {}),
+            "decision": decision.to_dict(),
+        }
+
+    if decision.workflow_id in WORKFLOWS:
+        wf = WORKFLOWS[decision.workflow_id]()
+    else:
+        # unregistered workflow_id: RCE-hardened Python collect node
+        # (task text written from Python, never into a shell command)
+        wf = Workflow(id=decision.workflow_id)
+        wf.add_node(Node(
+            id="collect", kind="tool",
+            run=lambda inputs, jd: write_demo_artifacts(
+                decision.workflow_id, task, Path(jd)),
+            description="collect task + write report artifact + EVAL.json (Python)"))
 
     gate = build_gate()
     ex = WorkflowExecutor(ledger, gate, workdir=WORKDIR)

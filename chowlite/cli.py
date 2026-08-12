@@ -41,15 +41,10 @@ def _ledger(args) -> JSONLLedger:
 
 
 def build_default_router() -> Router:
+    from chowlite.registry import HOP_DESCRIPTIONS, KEYWORDS
     r = Router()
-    r.register("research", ["research", "investigate", "find out", "study"],
-               "Produce a findings document (research.md).")
-    r.register("build", ["build", "implement", "write code", "create the"],
-               "Implement from a plan; produce build artifacts + EVAL.json.")
-    r.register("review", ["review", "audit", "check the code", "qa"],
-               "Review a build; produce review.md verdict.")
-    r.register("respond", ["hello", "hi", "help", "what can you do"],
-               "Direct answer; no execution run.")
+    for wf_id, kws in KEYWORDS.items():
+        r.register(wf_id, kws, HOP_DESCRIPTIONS.get(wf_id, ""))
     return r
 
 
@@ -112,14 +107,32 @@ def cmd_submit(args) -> int:
     job.attach_route_decision(decision)
     ledger.update(job)
 
-    # build a minimal workflow on the fly for the demo/default registry.
-    # RCE-hardened: task text is written from Python, never interpolated
-    # into a shell command.
-    wf = Workflow(id=decision.workflow_id)
-    wf.add_node(Node(id="collect", kind="tool",
-                     run=lambda inputs, jd: write_demo_artifacts(
-                         decision.workflow_id, args.task, Path(jd)),
-                     description="collect task + write report artifact + EVAL.json (Python)"))
+    # dispatch through the shared registry: real workflows/chains per
+    # workflow_id (research != review != build); Python collect node is the
+    # RCE-hardened fallback for unregistered ids.
+    from chowlite.registry import CHAINS, WORKFLOWS
+
+    if decision.workflow_id in CHAINS:
+        from chowlite.chains.chain import ChainExecutor
+        chain = CHAINS[decision.workflow_id]()
+        cex = ChainExecutor(ledger, workdir=args.workdir)
+        job_dir = Path(args.workdir) / job.job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "task.txt").write_text(args.task + "\n")
+        if decision.workflow_id == "inbox-triage-task-report":
+            (job_dir / "inbox.txt").write_text(args.task + "\n")
+        res = cex.execute(chain, job, {"task": args.task})
+        print(f"chain={chain.id} job={job.job_id} final={res['final']}")
+        return 0 if res["final"] == "SHIPPED" else 2
+
+    if decision.workflow_id in WORKFLOWS:
+        wf = WORKFLOWS[decision.workflow_id]()
+    else:
+        wf = Workflow(id=decision.workflow_id)
+        wf.add_node(Node(id="collect", kind="tool",
+                         run=lambda inputs, jd: write_demo_artifacts(
+                             decision.workflow_id, args.task, Path(jd)),
+                         description="collect task + write report artifact + EVAL.json (Python)"))
 
     gate = build_default_gate()
     executor = WorkflowExecutor(ledger, gate)

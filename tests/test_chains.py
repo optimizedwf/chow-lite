@@ -1,3 +1,4 @@
+
 """Chain engine tests — 5-hop flagship chain + demo lane (no API key needed)."""
 import sys
 from pathlib import Path
@@ -6,11 +7,18 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import json
+
 from chowlite.chains.chain import Chain, ChainError, ChainExecutor, Hop
 from chowlite.chains.flagship import demo_lane, research_plan_build_review_teach
-from chowlite.gates.evidence import required_artifact_check
+from chowlite.gates.evidence import (
+    EvidenceGate,
+    eval_json_check,
+    exit_codes_check,
+    required_artifact_check,
+)
 from chowlite.ledger.ledger import JSONLLedger
-from chowlite.runtime.workflows import Node, Workflow
+from chowlite.runtime.workflows import Node, Workflow, WorkflowExecutor
 
 
 def test_flagship_chain_ships_all_hops(tmp_path):
@@ -135,3 +143,54 @@ def test_fix_loop_retries_on_failed_check_not_just_missing_artifact(tmp_path):
     res = ex.execute(chain, job, {"task": "t"})
     assert res["final"] == "SHIPPED"
     assert calls["n"] == 2  # first attempt failed the gate, second shipped
+
+
+def test_registry_dispatch_produces_distinct_artifacts(tmp_path):
+    """research/build/review must produce DIFFERENT artifacts (P1-3 fix:
+    previously every workflow_id produced byte-identical output)."""
+    from chowlite.registry import WORKFLOWS
+    from chowlite.runtime.workflows import WorkflowExecutor
+
+    results = {}
+    for wf_id in ("research", "build", "review"):
+        ledger = JSONLLedger(tmp_path / f"{wf_id}.jsonl")
+        gate = EvidenceGate()
+        gate.register_check("eval-json", eval_json_check())
+        gate.register_check("exit-codes", exit_codes_check())
+        ex = WorkflowExecutor(ledger, gate, workdir=tmp_path / f"w-{wf_id}")
+        job = ledger.submit(wf_id, {"task": f"do {wf_id}"})
+        job_dir = tmp_path / f"w-{wf_id}" / job.job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        (job_dir / "task.txt").write_text(f"do {wf_id}\n")
+        ex.execute(WORKFLOWS[wf_id](), job, {"task": f"do {wf_id}"})
+        results[wf_id] = {a["name"] for a in ledger.get(job.job_id).artifacts}
+    assert "research.md" in results["research"]
+    assert "solution.py" in results["build"] and "EVAL.json" in results["build"]
+    assert "review.md" in results["review"]
+    assert results["research"] != results["build"] != results["review"]
+
+
+def test_adk_build_hop_offline_ships_with_independent_eval(tmp_path, monkeypatch):
+    """Build hop without API key: deterministic writer + INDEPENDENT
+    self-test node writes EVAL.json from the ACTUAL run result."""
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    from chowlite.chains.flagship import build_hop
+
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    gate = EvidenceGate()
+    gate.register_check("eval-json", eval_json_check())
+    gate.register_check("exit-codes", exit_codes_check())
+    gate.register_check("artifacts", required_artifact_check(["solution.py", "EVAL.json"]))
+    ex = WorkflowExecutor(ledger, gate, workdir=tmp_path / "work")
+    job = ledger.submit("build", {"task": "build a tiny thing"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "task.txt").write_text("build a tiny thing\n")
+
+    res = ex.execute(build_hop().workflow, job, {"task": "build a tiny thing"})
+    assert res["verdict"]["verdict"] == "SHIP"
+    # EVAL.json was written by the self-test node, not the builder
+    ev = json.loads((job_dir / "EVAL.json").read_text())
+    assert ev["checks"][0]["name"] == "solution-runs"
+    assert ev["checks"][0]["passed"] is True
+    assert (job_dir / "build.log").exists()
