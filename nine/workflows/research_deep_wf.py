@@ -13,7 +13,6 @@ the job fails loud. NEVER a canned research note.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any
 
@@ -24,13 +23,14 @@ from nine.gates.evidence import (
     required_artifact_check,
 )
 from nine.runtime.fsafety import contained_write
+from nine.runtime.llm_provider import key_available
 from nine.runtime.summarizer import _gemini_generate
 from nine.runtime.workflows import Node, Workflow, WorkflowError
 
 
 def _require_key(lane: str) -> None:
     """Model-or-fail: every model node checks GEMINI_API_KEY first."""
-    if not os.environ.get("GEMINI_API_KEY", "").strip():
+    if not key_available():
         raise WorkflowError(
             f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"

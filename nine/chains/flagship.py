@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from pathlib import Path
 
@@ -12,6 +11,7 @@ from nine.gates.evidence import (
     file_nonempty_check,
     required_artifact_check,
 )
+from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow
 
 # ---------------------------------------------------------------- hops
@@ -49,7 +49,7 @@ def _research_adk_node() -> Node:
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY", "").strip():
+        if not key_available():
             raise WorkflowError(
                 "research requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
@@ -144,7 +144,7 @@ def _plan_adk_node() -> Node:
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY", "").strip():
+        if not key_available():
             raise WorkflowError(
                 "plan requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
@@ -233,7 +233,7 @@ def _build_adk_node() -> Node:
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY", "").strip():
+        if not key_available():
             raise WorkflowError(
                 "build requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"

@@ -124,6 +124,10 @@ nine chain flagship "build a calculator"                # 5-hop full chain
 nine stats
 ```
 
+### LLM provider switch (testing)
+Default backend is Google Gemini direct (`GEMINI_API_KEY`, model `gemini-3.6-flash`). For TESTING ONLY (e.g. while the Gemini quota is exhausted) set `NINE_LLM_BACKEND=openai` to route the SAME model nodes (ADK LlmAgents, router, responder, summarizer, gemma teach hop) to an OpenAI-compatible tunnel — default `https://opencode.ai/zen/go/v1` with `deepseek-v4-flash`, key from `NINE_LLM_API_KEY` -> `OPENCODE_GO_API_KEY` -> `~/.agent-vault/keys/opencode-go.key` -> `~/.prime/agent/auth.json` `opencode-go`. Model-or-fail is preserved on both backends: no key/API failure degrades to fabricated output — callers raise `WorkflowError`.
+
+
 Everything ships with a full artifact trail and a SHIP/FIX/BLOCK verdict per
 job — see `nine status <job_id>` and `nine artifacts <job_id>`.
 

@@ -10,7 +10,6 @@ model node; the gate decides SHIP/FIX/BLOCK from artifacts.
 """
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -22,6 +21,7 @@ from nine.gates.evidence import (
     required_artifact_check,
 )
 from nine.runtime.fsafety import contained_write
+from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow, WorkflowError
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -30,7 +30,7 @@ _DEFAULT_REG = _PLUGINS_DIR / "plugin_registry.py"
 
 
 def _require_key(lane: str) -> None:
-    if not os.environ.get("GEMINI_API_KEY", "").strip():
+    if not key_available():
         raise WorkflowError(
             f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"

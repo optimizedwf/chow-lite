@@ -20,6 +20,7 @@ chat.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -36,19 +37,31 @@ def respond_text(task: str, max_chars: int = 600) -> tuple[str, str]:
     missing or the model returns no usable text — the job then fails loud
     instead of fabricating a canned reply.
     """
-    import os
-
+    from nine.runtime import llm_provider
     from nine.runtime.workflows import WorkflowError
 
-    key = os.environ.get("GEMINI_API_KEY", "").strip()
-    if not key:
+    if not llm_provider.key_available():
         raise WorkflowError(
-            "respond requires GEMINI_API_KEY — no offline fallback "
-            "(nine is model-driven)"
+            "respond requires an LLM key (GEMINI_API_KEY, or "
+            "NINE_LLM_BACKEND=openai with an opencode key) — no offline "
+            "fallback (nine is model-driven)"
         )
+    if llm_provider.backend() == "openai":
+        text = llm_provider.chat_text(
+            "You are the respond workflow of an evidence-gated agent "
+            "operating system. Write a direct, useful answer to the "
+            f"task below (<= {max_chars} chars).\n\nTask: {task[:2000]}",
+            timeout=120,
+        )
+        if not text:
+            raise WorkflowError(
+                "respond: model returned no usable text — job failed loud "
+                "(no offline fallback)"
+            )
+        return text[:max_chars], llm_provider.model_name()
     from google import genai
 
-    client = genai.Client(api_key=key)
+    client = genai.Client(api_key=llm_provider.api_key())
     resp = client.models.generate_content(
         model=os.environ.get("GEMINI_MODEL", DEFAULT_MODEL),
         contents=(

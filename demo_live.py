@@ -9,7 +9,6 @@ rather than fabricate.
 
 Run:  python demo_live.py "your task here"
 """
-import os
 import sys
 import tempfile
 from pathlib import Path
@@ -22,17 +21,18 @@ from nine.router.classifier import Router
 
 
 def _model_router() -> Router:
-    from google import genai
 
-    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+    from nine.runtime import llm_provider
+
+    model = llm_provider.make_model_client()
+    if model is None:
+        raise SystemExit("no LLM key for active backend (demo_live)")
 
     class Model:
         def generate_content(self, prompt):
-            return client.models.generate_content(
-                model="gemini-3.6-flash", contents=prompt
-            )
+            return model.generate_content(prompt)
 
-    r = Router(model=Model(), version="gemini-3.6-flash-live")
+    r = Router(model=Model(), version="live")
     r.register("inbox-triage-task-report", ["trip", "plan", "refund", "customer", "inbox"],
                "Taskmaster lane: inbox -> triage -> task -> report.")
     r.register("research-plan-build-review-teach", ["build", "research", "implement", "code"],

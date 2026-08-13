@@ -45,30 +45,19 @@ def _ledger(args) -> JSONLLedger:
 
 
 def _routing_model():
-    """Model-first routing when a Gemini key is present; else None.
+    """Model-first routing when the active backend has a key; else None.
 
     The CLI router MUST use the model when available (bench finding): the
     keyword substrate alone misroutes on substrings ("implement" inside
     "implementation"), and eval metadata would lie about which lane served
     the job. Any model error degrades to the deterministic keyword
     substrate inside Router.classify — routing never crashes the loop.
+    Backend: Gemini direct by default; NINE_LLM_BACKEND=openai routes via
+    the testing tunnel (DS4 Flash).
     """
-    if not os.environ.get("GEMINI_API_KEY", "").strip():
-        return None
-    try:
-        from google import genai
+    from nine.runtime import llm_provider
 
-        client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
-        class _RoutingModel:
-            def generate_content(self, prompt):
-                return client.models.generate_content(
-                    model="gemini-3.6-flash", contents=prompt
-                )
-
-        return _RoutingModel()
-    except ImportError:
-        return None
+    return llm_provider.make_model_client()
 
 
 def build_default_router() -> Router:
@@ -601,6 +590,9 @@ def _regression_green() -> bool:
     try:
         env = dict(os.environ)
         env["GEMINI_API_KEY"] = ""
+        env["NINE_LLM_BACKEND"] = "gemini"  # hermetic self-test: never the tunnel
+        env["OPENCODE_GO_API_KEY"] = ""
+        env["NINE_LLM_API_KEY"] = ""
         r = _sp.run(
             [_py, "-m", "pytest", "tests/", "-q", "--tb=short"],
             cwd=root,

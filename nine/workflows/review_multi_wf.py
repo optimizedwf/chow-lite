@@ -11,7 +11,6 @@ the job fails loud. NEVER a canned review.
 """
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
 from typing import Any
@@ -22,6 +21,7 @@ from nine.gates.evidence import (
     required_artifact_check,
 )
 from nine.runtime.fsafety import contained_write
+from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow
 
 _DIMENSIONS: dict[str, str] = {
@@ -69,7 +69,7 @@ def _reviewer_adk_node(dimension: str, filename: str) -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:200]
-        if not os.environ.get("GEMINI_API_KEY", "").strip():
+        if not key_available():
             raise WorkflowError(
                 f"review-multi ({dimension}) requires GEMINI_API_KEY "
                 "(ADK LlmAgent) - no offline fallback, nine is model-driven"
@@ -128,7 +128,7 @@ def _merge_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:200]
-        if not os.environ.get("GEMINI_API_KEY", "").strip():
+        if not key_available():
             raise WorkflowError(
                 "review-multi (merge) requires GEMINI_API_KEY (ADK LlmAgent) "
                 "- no offline fallback, nine is model-driven"

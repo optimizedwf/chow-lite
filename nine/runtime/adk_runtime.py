@@ -45,6 +45,12 @@ class ADKAgentNode:
     """
 
     def __init__(self, agent: Any, app_name: str = "nine") -> None:
+        # testing mode: register the OpenAI-compatible ADK LLM so this node's
+        # LlmAgent resolves to the tunnel (DS4 Flash) instead of Gemini.
+        from nine.runtime import llm_provider
+
+        llm_provider.install_adk_override()
+
         from google.adk.runners import InMemoryRunner
 
         self.agent = agent

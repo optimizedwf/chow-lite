@@ -10,7 +10,6 @@ the job fails loud. NEVER a canned project.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 from nine.chains.chain import Hop
@@ -20,6 +19,7 @@ from nine.gates.evidence import (
     required_artifact_check,
 )
 from nine.runtime.fsafety import contained_write
+from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow
 
 
@@ -39,7 +39,7 @@ def _build_multi_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY", "").strip():
+        if not key_available():
             raise WorkflowError(
                 "build-multi requires GEMINI_API_KEY (ADK LlmAgent) - no "
                 "offline fallback, nine is model-driven"

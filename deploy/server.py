@@ -14,7 +14,6 @@ Endpoints:
 from __future__ import annotations
 
 import os
-import sys
 from collections import defaultdict, deque
 from pathlib import Path
 from time import monotonic
@@ -277,12 +276,15 @@ async def _guard(request: Request, call_next):
 
 
 def build_router() -> Router:
-    """Live Gemini 3.6 Flash routing when GEMINI_API_KEY is present; the
-    KeywordRouter substrate (learned catalog keywords) otherwise.
+    """Live model routing when the active backend has a key; the KeywordRouter
+    substrate (learned catalog keywords) otherwise. Default backend is Gemini
+    3.6 Flash; NINE_LLM_BACKEND=openai routes via the testing tunnel (DS4
+    Flash).
 
     Routing-only: a keyword route still lands in a real, model-gated
     workflow — nine never fabricates answers, it only decides the lane."""
     from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
+    from nine.runtime import llm_provider
 
     def _register(r: Router) -> None:
         for wf_id, kws in KEYWORDS.items():
@@ -290,24 +292,10 @@ def build_router() -> Router:
 
     r = Router()
     _register(r)
-    key = os.environ.get("GEMINI_API_KEY")
-    if key:
-        try:
-            from google import genai
-            client = genai.Client(api_key=key)
-
-            class _Model:
-                def generate_content(self, prompt):
-                    return client.models.generate_content(
-                        model=os.environ.get("GEMINI_MODEL", "gemini-3.6-flash"),
-                        contents=prompt)
-
-            r = Router(model=_Model(), version="gemini-3.6-flash-live")
-            _register(r)
-        except Exception as exc:  # noqa: BLE001 - routing degradation only (model output still required)
-            # pragma: no cover - env-dependent
-            print(f"live router unavailable ({exc}); using keyword substrate",
-                  file=sys.stderr)
+    model = llm_provider.make_model_client()
+    if model is not None:
+        r = Router(model=model, version=f"{llm_provider.model_name()}-live")
+        _register(r)
     return r
 
 

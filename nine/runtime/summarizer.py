@@ -23,11 +23,22 @@ MAX_SOURCE_CHARS = 12_000  # cap the LLM input; full doc stays on disk
 
 
 def _gemini_generate(prompt: str, api_key: str | None, timeout: int = 90) -> str:
-    """Semantic distillation via Gemini (google-genai).
+    """Semantic distillation. Gemini backend: google-genai; testing backend
+    (NINE_LLM_BACKEND=openai): DS4 Flash via the tunnel.
 
     Model-or-fail: missing key or API failure raises WorkflowError — the
     summarizer never falls back to fabricated output.
     """
+    from nine.runtime import llm_provider
+
+    if llm_provider.backend() == "openai":
+        text = llm_provider.chat_text(prompt, timeout=timeout)
+        if not text:
+            raise WorkflowError(
+                "summarize: model returned no usable text — job failed loud "
+                "(no offline fallback)"
+            )
+        return text
     key = api_key or os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise WorkflowError(

@@ -31,7 +31,15 @@ def gemma_generate(
     api_key: str | None = None,
     timeout: int = 90,
 ) -> str | None:
-    """Call Gemma 4 via the Gemini REST API. Returns text or None on any failure."""
+    """Call the teach model. Gemini backend: Gemma 4 via the Gemini REST API;
+    testing backend (NINE_LLM_BACKEND=openai): DS4 Flash via the tunnel.
+    Returns text or None on any failure."""
+    from nine.runtime import llm_provider
+
+    if llm_provider.backend() == "openai":
+        # testing mode: the teach hop speaks to the tunnel (model-or-fail:
+        # None -> caller raises WorkflowError)
+        return llm_provider.chat_text(prompt, timeout=timeout)
     key = api_key or os.environ.get("GEMINI_API_KEY", "").strip()
     if not key or requests is None:
         return None
