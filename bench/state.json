@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-13T00:10:24.392031+00:00",
- "cycles_run": 3,
+ "last_cycle": "2026-08-13T02:50:02.084222+00:00",
+ "cycles_run": 4,
  "last_bench": "2026-08-12T23:49:00.987037+00:00",
  "bench_runs": [
   "r0-slice17-baseline",
@@ -24,7 +24,7 @@
    45
   ]
  },
- "next_target": "HARDEN: torture harvest 2 - research/plan ADK nodes (T2-F1), manifest snapshot (T1-F5), recover re-execute (T1-F7), summarize-empty (T2-F8)",
+ "next_target": "BENCH when quota returns (cooldown 2026-08-14): re-run baseline fixtures to measure real gate improvement from harvests 1+2; then doc-truth sweep for remaining model-version claims",
  "last_error": null,
- "last_harvest": "2026-08-13T00:10:24.392031+00:00"
+ "last_harvest": "2026-08-13T02:50:02.084222+00:00"
 }
