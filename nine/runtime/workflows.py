@@ -209,6 +209,19 @@ class WorkflowExecutor:
             job.attempts += 1
             job.transition("running")
             job.artifacts = []  # manifest = this attempt's artifacts only
+            # manifest snapshot: files present + untouched BEFORE this attempt
+            # are NOT this attempt's artifacts. In chains every hop runs a
+            # fresh executor over the SAME job_dir — without the snapshot a
+            # later hop would re-register earlier hops' files as its own
+            # (torture findings T1-F5/T2-F4: duplicate + misattributed
+            # manifest entries). FIX reruns likewise only re-register files
+            # this attempt actually rewrote.
+            before: dict[str, tuple[int, int]] = {}
+            for p in job_dir.iterdir():
+                if p.is_file():
+                    st = p.stat()
+                    before[p.name] = (st.st_size, st.st_mtime_ns)
+
             seen: dict[str, str] = {}  # reset per attempt: reruns re-register the full dir
             self.ledger.update(job)
 
@@ -249,6 +262,9 @@ class WorkflowExecutor:
                 for p in sorted(job_dir.iterdir()):
                     if not p.is_file():
                         continue
+                    st = p.stat()
+                    if before.get(p.name) == (st.st_size, st.st_mtime_ns):
+                        continue  # pre-existing, untouched this attempt
                     data = p.read_bytes()
                     h = self._hash(data)
                     if seen.get(p.name) == h:

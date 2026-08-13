@@ -53,6 +53,28 @@ def _install_fakes(monkeypatch) -> None:
         lambda: Node(id="build", kind="tool", run=fake_build_run,
                      description="fake ADK node (hermetic test)"),
     )
+    def fake_research_run(inputs, job_dir):
+        (Path(job_dir) / "research.md").write_text(
+            "# Findings\n\nResearch findings about the task: evidence-gated execution "
+            "keeps agents honest and every hop verifiable.\n", encoding="utf-8")
+        return {"output": "wrote research.md"}
+
+    def fake_plan_run(inputs, job_dir):
+        (Path(job_dir) / "PLAN.md").write_text(
+            "# Plan\n\n1. scaffold\n2. implement\n3. verify with EVAL.json\n",
+            encoding="utf-8")
+        return {"output": "wrote PLAN.md"}
+
+    monkeypatch.setattr(
+        flagship, "_research_adk_node",
+        lambda: Node(id="research", kind="tool", run=fake_research_run,
+                     description="fake research ADK node (hermetic test)"),
+    )
+    monkeypatch.setattr(
+        flagship, "_plan_adk_node",
+        lambda: Node(id="plan", kind="tool", run=fake_plan_run,
+                     description="fake plan ADK node (hermetic test)"),
+    )
 
 
 def test_health():

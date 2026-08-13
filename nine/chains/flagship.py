@@ -9,26 +9,70 @@ from nine.chains.chain import Chain, Hop
 from nine.gates.evidence import (
     eval_json_check,
     exit_codes_check,
+    file_nonempty_check,
     required_artifact_check,
 )
 from nine.runtime.workflows import Node, Workflow
 
 # ---------------------------------------------------------------- hops
 
+def _research_adk_node() -> Node:
+    """Research hop backed by a REAL Google ADK 2.0 LlmAgent.
+
+    The agent (Gemini 3.6 Flash via google-adk) reads the task and writes
+    research.md with ACTUAL findings for THAT task. Model-or-fail: with no
+    GEMINI_API_KEY the node raises WorkflowError and the job fails loud.
+    NEVER canned research — fabricated findings would be a lie in an
+    evidence-gated system (torture finding T1-F8/T2-F1).
+    """
+    from nine.runtime.workflows import WorkflowError
+
+    def _run(inputs: dict, job_dir) -> dict:
+        from nine.runtime.adk_runtime import ADKAgentNode
+
+        job_dir = Path(job_dir)
+        task = str(inputs.get("task", ""))[:1500]
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise WorkflowError(
+                "research requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
+                "fallback, nine is model-driven"
+            )
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models import Gemini
+        from google.adk.tools import FunctionTool
+
+        def write_file(path: str, content: str) -> str:
+            """Write a findings file into the research workspace (job dir)."""
+            (job_dir / path).write_text(content, encoding="utf-8")
+            return f"wrote {path} ({len(content)} bytes)"
+
+        agent = LlmAgent(
+            name="researcher",
+            model=Gemini(model="gemini-3.6-flash"),
+            instruction=(
+                "You are the research hop of nine, an evidence-gated agent OS.\n"
+                "Research the task below and write ONE file with the "
+                "write_file tool: `research.md` — a findings document with "
+                "(1) what the task actually asks, (2) the key constraints "
+                "and risks, (3) concrete approaches with tradeoffs. Base "
+                "every claim on the task text; never invent facts and never "
+                "copy canned boilerplate.\n"
+                f"Task: {task}"
+            ),
+            tools=[FunctionTool(write_file)],
+        )
+        node = ADKAgentNode(agent)
+        return node(inputs, job_dir)
+
+    return Node(id="research", kind="tool", run=_run, max_retries=2,
+                retry_delay_seconds=1.0,
+                description="ADK LlmAgent researches the task (fails loud without a model)")
+
+
 def research_hop(include_datahub: bool = False) -> Hop:
     wf = Workflow(id="research", description="Produce findings + distilled handoff")
-    wf.add_node(Node(
-        id="research", kind="bash",
-        command=(
-            "cat task.txt 2>/dev/null | head -5 > _task; "
-            "echo '# Findings' > research.md; "
-            "echo >> research.md; "
-            "echo 'Task under study:' >> research.md; "
-            "cat _task >> research.md; "
-            "echo >> research.md; "
-            "echo 'Key insight: evidence-gated execution keeps agents honest.' >> research.md"
-        ),
-    ))
+    wf.add_node(_research_adk_node())
     if include_datahub:
         # optional metadata-graph context (behind NINE_DATAHUB_MCP=1) — the
         # "read the graph first" pattern from optimizedwf/datahub-2026.
@@ -47,29 +91,80 @@ def research_hop(include_datahub: bool = False) -> Hop:
         gate_checks={
             "research-md": required_artifact_check(["research.md"]),
             "handoff-md": required_artifact_check(["HANDOFF.md"]),
+            "research-nonempty": file_nonempty_check("research.md", min_chars=50),
         },
         max_fix_loops=2,
     )
 
 
+def _plan_adk_node() -> Node:
+    """Plan hop backed by a REAL Google ADK 2.0 LlmAgent.
+
+    The agent (Gemini 3.6 Flash via google-adk) reads the distilled research
+    (HANDOFF.md) + task and writes PLAN.md with a build plan specific to
+    THAT task. Model-or-fail: no GEMINI_API_KEY -> WorkflowError, fail loud.
+    NEVER a canned template plan (torture finding T2-F1).
+    """
+    from nine.runtime.workflows import WorkflowError
+
+    def _run(inputs: dict, job_dir) -> dict:
+        from nine.runtime.adk_runtime import ADKAgentNode
+
+        job_dir = Path(job_dir)
+        task = str(inputs.get("task", ""))[:1500]
+        if not os.environ.get("GEMINI_API_KEY"):
+            raise WorkflowError(
+                "plan requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
+                "fallback, nine is model-driven"
+            )
+
+        from google.adk.agents import LlmAgent
+        from google.adk.models import Gemini
+        from google.adk.tools import FunctionTool
+
+        def write_file(path: str, content: str) -> str:
+            """Write the plan file into the plan workspace (job dir)."""
+            (job_dir / path).write_text(content, encoding="utf-8")
+            return f"wrote {path} ({len(content)} bytes)"
+
+        handoff = ""
+        if (job_dir / "HANDOFF.md").exists():
+            handoff = (job_dir / "HANDOFF.md").read_text(encoding="utf-8")[:1200]
+
+        agent = LlmAgent(
+            name="planner",
+            model=Gemini(model="gemini-3.6-flash"),
+            instruction=(
+                "You are the plan hop of nine, an evidence-gated agent OS.\n"
+                "Read the distilled research (HANDOFF.md) and the task, then "
+                "write ONE file with the write_file tool: `PLAN.md` — "
+                "numbered build steps (scaffold, implement, verify), the "
+                "acceptance checks the build must pass, and the risks to "
+                "watch. The plan must be specific to THIS task — never a "
+                "generic template.\n"
+                f"Task: {task}\n"
+                f"HANDOFF.md:\n{handoff or '(none)'}"
+            ),
+            tools=[FunctionTool(write_file)],
+        )
+        node = ADKAgentNode(agent)
+        return node(inputs, job_dir)
+
+    return Node(id="plan", kind="tool", run=_run, max_retries=2,
+                retry_delay_seconds=1.0,
+                description="ADK LlmAgent writes a task-specific plan (fails loud without a model)")
+
+
 def plan_hop() -> Hop:
     wf = Workflow(id="plan", description="Write a build plan")
-    wf.add_node(Node(
-        id="plan", kind="bash",
-        command=(
-            "echo '# Plan' > PLAN.md; "
-            "echo >> PLAN.md; "
-            "echo 'Inputs: HANDOFF.md (distilled research), task.txt' >> PLAN.md; "
-            "echo 'Steps: 1) scaffold 2) implement 3) verify with EVAL.json' >> PLAN.md; "
-            "test -s HANDOFF.md && echo 'OK: HANDOFF.md distilled summary present' >> PLAN.md || echo 'WARN: no HANDOFF.md' >> PLAN.md"
-        ),
-    ))
+    wf.add_node(_plan_adk_node())
     return Hop(
         id="plan", workflow=wf,
         required_artifacts=["PLAN.md", "HANDOFF.md"],
         gate_checks={
             "plan-md": required_artifact_check(["PLAN.md"]),
             "handoff-md": required_artifact_check(["HANDOFF.md"]),
+            "plan-nonempty": file_nonempty_check("PLAN.md", min_chars=30),
         },
         max_fix_loops=2,
     )

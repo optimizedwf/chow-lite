@@ -23,6 +23,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
 import os
@@ -318,3 +320,237 @@ def test_cmd_cancel_recover_unknown_id_clean(tmp_path, capsys):
     err = capsys.readouterr().err
     assert "Traceback" not in err
     assert "job not found" in err
+
+
+# ============================================================ HARVEST 2 (2026-08-13)
+# T2-F1/T1-F8 research+plan hops are model-driven (no canned stubs)
+# T1-F5/T2-F4 chain manifest: no cross-hop misattribution
+# T1-F7 nine recover RE-EXECUTES (no dead-end status)
+# T2-F8 summarize-standalone never SHIPs a "summary of nothing"
+
+def test_research_hop_fails_loud_without_model(tmp_path):
+    """Research must be model-driven: no key = loud WorkflowError, and NO
+    canned research.md is ever written (T1-F8/T2-F1 — was a bash stub that
+    stamped 'Key insight: evidence-gated execution keeps agents honest.')."""
+    from nine.chains.flagship import research_hop
+    from nine.runtime.workflows import WorkflowError
+
+    hop = research_hop()
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = WorkflowExecutor(ledger, gate=_gate(hop), workdir=tmp_path / "work")
+    job = ledger.submit("research", {"task": "study black holes"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    with pytest.raises(WorkflowError):
+        ex.execute(hop.workflow, job, {"task": "study black holes"})
+    assert job.status == "failed"
+    assert not (job_dir / "research.md").exists()
+    assert not (job_dir / "HANDOFF.md").exists()
+
+
+def test_plan_hop_fails_loud_without_model(tmp_path):
+    """Plan must be model-driven: no key = loud WorkflowError, no canned
+    PLAN.md template (T2-F1)."""
+    from nine.chains.flagship import plan_hop
+    from nine.runtime.workflows import WorkflowError
+
+    hop = plan_hop()
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = WorkflowExecutor(ledger, gate=_gate(hop), workdir=tmp_path / "work")
+    job = ledger.submit("plan", {"task": "build a calculator"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    with pytest.raises(WorkflowError):
+        ex.execute(hop.workflow, job, {"task": "build a calculator"})
+    assert job.status == "failed"
+    assert not (job_dir / "PLAN.md").exists()
+
+
+def test_research_hop_ships_fake_findings(monkeypatch, tmp_path):
+    """With a model (faked), research writes REAL findings and SHIPs."""
+    from nine.chains import flagship
+    from nine.runtime import summarizer
+
+    monkeypatch.setattr(
+        summarizer, "summarize_text",
+        lambda text, max_words=120, task="", api_key=None:
+        ("distilled research about black holes", "fake-gemini"),
+    )
+
+    def fake_research_run(inputs, job_dir):
+        (Path(job_dir) / "research.md").write_text(
+            "# Findings\n\nBlack holes emit Hawking radiation; this task "
+            "needs a step-by-step evidence check.\n", encoding="utf-8")
+        return {"output": "wrote research.md"}
+
+    monkeypatch.setattr(
+        flagship, "_research_adk_node",
+        lambda: Node(id="research", kind="tool", run=fake_research_run,
+                     description="fake research node (hermetic)"),
+    )
+    res, job, job_dir = _execute(flagship.research_hop(), tmp_path,
+                                 inputs="study black holes")
+    assert res["verdict"]["verdict"] == "SHIP"
+    text = (job_dir / "research.md").read_text()
+    assert "Hawking radiation" in text
+    assert "Key insight: evidence-gated" not in text  # old canned stub gone
+
+
+def test_plan_hop_ships_real_plan(monkeypatch, tmp_path):
+    """With a model (faked), plan writes a task-specific PLAN.md and SHIPs."""
+    from nine.chains import flagship
+
+    def fake_plan_run(inputs, job_dir):
+        (Path(job_dir) / "PLAN.md").write_text(
+            "# Plan\n\n1. scaffold\n2. implement\n3. verify with EVAL.json\n",
+            encoding="utf-8")
+        return {"output": "wrote PLAN.md"}
+
+    monkeypatch.setattr(
+        flagship, "_plan_adk_node",
+        lambda: Node(id="plan", kind="tool", run=fake_plan_run,
+                     description="fake plan node (hermetic)"),
+    )
+    res, job, job_dir = _execute(flagship.plan_hop(), tmp_path,
+                                 inputs="build a calculator",
+                                 seed={"HANDOFF.md": "distilled research about the calculator\n"})
+    assert res["verdict"]["verdict"] == "SHIP"
+    assert (job_dir / "PLAN.md").exists()
+    assert "1. scaffold" in (job_dir / "PLAN.md").read_text()
+
+
+def test_chain_manifest_no_cross_hop_misattribution(tmp_path, monkeypatch):
+    """Hop manifests must NOT re-register earlier hops' untouched files:
+    each hop's ledger view = only what THAT hop produced (T1-F5/T2-F4)."""
+    from nine.chains import flagship
+    from nine.chains.chain import Chain, ChainExecutor
+
+    def fake_build_run(inputs, job_dir):
+        (Path(job_dir) / "solution.py").write_text(
+            "def answer():\n    return 42\n", encoding="utf-8")
+        (Path(job_dir) / "test_solution.py").write_text(
+            "from solution import answer\ndef test_answer():\n    assert answer() == 42\n",
+            encoding="utf-8")
+        return {"output": "wrote solution.py + test_solution.py"}
+
+    monkeypatch.setattr(
+        flagship, "_build_adk_node",
+        lambda: Node(id="build", kind="tool", run=fake_build_run,
+                     description="fake build node (hermetic)"),
+    )
+    chain = Chain(id="t", hops=[flagship.build_hop(), flagship.review_hop()])
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = ChainExecutor(ledger, workdir=tmp_path / "work")
+    job = ledger.submit("t", {"task": "build a tiny thing"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "task.txt").write_text("build a tiny thing\n")
+    res = ex.execute(chain, job, {"task": "build a tiny thing"})
+    assert res["final"] == "SHIPPED"
+
+    # chain roll-up: solution.py appears exactly ONCE (from the build hop)
+    chain_arts = ledger.get(job.job_id).artifacts
+    sols = [a for a in chain_arts if a["name"] == "solution.py"]
+    assert len(sols) == 1
+
+    # the review hop's OWN manifest must not claim build-hop files
+    review_jobs = [j for j in ledger.discover() if j.workflow_id == "t::review"]
+    assert review_jobs
+    review_names = {a["name"] for a in review_jobs[0].artifacts}
+    assert review_names <= {"review.md", "EVAL.json"}
+    build_jobs = [j for j in ledger.discover() if j.workflow_id == "t::build"]
+    assert build_jobs
+    build_names = {a["name"] for a in build_jobs[0].artifacts}
+    assert {"solution.py", "test_solution.py"} <= build_names
+
+
+def test_recover_reexecutes_blocked_job(tmp_path, monkeypatch):
+    """nine recover must RE-EXECUTE a blocked job (fresh evidence), not
+    park it in a dead-end status (T1-F7)."""
+    from nine import cli as nine_cli
+    from nine.router.classifier import RouteDecision
+    from nine.runtime import responder
+
+    monkeypatch.setattr(
+        responder, "respond_text",
+        lambda task, max_chars=600: ("a real model answer", "gemini"),
+    )
+
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    dec = RouteDecision(
+        decision_id="d1", task_redacted="zzz qqq recover me", workflow_id="respond",
+        confidence=0.9, reason="fallback", decided_at="now", router_version="0.1.0",
+    )
+    job = ledger.submit("respond", {"task": dec.task_redacted})
+    job.attach_route_decision(dec)
+    job.status = "blocked"  # simulate a previous failed run
+    ledger.update(job)
+
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True)
+    (job_dir / "task.txt").write_text("zzz qqq recover me\n")
+    (job_dir / "stale.md").write_text("old garbage from failed attempt\n")
+
+    args = SimpleNamespace(job_id=job.job_id,
+                           ledger=str(tmp_path / "ledger.jsonl"),
+                           workdir=str(tmp_path / "work"),
+                           events=str(tmp_path / "e.jsonl"))
+    assert nine_cli.cmd_recover(args) == 0
+    # cmd_recover runs on a freshly re-opened ledger: assert the PERSISTED
+    # state, not the stale in-memory object
+    fresh = JSONLLedger(tmp_path / "ledger.jsonl")
+    assert fresh.get(job.job_id).status == "shipped"
+    assert not (job_dir / "stale.md").exists()  # stale attempt wiped
+    assert (job_dir / "task.txt").read_text().strip() == "zzz qqq recover me"
+    assert (job_dir / "RESPONSE.md").exists()
+
+
+def test_summarize_standalone_empty_workspace_blocks(tmp_path, monkeypatch):
+    """A 'summary of nothing' (no source files in the workspace) must NEVER
+    SHIP — the lane exists to distill real source (T2-F8)."""
+    from nine.runtime import summarizer
+    from nine.workflows.summarize_standalone_wf import summarize_standalone_hop
+
+    monkeypatch.setattr(
+        summarizer, "summarize_text",
+        lambda text, max_words=120, task="", api_key=None:
+        ("nothing to summarize", "fake-gemini"),
+    )
+    hop = summarize_standalone_hop()
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = WorkflowExecutor(ledger, gate=_gate(hop), workdir=tmp_path / "work")
+    job = ledger.submit("summarize-standalone", {"task": "summarize the code"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    res = ex.execute(hop.workflow, job, {"task": "summarize the code"})
+    # FIX loop exhausted -> job BLOCKED (never SHIP); the returned verdict
+    # is the last gate FIX, so assert on the terminal ledger state too.
+    assert job.status == "blocked"
+    src_check = res["verdict"]["eval_results"]["source-present"]
+    assert src_check["passed"] is False
+    assert "no source files" in src_check["message"]
+
+
+def test_summarize_standalone_ships_with_source(tmp_path, monkeypatch):
+    """With real source present, summarize-standalone SHIPs a real summary."""
+    from nine.runtime import summarizer
+    from nine.workflows.summarize_standalone_wf import summarize_standalone_hop
+
+    monkeypatch.setattr(
+        summarizer, "summarize_text",
+        lambda text, max_words=120, task="", api_key=None:
+        ("the module computes fibonacci", "fake-gemini"),
+    )
+    hop = summarize_standalone_hop()
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = WorkflowExecutor(ledger, gate=_gate(hop), workdir=tmp_path / "work")
+    job = ledger.submit("summarize-standalone", {"task": "summarize the code"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "solution.py").write_text(
+        "def fib(n):\n    return n if n < 2 else fib(n-1) + fib(n-2)\n",
+        encoding="utf-8")
+    res = ex.execute(hop.workflow, job, {"task": "summarize the code"})
+    assert res["verdict"]["verdict"] == "SHIP"
+    assert (job_dir / "SUMMARY.md").exists()
+    assert "fibonacci" in (job_dir / "SUMMARY.md").read_text()

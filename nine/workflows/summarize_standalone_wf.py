@@ -10,8 +10,12 @@ the job fails loud. NEVER a canned summary.
 """
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
 from nine.chains.chain import Hop
 from nine.gates.evidence import (
+    CheckFn,
     exit_codes_check,
     file_nonempty_check,
     required_artifact_check,
@@ -59,6 +63,26 @@ def _summarizer_node() -> Node:
     )
 
 
+def _source_present_check() -> CheckFn:
+    """Gate: SOURCE.md must contain at least one real source inventory line.
+
+    A "summary of nothing" (empty workspace, only the '(no source files
+    found)' marker in SOURCE.md) must NEVER SHIP — the lane's whole purpose
+    is to distill real source (torture finding T2-F8).
+    """
+
+    def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
+        src = Path(workdir) / "SOURCE.md"
+        if not src.exists():
+            return False, "SOURCE.md missing — nothing was collected"
+        text = src.read_text(encoding="utf-8", errors="replace")
+        if "- (no source files found)" in text:
+            return False, "no source files in workspace — nothing to summarize"
+        return True, "source inventory present"
+
+    return _check
+
+
 def summarize_standalone_hop() -> Hop:
     """The `summarize-standalone` workflow: one-source distillation.
 
@@ -84,6 +108,7 @@ def summarize_standalone_hop() -> Hop:
             "exit-codes": exit_codes_check(),
             "artifacts": required_artifact_check(["SOURCE.md", "SUMMARY.md"]),
             "nonempty": file_nonempty_check("SUMMARY.md", min_chars=20),
+            "source-present": _source_present_check(),
         },
         max_fix_loops=2,
     )

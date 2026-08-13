@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -177,56 +178,59 @@ def build_default_gate() -> EvidenceGate:
     return gate
 
 
-def cmd_submit(args) -> int:
-    ledger = _ledger(args)
-    router = build_default_router()
-    decision = router.classify(args.task)
-    print(json.dumps(decision.to_dict(), indent=2))
+def _execute_job(ledger, job, task: str, args) -> int:
+    """Execute a job through the shared registry (chain or workflow).
 
-    # EVERY prompt is a workflow: no direct-answer escape hatch. An unknown
-    # task routes to `respond`, which still runs a job, writes RESPONSE.md,
-    # and is verified (SHIP) before returning.
-    job = ledger.submit(workflow_id=decision.workflow_id, input={"task": redact(args.task)})
-    job.attach_route_decision(decision)
-    ledger.update(job)
-
-    # LEARN: every submit path records a route event (durable, per P2)
+    Shared by `nine submit` and `nine recover`: both dispatch on the job's
+    workflow_id, write task.txt into the job dir, run the registry
+    workflow/chain, and return an exit code (0 SHIP / 1 error / 2 non-SHIP).
+    """
+    # LEARN: every completed run records a route event (durable, per P2)
     learner = _learner(args)
+    decision = getattr(job, "route_decision", None)
+    if isinstance(decision, dict) and decision.get("workflow_id"):
+        # ledger stores route_decision via to_dict(); restore the object so
+        # consumers (route events, ChainExecutor) see real attributes
+        from nine.router.classifier import RouteDecision
+
+        try:
+            decision = RouteDecision(**decision)
+        except TypeError:
+            decision = None
 
     # dispatch through the shared registry: real workflows/chains per
     # workflow_id (research != review != build). Every id the router can
     # select has a real, model-gated workflow — there is NO collect node and
     # NO fabricated-output fallback for unregistered ids (fail loud instead).
-    from nine.registry import CHAINS, WORKFLOWS
+    from nine.registry import CHAINS, WORKFLOWS, workflow_gate
 
-    if decision.workflow_id in CHAINS:
+    job_dir = Path(args.workdir) / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "task.txt").write_text(task + "\n")
+    if job.workflow_id == "inbox-triage-task-report":
+        (job_dir / "inbox.txt").write_text(task + "\n")
+
+    if job.workflow_id in CHAINS:
         from nine.chains.chain import ChainExecutor
-        chain = CHAINS[decision.workflow_id]()
+        chain = CHAINS[job.workflow_id]()
         cex = ChainExecutor(ledger, workdir=args.workdir, learner=learner)
-        job_dir = Path(args.workdir) / job.job_id
-        job_dir.mkdir(parents=True, exist_ok=True)
-        (job_dir / "task.txt").write_text(args.task + "\n")
-        if decision.workflow_id == "inbox-triage-task-report":
-            (job_dir / "inbox.txt").write_text(args.task + "\n")
-        res = cex.execute(chain, job, {"task": args.task}, decision=decision)
+        res = cex.execute(chain, job, {"task": task}, decision=decision)
         print(f"chain={chain.id} job={job.job_id} final={res['final']}")
         return 0 if res["final"] == "SHIPPED" else 2
 
-    if decision.workflow_id in WORKFLOWS:
-        wf = WORKFLOWS[decision.workflow_id]()
+    if job.workflow_id in WORKFLOWS:
+        wf = WORKFLOWS[job.workflow_id]()
     else:
         raise WorkflowError(
-            f"unregistered workflow id '{decision.workflow_id}' — no collect "
+            f"unregistered workflow id '{job.workflow_id}' — no collect "
             "fallback; nine is model-driven (router must only emit "
             "registered ids)"
         )
 
-    from nine.registry import workflow_gate
-
-    gate = workflow_gate(decision.workflow_id) or build_default_gate()
+    gate = workflow_gate(job.workflow_id) or build_default_gate()
     executor = WorkflowExecutor(ledger, gate, workdir=args.workdir)
     try:
-        result = executor.execute(wf, job, {"task": args.task})
+        result = executor.execute(wf, job, {"task": task})
     except WorkflowError as exc:
         # Model-or-fail: no offline fallback. Fail loud with a clean error
         # (job already marked failed in the ledger), never a canned answer.
@@ -237,8 +241,8 @@ def cmd_submit(args) -> int:
     _record_route_event(learner, job, decision, result["verdict"])
 
     print("\n[verdict]", result["verdict"]["verdict"], "-", result["verdict"]["summary"])
-    if decision.workflow_id == "respond":
-        resp_path = Path(args.workdir) / job.job_id / "RESPONSE.md"
+    if job.workflow_id == "respond":
+        resp_path = job_dir / "RESPONSE.md"
         if resp_path.exists():
             print("[response]", resp_path.read_text(encoding="utf-8").strip().replace("\n", " "))
     print("[job]", job.job_id, "->", job.status)
@@ -254,9 +258,26 @@ def cmd_submit(args) -> int:
     return 0
 
 
+def cmd_submit(args) -> int:
+    ledger = _ledger(args)
+    router = build_default_router()
+    decision = router.classify(args.task)
+    print(json.dumps(decision.to_dict(), indent=2))
+
+    # EVERY prompt is a workflow: no direct-answer escape hatch. An unknown
+    # task routes to `respond`, which still runs a job, writes RESPONSE.md,
+    # and is verified (SHIP) before returning.
+    job = ledger.submit(workflow_id=decision.workflow_id, input={"task": redact(args.task)})
+    job.attach_route_decision(decision)
+    ledger.update(job)
+    return _execute_job(ledger, job, args.task, args)
+
+
 def _record_route_event(learner, job, decision, verdict: dict) -> None:
     """Append a route event for a one-shot workflow run (chain runs record
     per-hop events inside ChainExecutor). job is None for direct answers."""
+    if decision is None:
+        return  # nothing real to learn from (stubbed/restored decision)
     from nine.learn.learner import RouteEvent
 
     eval_results = verdict.get("eval_results") or {}
@@ -316,13 +337,39 @@ def cmd_cancel(args) -> int:
 
 
 def cmd_recover(args) -> int:
+    """Re-execute a blocked/failed job: fresh evidence, same task + workflow.
+
+    recover is not a tombstone: it clears the stale attempt artifacts from
+    the job dir, transitions blocked/failed -> recovered, then re-runs the
+    SAME workflow/chain through the registry (torture finding T1-F7:
+    recover used to park jobs in a dead-end status forever).
+    """
+    ledger = _ledger(args)
     try:
-        job = _ledger(args).recover(args.job_id)
+        job = ledger.recover(args.job_id)
     except LedgerError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    print(f"recovered {job.job_id} -> {job.status}")
-    return 0
+
+    # the raw task survives in task.txt (ledger input is redacted for
+    # display) — read it BEFORE wiping stale attempt artifacts.
+    job_dir = Path(args.workdir) / job.job_id
+    task = ""
+    task_txt = job_dir / "task.txt"
+    if task_txt.exists():
+        task = task_txt.read_text(encoding="utf-8").rstrip("\n")
+    if not task:
+        task = str(job.input.get("task", ""))
+
+    if job_dir.exists():
+        for p in job_dir.iterdir():
+            if p.is_file() or p.is_symlink():
+                p.unlink()
+            elif p.is_dir():
+                shutil.rmtree(p)
+
+    print(f"recovering {job.job_id} ({job.workflow_id}) — re-executing")
+    return _execute_job(ledger, job, task, args)
 
 
 def cmd_stats(args) -> int:
@@ -562,6 +609,7 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("recover")
     s.add_argument("job_id")
+    s.add_argument("--workdir", default="work")
     s.set_defaults(fn=cmd_recover)
 
     s = sub.add_parser("stats")
