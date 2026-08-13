@@ -79,7 +79,7 @@ class RouteEventStore:
 
     def all(self) -> list[RouteEvent]:
         out = []
-        for line in self.path.read_text().splitlines():
+        for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
             if not line.strip():
                 continue
             try:
@@ -118,7 +118,7 @@ class CandidateStore:
 
     def all(self) -> list[ImprovementCandidate]:
         out = []
-        for line in self.path.read_text().splitlines():
+        for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
             if not line.strip():
                 continue
             try:
@@ -143,7 +143,7 @@ class CandidateStore:
         """Rewrite the JSONL with a new status for one candidate (immutable
         log -> status is a state transition, applied in place)."""
         recs = []
-        for line in self.path.read_text().splitlines():
+        for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
             if not line.strip():
                 continue
             try:

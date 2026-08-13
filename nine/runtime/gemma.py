@@ -1,6 +1,6 @@
 """Gemma 4 support — an *additional* Google AI model in the fleet.
 
-nine's primary model is Gemini 3.5 Flash (mandatory). Gemma 4 gives the
+nine's primary model is Gemini 3.6 Flash (mandatory). Gemma 4 gives the
 teach hop a second Google model, unlocking the Stage-3 judging bonus
 ("+0.2 per additional Google AI model"). The call is a plain REST request
 so it needs no extra dependencies.

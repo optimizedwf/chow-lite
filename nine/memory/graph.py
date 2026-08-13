@@ -119,7 +119,7 @@ class LocalMemoryGraph:
     def __len__(self) -> int:
         if not self.path.exists():
             return 0
-        return sum(1 for line in open(self.path, encoding="utf-8") if line.strip())
+        return sum(1 for line in open(self.path, encoding="utf-8", errors="replace") if line.strip())
 
 
 class FirestoreMemoryGraph:

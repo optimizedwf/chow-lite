@@ -132,7 +132,7 @@ def _non_retryable(exc: Exception) -> bool:
 
 
 class GeminiRouter:
-    """Model router using Gemini 3.5 Flash via the Gemini API.
+    """Model router using Gemini 3.6 Flash via the Gemini API.
 
     The model is asked to pick ONE workflow from the registered catalog and
     return a JSON decision. Schema validation happens in Router.classify().

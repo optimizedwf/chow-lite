@@ -18,6 +18,7 @@ T6-F6  wrong-shape catalog overrides degrade instead of bricking
 T6-F7  --workdir works BEFORE the subcommand (parent parser)
 T6-F8  exit-code docstring matches code; memory list skips corrupt lines
 """
+import hashlib
 import json
 import re
 import sys
@@ -227,10 +228,22 @@ def test_symlink_artifacts_are_not_evidence(tmp_path):
     ok, msg = required_artifact_check(["EVAL.json"])({}, job_dir)
     assert not ok and "missing" in msg
 
-    # artifact registration skips symlinks entirely: a symlinked EVAL.json
-    # must NEVER appear in the artifact manifest (read side of T3-F7)
+    # artifact registration skips symlinks entirely (T3-F7 read side +
+    # torture-8 F1): a symlinked EVAL.json pointing at a REAL outside file
+    # must NEVER appear in the artifact manifest with the outside sha256.
+    # (The original test used a DANGLING target - ../outside resolves to a
+    # nonexistent dir from the job cwd - so is_file() was False and the
+    # registration "skip" was never actually exercised with a live target.)
     from nine.ledger.ledger import JSONLLedger
     from nine.runtime.workflows import WorkflowExecutor
+
+    # outside dir already exists at the top of this test; reuse it and add
+    # a REAL EVAL.json target so the symlink resolves (was dangling before)
+    if not (outside / "EVAL.json").exists():
+        (outside / "EVAL.json").write_text(
+            '{"checks":[{"name":"c","passed":true}]}', encoding="utf-8")
+    outside_sha = hashlib.sha256(
+        (outside / "EVAL.json").read_bytes()).hexdigest()
 
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     gate = EvidenceGate()
@@ -240,11 +253,12 @@ def test_symlink_artifacts_are_not_evidence(tmp_path):
     job = ledger.submit("sym", {"task": "x"})
     wf = Workflow(id="sym")
     wf.add_node(Node(id="bash1", kind="bash",
-                     command="echo hi > real.txt; ln -sf ../outside/EVAL.json EVAL.json"))
+                     command="echo hi > real.txt; ln -sf %s EVAL.json" % (outside / "EVAL.json")))
     res = ex.execute(wf, job, {"task": "x"})
     names = {a["name"] for a in res["artifacts"]}
     assert "real.txt" in names
     assert "EVAL.json" not in names  # symlink is not evidence
+    assert all(a.get("sha256") != outside_sha for a in res["artifacts"])
     assert job.status in ("blocked", "failed")  # gate cannot pass on symlink
 
 

@@ -224,10 +224,18 @@ def _execute_job(ledger, job, task: str, args) -> int:
         (job_dir / "inbox.txt").write_text(task + "\n")
 
     if job.workflow_id in CHAINS:
-        from nine.chains.chain import ChainExecutor
+        from nine.chains.chain import ChainError, ChainExecutor
         chain = CHAINS[job.workflow_id]()
         cex = ChainExecutor(ledger, workdir=getattr(args, "workdir", "work"), learner=learner)
-        res = cex.execute(chain, job, {"task": task}, decision=decision)
+        try:
+            res = cex.execute(chain, job, {"task": task}, decision=decision)
+        except ChainError as exc:
+            # torture-7 F5: recover of a chain job raw-tracebacked when a
+            # hop failed loud (cmd_chain had the clean catch, this path did
+            # not). Fail loud with the same ONE clean line.
+            print(f"[error] job {job.job_id} failed loud: {exc}",
+                  file=sys.stderr)
+            return 1
         print(f"chain={chain.id} job={job.job_id} final={res['final']}")
         return 0 if res["final"] == "SHIPPED" else 2
 
@@ -367,6 +375,16 @@ def cmd_recover(args) -> int:
     # so the operator can restore the workdir and try again.
     job = ledger.get(args.job_id)
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
+    # torture-8 F2: a job_dir that IS a symlink means the workspace was
+    # already compromised (a model-driven bash node can replace it with a
+    # link to an arbitrary directory). recover's wipe would then DELETE
+    # through the link — refuse loudly before any read/write/delete.
+    if job_dir.is_symlink():
+        print(f"error: cannot recover {job.job_id}: the job directory "
+              f"{job_dir} is a symlink (workspace compromised or moved). "
+              "Refusing to wipe through it. Restore a real directory or "
+              "delete the symlink and re-submit.", file=sys.stderr)
+        return 1
     task = ""
     task_txt = job_dir / "task.txt"
     if task_txt.exists():
@@ -377,6 +395,24 @@ def cmd_recover(args) -> int:
               "task). Restore the workdir or re-submit the task.", file=sys.stderr)
         return 1
 
+    force = bool(getattr(args, "force", False))
+    if force:
+        try:
+            live = ledger.refresh(args.job_id)
+        except LedgerError as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        if live.status == "running":
+            # torture-8 F6: a job left 'running' by a crash (SIGKILL, power
+            # loss, deploy) was UNRECOVERABLE - recover refused (blocked/
+            # failed only) and cancel tombstoned it at 'cancelled' with no
+            # way forward. --force degrades a stale running job to failed
+            # (legal transition) so the normal recover path can re-run it.
+            print(f"warning: {args.job_id} is 'running' (stale after a "
+                  "crash?) - --force degrades it to failed and re-executes",
+                  file=sys.stderr)
+            live.transition("failed")
+            ledger.update(live)
     try:
         job = ledger.recover(args.job_id)
     except LedgerError as e:
@@ -642,6 +678,9 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("recover")
     s.add_argument("job_id")
+    s.add_argument("--force", action="store_true",
+                   help="recover a job stuck at 'running' by a crash "
+                        "(degrades it to failed first; loud warning)")
     s.add_argument("--workdir", default=argparse.SUPPRESS)
     s.set_defaults(fn=cmd_recover)
 

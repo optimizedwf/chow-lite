@@ -103,6 +103,19 @@ class ChainExecutor:
         self.learner = learner  # optional LEARN-loop observer
         self.memory = memory  # optional semantic MemoryGraph (artifact summaries)
 
+    def _cancelled(self, job: Job) -> bool:
+        """Fresh ledger read: did an operator cancel this job cross-process?
+
+        The in-memory job copy is last-line-wins; a cancel from another
+        process appends a `cancelled` line this object never sees. Reload
+        the ledger file and compare the durable status (torture-8 F3).
+        """
+        try:
+            live = self.ledger.refresh(job.job_id)
+        except Exception:  # noqa: BLE001 - best-effort poll
+            return False
+        return live.status == "cancelled"
+
     def _gate_for(self, hop: Hop) -> EvidenceGate:
         gate = EvidenceGate()
         for name, check in hop.gate_checks.items():
@@ -148,13 +161,27 @@ class ChainExecutor:
         # didn't supply one, derive a deterministic keyword decision from
         # the shared registry so the LEARN loop always sees real values.
         if decision is None:
-            from nine.registry import HOP_DESCRIPTIONS, KEYWORDS
-            from nine.router.classifier import Router
+            # torture-7 F4: an explicit chain invocation (CLI `nine chain`,
+            # recover of a chain job) must NOT fabricate a keyword decision —
+            # classifying the task stamped workflow_id="respond" with
+            # confidence 0.0 onto a chain job that ran a chain, and every
+            # hop LEARN event then polluted the router catalog with bogus
+            # low-confidence entries. Honest decision: the chain id, 1.0.
+            from datetime import UTC, datetime
+            from uuid import uuid4
 
-            _r = Router()
-            for wf_id, kws in KEYWORDS.items():
-                _r.register(wf_id, kws, HOP_DESCRIPTIONS.get(wf_id, ""))
-            decision = _r.classify(str(inputs.get("task", "")))
+            from nine.router.classifier import RouteDecision, redact
+
+            decision = RouteDecision(
+                decision_id=str(uuid4()),
+                task_redacted=redact(str(inputs.get("task", "")))[:500],
+                workflow_id=chain.id,
+                confidence=1.0,
+                reason="explicit chain invocation",
+                decided_at=datetime.now(UTC).isoformat(),
+                router_version="explicit-chain",
+                model="explicit-chain",
+            )
         if job.route_decision is None:
             job.attach_route_decision(decision)
             self.ledger.update(job)
@@ -164,6 +191,14 @@ class ChainExecutor:
         final = "BLOCKED"
 
         for _idx, hop in enumerate(chain.hops):
+            # torture-8 F3: an operator cancel (cross-process ledger append)
+            # must stop the chain between hops, not after all hops ran.
+            if self._cancelled(job):
+                force_terminal(job, "cancelled")
+                self.ledger.update(job)
+                self.results["final"] = {"verdict": "CANCELLED", "at_hop": hop.id}
+                return {"final": "CANCELLED", "at_hop": hop.id,
+                        "hop_results": hop_results}
             gate = self._gate_for(hop)
             ex = WorkflowExecutor(self.ledger, gate, workdir=self.workdir,
                                   job_dir_override=job_dir)
@@ -184,6 +219,14 @@ class ChainExecutor:
                     raise ChainError(f"hop {hop.id} crashed: {exc}") from exc
 
                 verdict = res["verdict"]["verdict"]
+                if verdict == "CANCELLED":
+                    # operator cancelled mid-hop: stop the whole chain
+                    # without stamping shipped over the cancel (torture-8 F3)
+                    force_terminal(job, "cancelled")
+                    self.ledger.update(job)
+                    self.results["final"] = {"verdict": "CANCELLED", "at_hop": hop.id}
+                    return {"final": "CANCELLED", "at_hop": hop.id,
+                            "hop_results": hop_results}
                 hop_results[f"{hop.id}:{attempt}"] = {
                     "verdict": verdict,
                     "job_id": hop_job.job_id,

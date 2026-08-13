@@ -21,7 +21,7 @@ One code per entrant; first-come; auto-declined without track+pitch.
 - Track: **TASKMASTER**
 - Suggested pitch (1–2 sentences, paste):
   > "nine: an open-source, evidence-gated agent operating system
-  > (ROUTE→EXECUTE→VERIFY→LEARN) on Google ADK 2 + Gemini 3.5 Flash.
+  > (ROUTE→EXECUTE→VERIFY→LEARN) on Google ADK 2 + Gemini 3.6 Flash.
   > Autonomous multi-hop workflows with SHIP/FIX/BLOCK evidence gates,
   > deployed on Cloud Run + Firestore."
 - $150 credits, redeem BEFORE Sep 3, 90 days to use.

@@ -34,7 +34,83 @@ from nine.ledger.ledger import LedgerError
 from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
+
+class BodyLimitMiddleware:
+    """ASGI-level body cap for mutating routes (torture-7 F6).
+
+    The old guard only checked the Content-Length HEADER; a chunked/
+    streamed body carries no content-length, so an unbounded body was fully
+    buffered before validation (Cloud Run OOM / DoS). This middleware reads
+    the body itself with a hard byte cap (413 the instant it is exceeded,
+    without buffering the rest) and replays the bounded body downstream.
+    """
+
+    def __init__(self, app: Any, max_bytes: int | None = None) -> None:
+        self.app = app
+        # MAX_BODY_BYTES is defined later in this module; resolve at
+        # instantiation (add_middleware runs after the constant exists).
+        self.max_bytes = max_bytes if max_bytes is not None else MAX_BODY_BYTES
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        # fast path: declared content-length over the cap
+        for name, value in scope.get("headers", []):
+            if name == b"content-length":
+                try:
+                    if int(value) > self.max_bytes:
+                        await self._send_413(send)
+                        return
+                except ValueError:
+                    pass
+                break
+        if scope.get("method", "GET") not in ("POST", "PUT", "PATCH"):
+            await self.app(scope, receive, send)
+            return
+        # read the body with a hard cap (chunked bodies have no
+        # content-length; raising from a receive wrapper gets swallowed by
+        # Starlette into a 400, so read + cap here and replay below).
+        body = bytearray()
+        while True:
+            message = await receive()
+            if message["type"] == "http.disconnect":
+                return
+            if message["type"] == "http.request":
+                body.extend(message.get("body", b""))
+                if len(body) > self.max_bytes:
+                    await self._send_413(send)
+                    return
+                if not message.get("more_body", False):
+                    break
+
+        replayed = False
+
+        async def replay_receive() -> dict:
+            nonlocal replayed
+            if not replayed:
+                replayed = True
+                return {"type": "http.request", "body": bytes(body),
+                        "more_body": False}
+            return {"type": "http.request", "body": b"", "more_body": False}
+
+        await self.app(scope, replay_receive, send)
+
+    @staticmethod
+    async def _send_413(send: Any) -> None:
+        await send({
+            "type": "http.response.start",
+            "status": 413,
+            "headers": [(b"content-type", b"application/json")],
+        })
+        await send({
+            "type": "http.response.body",
+            "body": b'{"detail": "payload too large"}',
+        })
+
+
 app = FastAPI(title="nine", version="0.1.0")
+app.add_middleware(BodyLimitMiddleware)
 
 
 @app.exception_handler(WorkflowError)
@@ -201,7 +277,7 @@ async def _guard(request: Request, call_next):
 
 
 def build_router() -> Router:
-    """Live Gemini 3.5 Flash routing when GEMINI_API_KEY is present; the
+    """Live Gemini 3.6 Flash routing when GEMINI_API_KEY is present; the
     KeywordRouter substrate (learned catalog keywords) otherwise.
 
     Routing-only: a keyword route still lands in a real, model-gated

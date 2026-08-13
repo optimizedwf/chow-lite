@@ -240,6 +240,46 @@ class JSONLLedger:
             raise LedgerError(f"job not found: {job_id}")
         return job
 
+    def refresh(self, job_id: str) -> Job:
+        """Re-read the ledger FILE and return the job's DURABLE state.
+
+        The in-memory cache is last-line-wins at construction time; another
+        process (or thread) may have appended lines we never saw (e.g. a
+        `nine cancel` racing a running executor). refresh() re-reads the
+        file so cancellation/state checks see reality (torture-8 F3).
+
+        Deliberately does NOT rebuild self._jobs: an in-flight executor
+        keeps its own working copy of the job and flushes it to the file
+        at terminal transitions; rebuilding the cache from a mid-flight
+        file would erase that progress from get().
+        """
+        if not self.path.exists():
+            raise LedgerError(f"job not found: {job_id}")
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            raise LedgerError(f"cannot read ledger {self.path}: {e}") from e
+        fresh: Job | None = None
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+            if not isinstance(rec, dict) or rec.get("job_id") != job_id:
+                continue
+            if not _looks_like_job(rec):
+                continue
+            job = Job(workflow_id=rec.get("workflow_id", "?"), job_id=job_id)
+            job.__dict__.update(
+                {k: v for k, v in rec.items() if k not in ("workflow_id", "job_id")}
+            )
+            fresh = job
+        if fresh is None:
+            raise LedgerError(f"job not found: {job_id}")
+        return fresh
+
     def discover(self, status: str | None = None, workflow_id: str | None = None) -> list[Job]:
         jobs = list(self._jobs.values())
         if status:

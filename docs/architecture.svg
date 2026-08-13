@@ -38,7 +38,7 @@
 
   <rect x="84" y="266" width="192" height="90" rx="8" fill="#1b2233" stroke="#60a5fa" stroke-width="1"/>
   <text x="180" y="288" font-size="12.5" fill="#e2e8f0" text-anchor="middle" font-weight="bold">Intent Router</text>
-  <text x="180" y="306" font-size="11" fill="#94a3b8" text-anchor="middle">Gemini 3.5 Flash (ADK)</text>
+  <text x="180" y="306" font-size="11" fill="#94a3b8" text-anchor="middle">Gemini 3.6 Flash (ADK)</text>
   <text x="180" y="322" font-size="11" fill="#94a3b8" text-anchor="middle">+ KeywordRouter substrate</text>
   <text x="180" y="338" font-size="11" fill="#94a3b8" text-anchor="middle">(routing only; output = model or fail)</text>
 
@@ -68,7 +68,7 @@
   <rect x="394" y="272" width="282" height="118" rx="8" fill="#1f1a10" stroke="#ffd97a" stroke-width="1"/>
   <text x="535" y="294" font-size="12.5" fill="#fdf6e3" text-anchor="middle" font-weight="bold">Google ADK 2.0 agents</text>
   <text x="535" y="312" font-size="11" fill="#b8a877" text-anchor="middle">LlmAgent · FunctionTool · sessions</text>
-  <text x="535" y="330" font-size="11" fill="#b8a877" text-anchor="middle">Gemini 3.5 Flash tools, memory,</text>
+  <text x="535" y="330" font-size="11" fill="#b8a877" text-anchor="middle">Gemini 3.6 Flash tools, memory,</text>
   <text x="535" y="348" font-size="11" fill="#b8a877" text-anchor="middle">multi-agent sub-agent runs</text>
   <text x="535" y="370" font-size="11" fill="#d4b355" text-anchor="middle">══ artifact-passing contract ══</text>
 
@@ -138,7 +138,7 @@
   <text x="460" y="656" font-size="11" fill="#a78bfa" text-anchor="middle">crash recovery · state</text>
 
   <rect x="600" y="596" width="240" height="70" rx="8" fill="#1c1830" stroke="#8b5cf6" stroke-width="1"/>
-  <text x="720" y="620" font-size="12.5" fill="#ede9fe" text-anchor="middle" font-weight="bold">Gemini 3.5 Flash</text>
+  <text x="720" y="620" font-size="12.5" fill="#ede9fe" text-anchor="middle" font-weight="bold">Gemini 3.6 Flash</text>
   <text x="720" y="640" font-size="11" fill="#a78bfa" text-anchor="middle">model brain (via ADK)</text>
   <text x="720" y="656" font-size="11" fill="#a78bfa" text-anchor="middle">router + agent nodes</text>
 

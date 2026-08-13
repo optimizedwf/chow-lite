@@ -227,6 +227,14 @@ def _implement_tool_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             if path.endswith("_wf.py"):
+                # torture-7 F3: never overwrite an existing plugin module
+                # (built-in or previously composed) — a collision must fail
+                # the job, not silently hijack a lane.
+                target = Path(_PLUGINS_DIR) / path
+                if target.exists():
+                    return (f"REFUSED: {path} already exists in the plugins "
+                            f"dir — pick a different WF_ID; nine never "
+                            f"overwrites an existing plugin")
                 contained_write(Path(_PLUGINS_DIR), path, content)
                 contained_write(job_dir, path, content)
                 return (f"wrote {path} to plugins dir + job dir "
@@ -385,12 +393,43 @@ json.dump({"checks": [{"name": "compose-validate", "passed": ok, "message": msg}
 
 
 def _compose_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
-    """The generated plugin must exist in the repo AND in the job dir."""
+    """The generated plugin must exist in the repo AND in the job dir.
+
+    torture-7 F3: a plugin id that collides with a BUILT-IN workflow/chain
+    id (or an existing plugin file) must be refused here — WORKFLOWS.update
+    would silently replace the production lane with the plugin under the
+    built-in gate. Refusing at the gate keeps the built-in lane intact and
+    BLOCKs the compose job with a clear reason.
+    """
     wd = Path(workdir)
     wfid = "generated_wf"
     p = wd / "WF_ID.txt"
     if p.exists():
         wfid = _sanitize_id(p.read_text(encoding="utf-8").strip())
+    try:
+        # built-in ids = WORKFLOWS/CHAINS minus plugin-loaded ids: by the
+        # time the gate runs, THIS run's register node already appended the
+        # plugin to the registry, so a naive `wfid in WORKFLOWS` would
+        # falsely flag the run's own (legitimate) plugin as a collision.
+        from nine.registry import CHAINS, WORKFLOWS, _load_plugin_workflows
+
+        plugin_ids = set(_load_plugin_workflows())
+        builtin_ids = (set(WORKFLOWS) - plugin_ids) | set(CHAINS)
+        if wfid in builtin_ids:
+            return False, (f"id collision: '{wfid}' is a BUILT-IN workflow/"
+                           f"chain id — refusing to install a plugin over a "
+                           f"production lane (pick another WF_ID)")
+    except Exception as exc:  # noqa: BLE001 - never crash the gate
+        return False, f"cannot check id collisions: {exc}"
+    existing = _PLUGINS_DIR / f"{wfid}_wf.py"
+    job_copy = wd / f"{wfid}_wf.py"
+    if existing.exists() and not job_copy.exists():
+        # the file pre-existed and THIS run did not produce it (a stale
+        # leftover or another run's plugin): refuse to overwrite.
+        return False, (f"id collision: {existing.name} already exists in the "
+                       f"plugins dir and was not produced by this run — "
+                       f"refusing to overwrite an existing plugin (pick "
+                       f"another WF_ID or remove it first)")
     repo_file = _PLUGINS_DIR / f"{wfid}_wf.py"
     if not repo_file.exists():
         return False, f"{wfid}_wf.py missing in plugins dir"

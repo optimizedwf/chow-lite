@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import os
 import random
+import signal
 import subprocess as sp
 import sys
 import threading
@@ -35,6 +36,17 @@ class WorkflowError(Exception):
     pass
 
 
+class NodeTimeoutError(Exception):
+    """A callable node exceeded its timeout.
+
+    Deliberately NOT a WorkflowError subclass: _run_node classifies
+    WorkflowError as a deterministic failure (retrying cannot fix it) but a
+    timeout is transient — a retry may succeed (torture-8 F4: callable
+    timeouts were never retried, making max_retries dead code for tool/prompt
+    nodes while bash timeouts WERE retried).
+    """
+
+
 @dataclass
 class Node:
     """One typed node in a workflow DAG."""
@@ -48,6 +60,17 @@ class Node:
     retry_delay_seconds: float = 1.0        # base delay; doubles per retry
     retry_on_exit: bool = False             # bash: retry on non-zero exit code
     description: str = ""
+
+    def __post_init__(self) -> None:
+        # torture-8 F4: timeout_seconds=0 or negative silently made EVERY
+        # node fail instantly (bash sp.run(timeout=0) raises TimeoutExpired;
+        # callable join(timeout=0) always finds the thread alive). Reject
+        # loudly at construction; None = wait forever (documented).
+        if self.timeout_seconds is not None and self.timeout_seconds < 1:
+            raise ValueError(
+                f"node {self.id}: timeout_seconds must be >= 1 or None "
+                f"(got {self.timeout_seconds!r}); 0 does NOT mean 'no timeout'"
+            )
 
 
 @dataclass
@@ -112,6 +135,53 @@ class WorkflowExecutor:
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
 
+    def _cancelled(self, job: Job) -> bool:
+        """Fresh ledger read: did an operator cancel this job?
+
+        A cancel from another process/thread appends a `cancelled` line to
+        the ledger file that this process's in-memory copy never sees
+        (last-line-wins at load time). Poll the DURABLE status so a running
+        job stops instead of stamping `shipped` over the operator's cancel
+        (torture-8 F3).
+        """
+        try:
+            live = self.ledger.refresh(job.job_id)
+        except Exception:  # noqa: BLE001 - best-effort poll
+            return False
+        return live.status == "cancelled"
+
+    def _abort_cancelled(
+        self, job: Job, artifacts: list[dict[str, Any]],
+        attempt: int, node_outputs: dict[str, Any], node_meta: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Terminal abort when the job was cancelled mid-run.
+
+        The durable ledger already says `cancelled` (operator's line) — do
+        NOT append a shipped/blocked line over it. Return a CANCELLED
+        verdict so the caller reports the truth.
+        """
+        from datetime import UTC, datetime
+
+        job.status = "cancelled"  # direct terminal set; matches durable truth
+        verdict = {
+            "verdict": "CANCELLED",
+            "evidence_refs": sorted(a["path"] for a in artifacts),
+            "eval_results": {},
+            "summary": "cancelled by operator during execution",
+            "verified_at": datetime.now(UTC).isoformat(),
+        }
+        job.add_verdict(verdict)
+        job.metadata["nodes"] = node_meta
+        job.metadata["attempts"] = attempt
+        return {
+            "job_id": job.job_id,
+            "verdict": verdict,
+            "artifacts": artifacts,
+            "attempts": attempt,
+            "node_outputs": dict(node_outputs),
+            "node_meta": dict(node_meta),
+        }
+
     def _run_node_once(self, node: Node, inputs: dict[str, Any], job_dir: Path) -> dict[str, Any]:
         """Execute one node ONCE, returning {output, artifact?, ...}."""
         if node.kind == "bash":
@@ -123,13 +193,33 @@ class WorkflowExecutor:
             bash_env = dict(os.environ)
             pybin = str(Path(sys.executable).parent)
             bash_env["PATH"] = pybin + os.pathsep + bash_env.get("PATH", "")
-            res = sp.run(
-                node.command, shell=True, cwd=job_dir, capture_output=True,
-                text=True, timeout=node.timeout_seconds, check=False,
-                env=bash_env,
+            proc = sp.Popen(
+                node.command, shell=True, cwd=job_dir,
+                stdout=sp.PIPE, stderr=sp.PIPE, text=True,
+                env=bash_env, start_new_session=True,
             )
-            return {"exit_code": res.returncode, "stdout": res.stdout[-2000:],
-                    "stderr": res.stderr[-2000:]}
+            try:
+                out, err = proc.communicate(timeout=node.timeout_seconds)
+            except sp.TimeoutExpired:
+                # torture-8 F5: on timeout the shell is SIGKILLed but
+                # grandchildren (nohup server &, test daemons) survive and
+                # drop ghost files after the job failed. start_new_session
+                # puts the shell in its OWN process group; SIGTERM the whole
+                # group, grace period, then SIGKILL so nothing outlives the
+                # failed attempt.
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+                except (ProcessLookupError, PermissionError, OSError):  # noqa: BLE001
+                    pass
+                try:
+                    time.sleep(min(2.0, node.retry_delay_seconds))
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError, OSError):  # noqa: BLE001
+                    pass
+                out, err = proc.communicate()
+                raise
+            return {"exit_code": proc.returncode, "stdout": (out or "")[-2000:],
+                    "stderr": (err or "")[-2000:]}
         if node.kind in ("prompt", "tool", "subagent", "summarize"):
             if node.run is None:
                 raise WorkflowError(f"node {node.id}: {node.kind} node needs a callable")
@@ -158,7 +248,10 @@ class WorkflowExecutor:
                 # ABANDONED and may still write files after this attempt.
                 # Python cannot kill threads, so the executor records the
                 # fact in job metadata at the call site (see execute()).
-                raise WorkflowError(
+                # torture-8 F4: raise the RETRYABLE NodeTimeoutError — the
+                # old WorkflowError was classified deterministic and callable
+                # timeouts were never retried (max_retries was dead code).
+                raise NodeTimeoutError(
                     f"node {node.id} exceeded timeout {deadline}s"
                 )
             if error is not None:
@@ -238,6 +331,9 @@ class WorkflowExecutor:
             attempt += 1
             job.attempts += 1
             job.transition("running")
+            if self._cancelled(job):
+                return self._abort_cancelled(
+                    job, [], attempt, node_outputs, node_meta)
             job.artifacts = []  # manifest = this attempt's artifacts only
             # manifest snapshot: files present + untouched BEFORE this attempt
             # are NOT this attempt's artifacts. In chains every hop runs a
@@ -248,6 +344,11 @@ class WorkflowExecutor:
             # this attempt actually rewrote.
             before: dict[str, tuple[int, int]] = {}
             for p in job_dir.iterdir():
+                # torture-8 F1: symlinks are NEVER evidence - a symlink to an
+                # outside file must not even enter the snapshot (is_file()
+                # follows links; the manifest loop below skips them).
+                if p.is_symlink():
+                    continue
                 if p.is_file():
                     st = p.stat()
                     before[p.name] = (st.st_size, st.st_mtime_ns)
@@ -267,6 +368,13 @@ class WorkflowExecutor:
                     "attempt": attempt,
                     "fix_directive": inputs.get("fix_directive", ""),
                 }
+                # torture-7 F8: the documented artifact-passing contract
+                # (chain_inputs['hop_artifacts'] -> node inputs) was dead
+                # code - the chain set it but the executor never forwarded
+                # it. Pass it through so plugin hops written against the
+                # docs actually see the previous hop's artifact paths.
+                if "hop_artifacts" in inputs:
+                    node_inputs["hop_artifacts"] = inputs["hop_artifacts"]
                 for dep in node.depends_on:
                     if dep in node_outputs:
                         node_inputs[dep] = node_outputs[dep]
@@ -278,7 +386,7 @@ class WorkflowExecutor:
                     # an abandoned daemon thread that may still write files.
                     # Record it in the job (operators see it; recover wipes
                     # the job dir before re-execution, clearing ghost files).
-                    if isinstance(exc, WorkflowError) and "exceeded timeout" in str(exc):
+                    if isinstance(exc, (WorkflowError, NodeTimeoutError)) and "exceeded timeout" in str(exc):
                         try:
                             job.metadata["timeout_abandoned_worker"] = {
                                 "node": node.id,
@@ -303,6 +411,12 @@ class WorkflowExecutor:
                 # artifact registration: name+content-deduped across attempts
                 # (a FIX rerun that rewrites a file refreshes its sha256)
                 for p in sorted(job_dir.iterdir()):
+                    # torture-8 F1: is_file()/stat()/read_bytes() follow
+                    # symlinks, so a symlink to a REAL outside file would be
+                    # registered with the outside sha256/size as this job's
+                    # evidence. Symlinks are never evidence - skip them.
+                    if p.is_symlink():
+                        continue
                     if not p.is_file():
                         continue
                     st = p.stat()
@@ -337,6 +451,10 @@ class WorkflowExecutor:
                     val = result.get(key)
                     if val:
                         p = Path(val) if isinstance(val, str) else val
+                        # torture-8 F1: an explicitly-registered artifact that
+                        # is a symlink certifies OUTSIDE content - skip it.
+                        if p.is_symlink():
+                            continue
                         if p.exists() and seen.get(p.name) != self._hash(p.read_bytes()):
                             data = p.read_bytes()
                             h = self._hash(data)
@@ -353,6 +471,9 @@ class WorkflowExecutor:
                             artifacts.append(artifact)
                             job.add_artifact(artifact)
 
+            if self._cancelled(job):
+                return self._abort_cancelled(
+                    job, artifacts, attempt, node_outputs, node_meta)
             job.transition("awaiting_evidence")
             self.ledger.update(job)
 
@@ -362,6 +483,27 @@ class WorkflowExecutor:
                 "node_exit_codes": node_exit_codes,
             }
             verdict = self.gate.evaluate(artifact_ctx, job_dir)
+            # torture-7 F1: the gate reads DISK while the manifest is a
+            # per-attempt snapshot. On a FIX re-run the same job_dir keeps
+            # attempt-1 files, so a gate that passes on a stale EVAL.json
+            # (not rewritten this attempt) would SHIP artifacts whose
+            # certifying evidence is NOT in the shipped manifest. A SHIP
+            # must have produced its evidence THIS attempt: if the gate has
+            # an eval-json check and EVAL.json exists on disk but was not
+            # registered, the evidence is stale - downgrade to BLOCK.
+            if verdict["verdict"] == "SHIP" and "eval-json" in self.gate.checks:
+                registered = {a["name"] for a in artifacts}
+                if (job_dir / "EVAL.json").exists() and "EVAL.json" not in registered:
+                    verdict = {
+                        "verdict": "BLOCK",
+                        "evidence_refs": sorted(artifact_ctx.get("artifact_paths", [])),
+                        "eval_results": dict(verdict.get("eval_results", {})),
+                        "summary": ("stale EVAL.json: the gate passed on a "
+                                    "file not produced this attempt - "
+                                    "certifying evidence missing from the "
+                                    "shipped manifest (torture-7 F1)"),
+                        "verified_at": verdict.get("verified_at", ""),
+                    }
             job.add_verdict(verdict)
 
             if verdict["verdict"] == "SHIP":

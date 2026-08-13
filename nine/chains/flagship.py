@@ -16,6 +16,22 @@ from nine.runtime.workflows import Node, Workflow
 
 # ---------------------------------------------------------------- hops
 
+def _fix_directive_suffix(fix_dir: str) -> str:
+    """Append the hop FIX directive to an ADK instruction when present.
+
+    torture-7 F2: flagship ADK hops used to ignore fix_directive, so a hop
+    FIX re-run re-burned model budget with a byte-identical prompt. The
+    directive names what failed so the rework converges instead of BLOCKing.
+    """
+    if not fix_dir:
+        return ""
+    return (
+        f"\nPrevious attempt failed the gate: {fix_dir}\n"
+        "Rework the artifacts accordingly — read the failure and fix "
+        "exactly what it names."
+    )
+
+
 def _research_adk_node() -> Node:
     """Research hop backed by a REAL Google ADK 2.0 LlmAgent.
 
@@ -32,6 +48,7 @@ def _research_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
+        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "research requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
@@ -59,6 +76,7 @@ def _research_adk_node() -> Node:
                 "every claim on the task text; never invent facts and never "
                 "copy canned boilerplate.\n"
                 f"Task: {task}"
+                + _fix_directive_suffix(fix_dir)
             ),
             tools=[FunctionTool(write_file)],
         )
@@ -125,6 +143,7 @@ def _plan_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
+        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "plan requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
@@ -157,6 +176,7 @@ def _plan_adk_node() -> Node:
                 "generic template.\n"
                 f"Task: {task}\n"
                 f"HANDOFF.md:\n{handoff or '(none)'}"
+                + _fix_directive_suffix(fix_dir)
             ),
             tools=[FunctionTool(write_file)],
         )
@@ -196,7 +216,7 @@ def plan_hop(require_handoff: bool = True) -> Hop:
 def _build_adk_node() -> Node:
     """Build hop backed by a REAL Google ADK 2.0 LlmAgent.
 
-    The agent (Gemini 3.5 Flash via google-adk) reads task.txt + PLAN.md and
+    The agent (Gemini 3.6 Flash via google-adk) reads task.txt + PLAN.md and
     uses a FunctionTool `write_file` to write actual code (solution.py). This
     puts ADK on the flagship user-facing path — the "mandatory agent
     framework" requirement is exercised by every real run, not just tests.
@@ -212,6 +232,7 @@ def _build_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
+        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "build requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
@@ -246,6 +267,7 @@ def _build_adk_node() -> Node:
                 "never fake a pass). Keep the code simple, dependency-free, "
                 "and correct.\n"
                 f"Task: {task}\nPlan:\n{plan or '(none)'}"
+                + _fix_directive_suffix(fix_dir)
             ),
             tools=[FunctionTool(write_file)],
         )
