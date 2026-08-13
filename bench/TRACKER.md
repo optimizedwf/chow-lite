@@ -25,6 +25,8 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 
 | 2026-08-13 | 796658d (slice 25) | HARDEN (torture harvest 4) | — | 268 tests pass | torture-5 + torture-6 (DS4 Flash round 3): 16 findings - 15 FIXED + 1 PARTIAL (T6-F5 thread-kill impossible). Highlights: shared fsafety contained_write swept all 24 model write sites, demo keywords out of production routing, blocked chains reach terminal state, recover refuses missing task.txt, standalone plan can SHIP, whitespace-key guards swept (27 sites), NaN confidence rejected, symlinks never evidence, non-UTF8/garbage ledger lines skip, redact covers AWS/Slack/JSON-quoted/== shapes, --workdir parent parser, README + exit-code doc truth. Reports sanitized for GitHub push protection (secret-shaped test strings redacted). |
 
+| 2026-08-13 | slice 26 (HARDEN) | TEST ARMOR | — | 287 tests pass | hermetic armor for the two lowest-coverage runtime modules: gemma_generate failure modes (no-key/no-call, requests-None, HTTP 429/500, empty candidates, no text parts, exception -> None; success URL/model/header/timeout) and ADKAgentNode fake-runner paths (empty stream -> loud RuntimeError, 3x raise surfaces error, transient retry then success, artifact write + function_calls, session dedupe per job, make_adk_node spec, register_adk_agents). 19 new tests; coverage 73% -> 74% (gemma 46%->100%, adk_runtime 64%->96%). Spawned torture round 4 (torture-7 chains+gates+plugins+server, torture-8 runtime edges+fixture proposals) on DS4 Flash; reports pending. |
+
 ---
 ## Gap ledger (from bench baseline)
 1. Empty ADK output passes silently (no retry, artifact never written) -> FIXED (slice 21)
