@@ -40,7 +40,9 @@ def _install_fake_models(monkeypatch) -> None:
     def fake_build_run(inputs, job_dir):
         (Path(job_dir) / "solution.py").write_text(
             "def answer():\n    return 42\n", encoding="utf-8")
-        return {"output": "wrote solution.py"}
+        (Path(job_dir) / "test_solution.py").write_text(
+            "from solution import answer\ndef test_answer():\n    assert answer() == 42\n", encoding="utf-8")
+        return {"output": "wrote solution.py + test_solution.py"}
 
     monkeypatch.setattr(
         flagship, "_build_adk_node",
@@ -249,6 +251,6 @@ def test_adk_build_hop_ships_with_fake_model_and_independent_eval(tmp_path, monk
     assert res["verdict"]["verdict"] == "SHIP"
     # EVAL.json was written by the self-test node, not the builder
     ev = json.loads((job_dir / "EVAL.json").read_text())
-    assert ev["checks"][0]["name"] == "solution-runs"
+    assert ev["checks"][0]["name"] == "tests-pass"
     assert ev["checks"][0]["passed"] is True
-    assert (job_dir / "build.log").exists()
+    assert (job_dir / "test_output.log").exists()

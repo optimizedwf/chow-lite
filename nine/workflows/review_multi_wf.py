@@ -12,6 +12,7 @@ the job fails loud. NEVER a canned review.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Any
 
@@ -43,9 +44,15 @@ def _review_verdict_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str
     if not p.exists():
         return False, "REVIEW.md missing"
     txt = p.read_text(encoding="utf-8")
-    if "Verdict:" not in txt:
-        return False, "REVIEW.md missing Verdict line"
-    return True, "REVIEW.md has verdict"
+    # a verdict line that says FAIL must NOT pass the gate — only an
+    # explicit PASS counts as approval (substring "Verdict:" alone let
+    # "Verdict: FAIL — ship anyway" SHIP, certifying rejected work).
+    if not re.search(
+        r"^\s*#+\s*(?:Overall\s+)?Verdict:\s*PASS\b",
+        txt, re.IGNORECASE | re.MULTILINE,
+    ):
+        return False, "REVIEW.md verdict must be PASS (found FAIL or no verdict)"
+    return True, "REVIEW.md verdict is PASS"
 
 
 def _reviewer_adk_node(dimension: str, filename: str) -> Node:

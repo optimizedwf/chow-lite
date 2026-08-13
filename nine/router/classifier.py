@@ -51,6 +51,7 @@ def redact(text: str) -> str:
     """
     patterns = [
         (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+", "\\1=***"),
+        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s+(?:is|was|:=|:|=)\s*\S+", "\\1=***"),
         (r"Bearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer ***"),
         (r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "***PRIVATE KEY***"),
         (r"(sk|pk|ghp|gho|AIza)[A-Za-z0-9_\-]{10,}", "\\1***"),
@@ -84,7 +85,10 @@ class KeywordRouter:
         best_id, best_score, best_kw = None, 0.0, ""
         for wf_id, meta in self.workflows.items():
             for kw in meta["keywords"]:
-                if kw in task_l:
+                # word-boundary match: "latest news" must NOT hit the `test`
+                # lane (test ⊂ latest) and "water the plant" must NOT hit
+                # `plan` (plan ⊂ plant) — substring routing misroutes tasks.
+                if re.search(rf"\b{re.escape(kw)}\b", task_l):
                     # prefer longer (more specific) keywords
                     score = len(kw) / max(len(task_l), 1)
                     if score > best_score:
@@ -162,8 +166,11 @@ class GeminiRouter:
             conf = float(data.get("confidence", 0.0))
             reason = str(data.get("reason", ""))
             return wf_id, conf, reason
-        except Exception as exc:  # noqa: BLE001 — fall back on any parse issue
-            return "respond", 0.0, f"model output unparsable: {exc}"
+        except Exception as exc:  # noqa: BLE001 — parse failure = NO decision:
+            # return an empty workflow id so the Router falls back to the
+            # keyword substrate instead of misrouting to `respond` and
+            # stamping a model decision the model never produced.
+            return "", 0.0, f"model output unparsable: {exc}"
 
 
 class Router:
@@ -209,6 +216,11 @@ class Router:
                 fallback_note = (
                     f"model unavailable ({type(exc).__name__}); keyword fallback"
                 )
+            if reason.startswith("model output unparsable"):
+                # parse failure is NOT a model decision (and never a `respond`
+                # route): fall through to the keyword substrate, honestly.
+                wf_id, conf = "", 0.0
+                fallback_note = fallback_note or "model output unparsable; keyword fallback"
             # validate against catalog; fall back if the model invented an id
             if wf_id not in self.workflows:
                 wf_id, conf, reason = "", 0.0, "model returned unknown workflow, falling back"

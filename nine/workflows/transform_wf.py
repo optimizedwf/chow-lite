@@ -136,7 +136,10 @@ if outp.exists() and outp.stat().st_size > 0:
             yaml.safe_load(outp.read_text(encoding="utf-8"))
             ok = True; msg = "valid YAML"
         else:
-            ok = outp.stat().st_size > 10; msg = "non-empty text output"
+            # unstructured/unknown target = UNVERIFIABLE output: a model can
+            # satisfy "non-empty file" by relabeling the format (TARGET.txt
+            # is model-writable). Only parseable structured formats pass.
+            ok = False; msg = f"unsupported target format '{ext}' — transform must produce parseable json/csv/tsv/yaml"
     except Exception as exc:
         ok = False; msg = f"parse error: {exc}"
 else:
@@ -149,12 +152,19 @@ exit 0
 
 
 def _output_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
-    """OUTPUT.<ext> (per TARGET.txt) must exist and be non-empty."""
+    """OUTPUT.<ext> (per TARGET.txt) must exist, be non-empty, and be a
+    parseable structured format (json/csv/tsv/yaml) — a model relabeling
+    TARGET.txt to a junk extension must not smuggle unverifiable output."""
     wd = Path(workdir)
     ext = "json"
     tp = wd / "TARGET.txt"
     if tp.exists():
         ext = tp.read_text(encoding="utf-8").strip().lower() or "json"
+    if ext not in {"json", "csv", "tsv", "yaml", "yml"}:
+        return False, (
+            f"unsupported target format '{ext}' (TARGET.txt) — "
+            "must be json/csv/tsv/yaml"
+        )
     outp = wd / f"OUTPUT.{ext}"
     if not outp.exists():
         return False, f"OUTPUT.{ext} missing"

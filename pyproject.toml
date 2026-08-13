@@ -29,6 +29,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 include = ["nine*"]
 
+[tool.pytest.ini_options]
+norecursedirs = ["bench/runs", "bench/fixtures", "work", ".git", ".venv", "node_modules"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"

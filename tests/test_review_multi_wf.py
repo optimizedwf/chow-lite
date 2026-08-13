@@ -165,7 +165,9 @@ def test_review_multi_in_chain(tmp_path, monkeypatch):
     def fake_build_run(inputs, job_dir):
         (Path(job_dir) / "solution.py").write_text(
             "def add(a, b):\n    return a + b\n", encoding="utf-8")
-        return {"output": "wrote solution.py"}
+        (Path(job_dir) / "test_solution.py").write_text(
+            "from solution import add\ndef test_add():\n    assert add(2, 3) == 5\n", encoding="utf-8")
+        return {"output": "wrote solution.py + test_solution.py"}
 
     monkeypatch.setattr(
         flagship, "_build_adk_node",

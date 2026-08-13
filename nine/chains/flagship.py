@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 from pathlib import Path
 
 from nine.chains.chain import Chain, Hop
@@ -116,10 +118,15 @@ def _build_adk_node() -> Node:
             model=Gemini(model="gemini-3.6-flash"),
             instruction=(
                 "You are the build hop of nine, an evidence-gated agent OS.\n"
-                "Read the task and plan, then write ONE runnable Python module "
-                "`solution.py` that solves the task. Use the write_file tool. "
-                "Keep the code simple, dependency-free, and correct — an "
-                "independent self-test will run it next.\n"
+                "Read the task and plan, then write TWO files with the "
+                "write_file tool: (1) `solution.py` — ONE runnable Python "
+                "module that solves the task; (2) `test_solution.py` — a "
+                "pytest file with assertions proving solution.py actually "
+                "solves the task. BOTH are mandatory: an independent "
+                "self-test runs pytest next, and a build without tests is "
+                "UNVERIFIED and fails loud (an exit code is not success — "
+                "never fake a pass). Keep the code simple, dependency-free, "
+                "and correct.\n"
                 f"Task: {task}\nPlan:\n{plan or '(none)'}"
             ),
             tools=[FunctionTool(write_file)],
@@ -158,14 +165,12 @@ def _build_self_test_command() -> str:
         " \"$failed\" \"$passed\" \"$rc\" > EVAL.json;\n"
         "  fi\n"
         "else\n"
-        "  python3 -B solution.py > build.log 2>&1; rc=$?;\n"
-        "  if [ $rc -eq 0 ]; then\n"
-        "    printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":true,"
-        "\"message\":\"exit 0\"}],\"exit_code\":0}' > EVAL.json;\n"
-        "  else\n"
-        "    printf '{\"checks\":[{\"name\":\"solution-runs\",\"passed\":false,"
-        "\"message\":\"exit %s\"}],\"exit_code\":%s}' \"$rc\" \"$rc\" > EVAL.json;\n"
-        "  fi\n"
+        "  # NO tests = NO verification: an exit code is not success, and a\n"
+        "  # solution that merely runs proves nothing about the task. Fail\n"
+        "  # loud so the build FIX-loops toward a real test (never fake a pass).\n"
+        "  printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":false,"
+        "\"message\":\"no test evidence - solution runs but unverified (write test_solution.py)\"}],"
+        "\"exit_code\":1}' > EVAL.json;\n"
         "fi"
     )
 
@@ -196,22 +201,93 @@ def build_hop() -> Hop:
     )
 
 
+def _review_command() -> str:
+    """Review derives its verdict from EVAL.json — never a hardcoded PASS."""
+    return (
+        "echo '# Review' > review.md; "
+        "if grep -qE '\"passed\"[[:space:]]*:[[:space:]]*false|"
+        "\"exit_code\"[[:space:]]*:[[:space:]]*[1-9]' EVAL.json; then "
+        "echo 'Verdict: FAIL' >> review.md; "
+        "echo 'Evidence: EVAL.json contains a failed check or non-zero exit code' >> review.md; "
+        "exit 1; "
+        "else "
+        "echo 'Verdict: PASS' >> review.md; "
+        "echo 'Evidence: EVAL.json all checks passed, self-test exited 0' >> review.md; "
+        "fi"
+    )
+
+
+def _review_verdict_consistent(ctx: dict, workdir) -> tuple[bool, str]:
+    """review.md's verdict must match EVAL.json's actual pass state.
+
+    Kills the theater: a review that says PASS while EVAL.json reports
+    failed checks (or vice versa) is a lie in the shipped artifact.
+    """
+    wd = Path(workdir)
+    rp, ep = wd / "review.md", wd / "EVAL.json"
+    if not rp.exists() or not ep.exists():
+        return False, "review.md or EVAL.json missing"
+    try:
+        ev = json.loads(ep.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return False, "EVAL.json unparsable"
+    checks = ev.get("checks", [])
+    ev_passed = bool(ev.get("exit_code") == 0) and all(
+        c.get("passed") is True for c in checks
+    )
+    rtxt = rp.read_text(encoding="utf-8")
+    rv = "PASS" if re.search(
+        r"^\s*#*\s*(?:Overall\s+)?Verdict:\s*PASS\b",
+        rtxt, re.IGNORECASE | re.MULTILINE,
+    ) else "FAIL"
+    if ev_passed != (rv == "PASS"):
+        return False, (
+            f"review.md says {rv} but EVAL.json is "
+            f"{'passing' if ev_passed else 'failing'}"
+        )
+    return True, "review.md verdict matches EVAL.json"
+
+
+def _review_eval_command() -> str:
+    """Write the review hop's OWN EVAL.json from review.md's verdict.
+
+    Standalone `nine submit "review X"` has no build EVAL.json to derive
+    from, so the review must produce verifiable evidence itself — otherwise
+    the gate has nothing to certify (and the hop can never SHIP).
+    """
+    return (
+        "if grep -q 'Verdict: PASS' review.md; then "
+        "printf '{\"checks\":[{\"name\":\"review-pass\",\"passed\":true,"
+        "\"message\":\"review verdict PASS\"}],\"exit_code\":0}' > EVAL.json; "
+        "elif grep -q 'Verdict: FAIL' review.md; then "
+        "printf '{\"checks\":[{\"name\":\"review-pass\",\"passed\":false,"
+        "\"message\":\"review verdict FAIL\"}],\"exit_code\":1}' > EVAL.json; "
+        "else "
+        "printf '{\"checks\":[{\"name\":\"review-pass\",\"passed\":false,"
+        "\"message\":\"no verdict in review.md\"}],\"exit_code\":1}' > EVAL.json; "
+        "exit 1; "
+        "fi"
+    )
+
+
 def review_hop() -> Hop:
     wf = Workflow(id="review", description="QA the build; verdict must be PASS")
     wf.add_node(Node(
         id="review", kind="bash",
-        command=(
-            "echo '# Review' > review.md; "
-            "echo 'Verdict: PASS' >> review.md; "
-            "echo 'Evidence: EVAL.json all checks passed, self-test exited 0' >> review.md; "
-            "grep -q 'PASS' review.md || exit 1"
-        ),
+        command=_review_command(),
+    ))
+    wf.add_node(Node(
+        id="review-eval", kind="bash",
+        command=_review_eval_command(),
+        depends_on=["review"],
+        description="Write review EVAL.json from the verdict in review.md",
     ))
     return Hop(
         id="review", workflow=wf,
         required_artifacts=["review.md", "EVAL.json"],
         gate_checks={
             "review-pass": required_artifact_check(["review.md"]),
+            "review-consistent": _review_verdict_consistent,
             "exit-codes": exit_codes_check(),
         },
         max_fix_loops=1,

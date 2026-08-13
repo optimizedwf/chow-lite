@@ -47,7 +47,9 @@ def _install_fake_models(monkeypatch) -> None:
     def fake_build_run(inputs, job_dir):
         (Path(job_dir) / "solution.py").write_text(
             "def answer():\n    return 42\n", encoding="utf-8")
-        return {"output": "wrote solution.py"}
+        (Path(job_dir) / "test_solution.py").write_text(
+            "from solution import answer\ndef test_answer():\n    assert answer() == 42\n", encoding="utf-8")
+        return {"output": "wrote solution.py + test_solution.py"}
 
     monkeypatch.setattr(
         flagship, "_build_adk_node",

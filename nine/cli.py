@@ -32,7 +32,7 @@ from nine.gates.evidence import (
     exit_codes_check,
 )
 from nine.ledger.ledger import JSONLLedger, LedgerError
-from nine.router.classifier import Router
+from nine.router.classifier import Router, redact
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
 DEFAULT_LEDGER = "jobs/ledger.jsonl"
@@ -186,7 +186,7 @@ def cmd_submit(args) -> int:
     # EVERY prompt is a workflow: no direct-answer escape hatch. An unknown
     # task routes to `respond`, which still runs a job, writes RESPONSE.md,
     # and is verified (SHIP) before returning.
-    job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
+    job = ledger.submit(workflow_id=decision.workflow_id, input={"task": redact(args.task)})
     job.attach_route_decision(decision)
     ledger.update(job)
 
@@ -242,6 +242,15 @@ def cmd_submit(args) -> int:
         if resp_path.exists():
             print("[response]", resp_path.read_text(encoding="utf-8").strip().replace("\n", " "))
     print("[job]", job.job_id, "->", job.status)
+    # a non-SHIP verdict is NOT success for automation: mirror the chain
+    # path (exit 2) so CI/scripts cannot treat blocked/failed jobs as ok.
+    if result["verdict"]["verdict"] != "SHIP":
+        print(
+            f"[warn] job {job.job_id} not SHIPPED "
+            f"(verdict {result['verdict']['verdict']})",
+            file=sys.stderr,
+        )
+        return 2
     return 0
 
 
@@ -297,13 +306,21 @@ def cmd_artifacts(args) -> int:
 
 
 def cmd_cancel(args) -> int:
-    job = _ledger(args).cancel(args.job_id)
+    try:
+        job = _ledger(args).cancel(args.job_id)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     print(f"cancelled {job.job_id} -> {job.status}")
     return 0
 
 
 def cmd_recover(args) -> int:
-    job = _ledger(args).recover(args.job_id)
+    try:
+        job = _ledger(args).recover(args.job_id)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     print(f"recovered {job.job_id} -> {job.status}")
     return 0
 
