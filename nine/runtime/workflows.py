@@ -19,6 +19,7 @@ import os
 import random
 import subprocess as sp
 import sys
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -132,8 +133,33 @@ class WorkflowExecutor:
         if node.kind in ("prompt", "tool", "subagent", "summarize"):
             if node.run is None:
                 raise WorkflowError(f"node {node.id}: {node.kind} node needs a callable")
-            out = node.run(inputs, job_dir)
-            return out if isinstance(out, dict) else {"output": out}
+            # torture T3-F5: timeout_seconds was enforced ONLY for bash; a
+            # hung model/tool call (free-tier stall) left the job running
+            # forever. Enforce the same deadline for callable nodes — the
+            # worker thread is abandoned (daemon) but the JOB fails loud.
+            run = node.run  # narrowed local (mypy can't narrow attrs in closures)
+            deadline = node.timeout_seconds
+            result: dict[str, Any] = {}
+            error: BaseException | None = None
+
+            def _call() -> None:
+                nonlocal result, error
+                try:
+                    out = run(inputs, job_dir)
+                    result = out if isinstance(out, dict) else {"output": out}
+                except BaseException as exc:  # noqa: BLE001 - re-raised below
+                    error = exc
+
+            worker = threading.Thread(target=_call, daemon=True)
+            worker.start()
+            worker.join(timeout=deadline)
+            if worker.is_alive():
+                raise WorkflowError(
+                    f"node {node.id} exceeded timeout {deadline}s"
+                )
+            if error is not None:
+                raise error
+            return result
         raise WorkflowError(f"node {node.id}: unknown kind {node.kind}")
 
     def _run_node(self, node: Node, inputs: dict[str, Any], job_dir: Path) -> tuple[dict[str, Any], int]:

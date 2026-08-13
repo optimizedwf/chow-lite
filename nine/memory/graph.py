@@ -102,8 +102,13 @@ class LocalMemoryGraph:
         for line in reversed(open(self.path, encoding="utf-8").read().splitlines()):
             if not line.strip():
                 continue
-            rec = json.loads(line)
-            hay = f"{rec['summary']} {rec['task_redacted']} {rec['artifact_name']}".lower()
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue  # one corrupt line must not brick memory search
+            if not isinstance(rec, dict):
+                continue
+            hay = f"{rec.get('summary', '')} {rec.get('task_redacted', '')} {rec.get('artifact_name', '')}".lower()
             if all(t in hay for t in terms):
                 hits.append(rec)
                 if len(hits) >= k:

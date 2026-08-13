@@ -80,8 +80,18 @@ class RouteEventStore:
     def all(self) -> list[RouteEvent]:
         out = []
         for line in self.path.read_text().splitlines():
-            if line.strip():
-                out.append(RouteEvent(**json.loads(line)))
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue  # one corrupt line must not brick event loading
+            if not isinstance(rec, dict):
+                continue
+            try:
+                out.append(RouteEvent(**rec))
+            except TypeError:
+                continue
         return out
 
     def by_workflow(self, workflow_id: str) -> list[RouteEvent]:
@@ -109,8 +119,18 @@ class CandidateStore:
     def all(self) -> list[ImprovementCandidate]:
         out = []
         for line in self.path.read_text().splitlines():
-            if line.strip():
-                out.append(ImprovementCandidate(**json.loads(line)))
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
+            if not isinstance(rec, dict):
+                continue
+            try:
+                out.append(ImprovementCandidate(**rec))
+            except TypeError:
+                continue
         return out
 
     def get(self, candidate_id: str) -> ImprovementCandidate | None:
@@ -122,7 +142,14 @@ class CandidateStore:
     def update_status(self, candidate_id: str, status: str) -> None:
         """Rewrite the JSONL with a new status for one candidate (immutable
         log -> status is a state transition, applied in place)."""
-        recs = [json.loads(line) for line in self.path.read_text().splitlines() if line.strip()]
+        recs = []
+        for line in self.path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                recs.append(json.loads(line))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                continue
         changed = False
         for rec in recs:
             if rec.get("candidate_id") == candidate_id:

@@ -147,7 +147,9 @@ def test_submit_records_route_events_and_events_endpoint():
     assert ev["count"] == before + 1
     latest = ev["events"][-1]
     assert latest["workflow_id"] == "review"
-    assert latest["verdict"] == "SHIP"
+    # T3-F2: a standalone review with no EVAL.json to review must NOT ship
+    # a fabricated PASS — it honestly FIXes (nothing was ever verified).
+    assert latest["verdict"] == "FIX"
     stats = client.get("/v1/stats").json()
     assert stats["events"]["count"] == before + 1
     assert stats["events"]["candidates"]["total"] >= 0

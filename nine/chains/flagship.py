@@ -32,7 +32,7 @@ def _research_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "research requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
@@ -44,7 +44,7 @@ def _research_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a findings file into the research workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            _contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         agent = LlmAgent(
@@ -69,6 +69,21 @@ def _research_adk_node() -> Node:
                 retry_delay_seconds=1.0,
                 description="ADK LlmAgent researches the task (fails loud without a model)")
 
+
+
+def _contained_write(job_dir: Path, path: str, content: str) -> None:
+    """Write `content` to `path` inside job_dir, refusing `..` escapes.
+
+    torture T3-F7: the model controls `path`; a confused/adversarial model
+    could write `../EVAL.json` and poison ANOTHER job's evidence (or the
+    router catalog / ledger). Resolve the target and enforce containment.
+    """
+    root_dir = job_dir.resolve()
+    target = (root_dir / path).resolve()
+    if not target.is_relative_to(root_dir):
+        raise ValueError(f"refusing to write outside job dir: {path}")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
 
 def research_hop(include_datahub: bool = False) -> Hop:
     wf = Workflow(id="research", description="Produce findings + distilled handoff")
@@ -112,7 +127,7 @@ def _plan_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "plan requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
@@ -124,7 +139,7 @@ def _plan_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write the plan file into the plan workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            _contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         handoff = ""
@@ -189,7 +204,7 @@ def _build_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "build requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
@@ -201,7 +216,7 @@ def _build_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a source file into the build workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            _contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         plan = ""
@@ -297,10 +312,20 @@ def build_hop() -> Hop:
 
 
 def _review_command() -> str:
-    """Review derives its verdict from EVAL.json — never a hardcoded PASS."""
+    """Review derives its verdict from EVAL.json — never a hardcoded PASS.
+
+    torture T3-F2: with NO EVAL.json (standalone review of a job dir that
+    never built), grep on the missing file exits 2 -> the else branch -> a
+    fabricated 'Verdict: PASS' citing evidence that never existed. A review
+    with nothing to review must FAIL loudly.
+    """
     return (
         "echo '# Review' > review.md; "
-        "if grep -qE '\"passed\"[[:space:]]*:[[:space:]]*false|"
+        "if [ ! -f EVAL.json ]; then "
+        "echo 'Verdict: FAIL' >> review.md; "
+        "echo 'Evidence: no EVAL.json in workspace - nothing to review' >> review.md; "
+        "exit 1; "
+        "elif grep -qE '\"passed\"[[:space:]]*:[[:space:]]*false|"
         "\"exit_code\"[[:space:]]*:[[:space:]]*[1-9]' EVAL.json; then "
         "echo 'Verdict: FAIL' >> review.md; "
         "echo 'Evidence: EVAL.json contains a failed check or non-zero exit code' >> review.md; "

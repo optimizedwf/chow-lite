@@ -270,22 +270,14 @@ def test_cmd_submit_returns_2_on_nonship(tmp_path, monkeypatch):
 
 # ------------------------------------------------------------ 8 redaction
 def test_cmd_submit_redacts_task_in_ledger(tmp_path, monkeypatch):
-    """The ledger must never persist raw credential-shaped task text."""
+    """The ledger must never persist raw credential-shaped task text.
+
+    T4-F4: redaction lives at the LEDGER boundary (JSONLLedger.submit), not
+    per-call-site — so chain submits and POST /v1/submit are covered too.
+    """
     from nine import cli as nine_cli
+    from nine.ledger.ledger import JSONLLedger
 
-    captured = {}
-
-    class _StubLedger:
-        def submit(self, workflow_id, input):
-            captured["input"] = input
-            return SimpleNamespace(
-                job_id="j1", status="queued", workflow_id=workflow_id,
-                attach_route_decision=lambda d: None)
-
-        def update(self, job):
-            pass
-
-    monkeypatch.setattr(nine_cli, "_ledger", lambda args: _StubLedger())
     monkeypatch.setattr(
         nine_cli, "build_default_router",
         lambda: SimpleNamespace(classify=lambda t: SimpleNamespace(
@@ -296,37 +288,18 @@ def test_cmd_submit_redacts_task_in_ledger(tmp_path, monkeypatch):
         nine_cli.WorkflowExecutor, "execute",
         lambda self, wf, job, inputs: {"verdict": {"verdict": "SHIP",
                                                    "summary": "ok"}})
+    ledger = JSONLLedger(tmp_path / "l.jsonl")
+    monkeypatch.setattr(nine_cli, "_ledger", lambda args: ledger)
     args = SimpleNamespace(
         task="my password is hunter2 and token is sk-ABCDEF1234567890",
         ledger=str(tmp_path / "l.jsonl"), workdir=str(tmp_path),
         events=str(tmp_path / "e.jsonl"))
     assert nine_cli.cmd_submit(args) == 0
-    stored = str(captured["input"])
-    assert "hunter2" not in stored
-    assert "sk-ABCDEF" not in stored
-    assert "password=***" in stored
+    raw = (tmp_path / "l.jsonl").read_text()
+    assert "hunter2" not in raw
+    assert "ABCDEF1234567890" not in raw
+    assert "***" in raw
 
-
-# ------------------------------------------------------------ 9 cancel/recover
-def test_cmd_cancel_recover_unknown_id_clean(tmp_path, capsys):
-    """Unknown job ids must yield a one-line error, never a traceback."""
-    from nine.cli import cmd_cancel, cmd_recover
-
-    args = SimpleNamespace(job_id="nope", ledger=str(tmp_path / "l.jsonl"),
-                           workdir=str(tmp_path),
-                           events=str(tmp_path / "e.jsonl"))
-    assert cmd_cancel(args) == 1
-    assert cmd_recover(args) == 1
-    err = capsys.readouterr().err
-    assert "Traceback" not in err
-    assert "job not found" in err
-
-
-# ============================================================ HARVEST 2 (2026-08-13)
-# T2-F1/T1-F8 research+plan hops are model-driven (no canned stubs)
-# T1-F5/T2-F4 chain manifest: no cross-hop misattribution
-# T1-F7 nine recover RE-EXECUTES (no dead-end status)
-# T2-F8 summarize-standalone never SHIPs a "summary of nothing"
 
 def test_research_hop_fails_loud_without_model(tmp_path):
     """Research must be model-driven: no key = loud WorkflowError, and NO

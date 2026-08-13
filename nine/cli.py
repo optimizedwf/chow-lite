@@ -33,14 +33,14 @@ from nine.gates.evidence import (
     exit_codes_check,
 )
 from nine.ledger.ledger import JSONLLedger, LedgerError
-from nine.router.classifier import Router, redact
+from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
 DEFAULT_LEDGER = "jobs/ledger.jsonl"
 
 
 def _ledger(args) -> JSONLLedger:
-    return JSONLLedger(args.ledger)
+    return JSONLLedger(getattr(args, "ledger", DEFAULT_LEDGER))
 
 
 def _routing_model():
@@ -52,7 +52,7 @@ def _routing_model():
     the job. Any model error degrades to the deterministic keyword
     substrate inside Router.classify — routing never crashes the loop.
     """
-    if not os.environ.get("GEMINI_API_KEY"):
+    if not os.environ.get("GEMINI_API_KEY", "").strip():
         return None
     try:
         from google import genai
@@ -82,7 +82,7 @@ def cmd_memory(args) -> int:
     """Semantic memory: search distilled hop summaries / list recent entries."""
     from nine.memory.graph import get_memory_graph
 
-    mem = get_memory_graph(path=args.memory)
+    mem = get_memory_graph(path=getattr(args, "memory", "jobs/memory.jsonl"))
     if mem is None:
         print("memory disabled (NINE_MEMORY=none)", file=sys.stderr)
         return 1
@@ -139,12 +139,12 @@ def cmd_chain(args) -> int:
 
     ledger = _ledger(args)
     chain = chains[args.chain_id]()
-    ex = ChainExecutor(ledger, workdir=args.workdir, learner=_learner(args),
+    ex = ChainExecutor(ledger, workdir=getattr(args, "workdir", "work"), learner=_learner(args),
                        memory=get_memory_graph(path=args.memory))
 
     # seed the chain job dir with the task input file
     job = ledger.submit(chain.id, input={"task": args.task})
-    job_dir = Path(args.workdir) / job.job_id
+    job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     (job_dir / "task.txt").write_text(args.task + "\n")
     if chain.id == "inbox-triage-task-report":
@@ -204,7 +204,7 @@ def _execute_job(ledger, job, task: str, args) -> int:
     # NO fabricated-output fallback for unregistered ids (fail loud instead).
     from nine.registry import CHAINS, WORKFLOWS, workflow_gate
 
-    job_dir = Path(args.workdir) / job.job_id
+    job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     (job_dir / "task.txt").write_text(task + "\n")
     if job.workflow_id == "inbox-triage-task-report":
@@ -213,7 +213,7 @@ def _execute_job(ledger, job, task: str, args) -> int:
     if job.workflow_id in CHAINS:
         from nine.chains.chain import ChainExecutor
         chain = CHAINS[job.workflow_id]()
-        cex = ChainExecutor(ledger, workdir=args.workdir, learner=learner)
+        cex = ChainExecutor(ledger, workdir=getattr(args, "workdir", "work"), learner=learner)
         res = cex.execute(chain, job, {"task": task}, decision=decision)
         print(f"chain={chain.id} job={job.job_id} final={res['final']}")
         return 0 if res["final"] == "SHIPPED" else 2
@@ -228,7 +228,7 @@ def _execute_job(ledger, job, task: str, args) -> int:
         )
 
     gate = workflow_gate(job.workflow_id) or build_default_gate()
-    executor = WorkflowExecutor(ledger, gate, workdir=args.workdir)
+    executor = WorkflowExecutor(ledger, gate, workdir=getattr(args, "workdir", "work"))
     try:
         result = executor.execute(wf, job, {"task": task})
     except WorkflowError as exc:
@@ -267,7 +267,7 @@ def cmd_submit(args) -> int:
     # EVERY prompt is a workflow: no direct-answer escape hatch. An unknown
     # task routes to `respond`, which still runs a job, writes RESPONSE.md,
     # and is verified (SHIP) before returning.
-    job = ledger.submit(workflow_id=decision.workflow_id, input={"task": redact(args.task)})
+    job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
     job.attach_route_decision(decision)
     ledger.update(job)
     return _execute_job(ledger, job, args.task, args)
@@ -353,7 +353,7 @@ def cmd_recover(args) -> int:
 
     # the raw task survives in task.txt (ledger input is redacted for
     # display) — read it BEFORE wiping stale attempt artifacts.
-    job_dir = Path(args.workdir) / job.job_id
+    job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     task = ""
     task_txt = job_dir / "task.txt"
     if task_txt.exists():
@@ -381,7 +381,7 @@ def _learner(args):
     """Route-event store + learner on the CLI's durable event log."""
     from nine.learn.learner import Learner, RouteEventStore
 
-    events_path = Path(args.events)
+    events_path = Path(getattr(args, "events", "jobs/events.jsonl"))
     return Learner(RouteEventStore(events_path))
 
 
@@ -578,17 +578,23 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--memory", default="jobs/memory.jsonl", help="semantic memory store path")
     sub = p.add_subparsers(dest="cmd", required=True)
 
+    # T4-F6: submit/chain re-declare --ledger/--workdir. Without
+    # default=argparse.SUPPRESS the subparser default CLOBBERS a global
+    # value given BEFORE the subcommand (`nine --ledger /tmp/x submit ...`
+    # silently wrote to the production ledger). SUPPRESS keeps the global
+    # value when the flag appears before the subcommand while still
+    # accepting it after.
     s = sub.add_parser("submit")
     s.add_argument("task")
-    s.add_argument("--ledger", default=DEFAULT_LEDGER)
-    s.add_argument("--workdir", default="work")
+    s.add_argument("--ledger", default=argparse.SUPPRESS)
+    s.add_argument("--workdir", default=argparse.SUPPRESS)
     s.set_defaults(fn=cmd_submit)
 
     s = sub.add_parser("chain")
     s.add_argument("chain_id")
     s.add_argument("task")
-    s.add_argument("--ledger", default=DEFAULT_LEDGER)
-    s.add_argument("--workdir", default="work")
+    s.add_argument("--ledger", default=argparse.SUPPRESS)
+    s.add_argument("--workdir", default=argparse.SUPPRESS)
     s.set_defaults(fn=cmd_chain)
 
     s = sub.add_parser("status")

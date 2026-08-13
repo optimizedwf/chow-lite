@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -63,6 +64,23 @@ def load_catalog() -> dict:
     try:
         data = json.loads(_CATALOG_PATH.read_text())
     except FileNotFoundError:
+        return {"keyword_overrides": {}, "description_overrides": {}}
+    except (json.JSONDecodeError, OSError) as e:
+        # torture T4-F3: a corrupt/truncated catalog (bad manual edit, crash
+        # mid-learn-apply) must NOT brick every `nine` command at import
+        # time. Degrade to the base keyword set and say so loudly.
+        print(
+            f"warning: router catalog {_CATALOG_PATH} unreadable ({e}); "
+            "using base keywords",
+            file=sys.stderr,
+        )
+        return {"keyword_overrides": {}, "description_overrides": {}}
+    if not isinstance(data, dict):
+        print(
+            f"warning: router catalog {_CATALOG_PATH} is not a JSON object; "
+            "using base keywords",
+            file=sys.stderr,
+        )
         return {"keyword_overrides": {}, "description_overrides": {}}
     return data
 

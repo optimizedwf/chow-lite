@@ -58,7 +58,10 @@ def redact(text: str) -> str:
     ]
     out = text
     for pat, repl in patterns:
-        out = re.sub(pat, repl, out, flags=re.DOTALL)
+        # torture T3-F8: case-insensitive — API_KEY=, PASSWORD=, TOKEN: all
+        # leak verbatim today; uppercase credential forms are the common
+        # ones in real tasks ("my API_KEY is ...").
+        out = re.sub(pat, repl, out, flags=re.DOTALL | re.IGNORECASE)
     return out
 
 

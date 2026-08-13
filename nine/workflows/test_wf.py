@@ -38,7 +38,7 @@ def _test_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "test requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"

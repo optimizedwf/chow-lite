@@ -40,7 +40,7 @@ def respond_text(task: str, max_chars: int = 600) -> tuple[str, str]:
 
     from nine.runtime.workflows import WorkflowError
 
-    key = os.environ.get("GEMINI_API_KEY", "")
+    key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise WorkflowError(
             "respond requires GEMINI_API_KEY — no offline fallback "

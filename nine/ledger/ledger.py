@@ -133,25 +133,58 @@ class JSONLLedger:
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, Job] = {}
-        self._load()
+        # (line_number, reason) for records that could not be parsed. A
+        # crash mid-append or a hand-edit must NOT brick the whole ledger:
+        # skip the bad line, keep the healthy jobs, report the damage.
+        self.corrupt_lines: list[tuple[int, str]] = []
+        try:
+            self._load()
+        except OSError as e:
+            raise LedgerError(f"cannot read ledger {self.path}: {e}") from e
 
     def _load(self) -> None:
         if not self.path.exists():
             return
-        for line in self.path.read_text().splitlines():
+        for idx, line in enumerate(self.path.read_text().splitlines(), start=1):
             if not line.strip():
                 continue
-            rec = json.loads(line)
-            job = Job(workflow_id=rec["workflow_id"], job_id=rec["job_id"])
-            job.__dict__.update({k: v for k, v in rec.items() if k != "workflow_id"})
-            self._jobs[rec["job_id"]] = job
+            try:
+                rec = json.loads(line)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                self.corrupt_lines.append((idx, "not valid JSON"))
+                continue
+            if not isinstance(rec, dict):
+                self.corrupt_lines.append((idx, "not an object"))
+                continue
+            wf_id = rec.get("workflow_id")
+            jid = rec.get("job_id")
+            if not wf_id or not jid:
+                self.corrupt_lines.append((idx, "missing workflow_id/job_id"))
+                continue
+            job = Job(workflow_id=wf_id, job_id=jid)
+            job.__dict__.update(
+                {k: v for k, v in rec.items() if k not in ("workflow_id", "job_id")}
+            )
+            self._jobs[jid] = job
 
     def _append(self, job: Job) -> None:
-        with open(self.path, "a") as f:
-            f.write(json.dumps(job.to_dict()) + "\n")
+        try:
+            with open(self.path, "a") as f:
+                f.write(json.dumps(job.to_dict()) + "\n")
+        except OSError as e:
+            raise LedgerError(f"cannot append to ledger {self.path}: {e}") from e
 
     def submit(self, workflow_id: str, input: dict[str, Any] | None = None,
                chain_id: str | None = None) -> Job:
+        # Redact at the LEDGER boundary (torture T4-F4): every submit path —
+        # CLI submit, CLI chain, POST /v1/submit — stores the same redacted
+        # task. Idempotent: callers may pre-redact; the boundary applies it
+        # once more harmlessly. Execution still uses the RAW task (task.txt).
+        if input and isinstance(input.get("task"), str):
+            from nine.router.classifier import redact
+
+            input = dict(input)
+            input["task"] = redact(input["task"])
         job = Job(workflow_id=workflow_id, input=input, chain_id=chain_id)
         validate("agent-job", job.to_dict())
         self._jobs[job.job_id] = job
@@ -192,18 +225,31 @@ class JSONLLedger:
         return self.transition(job_id, "cancelled")
 
     def recover(self, job_id: str) -> Job:
-        """Recovery: BLOCKED/FAILED -> recovered -> running (re-execution)."""
+        """Recovery: BLOCKED/FAILED -> recovered -> running (re-execution).
+
+        Any other status raises LedgerError — recovering a shipped job would
+        destroy its verified artifacts and then crash on an illegal
+        transition (torture T3-F3/T4-F2). Attempts are reset so the
+        re-execution gets a full fix-loop budget.
+        """
         job = self.get(job_id)
-        if job.status in ("blocked", "failed"):
-            job.transition("recovered")
-            self._append(job)
+        if job.status not in ("blocked", "failed"):
+            raise LedgerError(
+                f"job {job_id} is {job.status}, only blocked/failed can be recovered"
+            )
+        job.transition("recovered")
+        job.attempts = 0
+        self._append(job)
         return job
 
     def stats(self) -> dict[str, Any]:
         counts: dict[str, int] = {}
         for j in self._jobs.values():
             counts[j.status] = counts.get(j.status, 0) + 1
-        return {"total": len(self._jobs), "by_status": counts}
+        out: dict[str, Any] = {"total": len(self._jobs), "by_status": counts}
+        if self.corrupt_lines:
+            out["corrupt_lines"] = len(self.corrupt_lines)
+        return out
 
     def snapshot(self, path: str | Path) -> None:
         """Export full snapshot (JSON list) — for backup/migration."""
