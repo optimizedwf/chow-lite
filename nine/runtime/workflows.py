@@ -154,6 +154,10 @@ class WorkflowExecutor:
             worker.start()
             worker.join(timeout=deadline)
             if worker.is_alive():
+                # torture-6 F5 (partial): a timed-out daemon thread is
+                # ABANDONED and may still write files after this attempt.
+                # Python cannot kill threads, so the executor records the
+                # fact in job metadata at the call site (see execute()).
                 raise WorkflowError(
                     f"node {node.id} exceeded timeout {deadline}s"
                 )
@@ -270,6 +274,19 @@ class WorkflowExecutor:
                 try:
                     result, attempts_used = self._run_node(node, node_inputs, job_dir)
                 except Exception as exc:
+                    # torture-6 F5 (partial): a timed-out callable node leaves
+                    # an abandoned daemon thread that may still write files.
+                    # Record it in the job (operators see it; recover wipes
+                    # the job dir before re-execution, clearing ghost files).
+                    if isinstance(exc, WorkflowError) and "exceeded timeout" in str(exc):
+                        try:
+                            job.metadata["timeout_abandoned_worker"] = {
+                                "node": node.id,
+                                "deadline_s": getattr(node, "timeout_seconds", None),
+                            }
+                            self.ledger.update(job)
+                        except Exception:  # noqa: BLE001 - best-effort note
+                            pass
                     job.transition("failed")
                     self.ledger.update(job)
                     raise WorkflowError(f"node {nid} failed: {exc}") from exc

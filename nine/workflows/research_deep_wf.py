@@ -23,13 +23,14 @@ from nine.gates.evidence import (
     exit_codes_check,
     required_artifact_check,
 )
+from nine.runtime.fsafety import contained_write
 from nine.runtime.summarizer import _gemini_generate
 from nine.runtime.workflows import Node, Workflow, WorkflowError
 
 
 def _require_key(lane: str) -> None:
     """Model-or-fail: every model node checks GEMINI_API_KEY first."""
-    if not os.environ.get("GEMINI_API_KEY"):
+    if not os.environ.get("GEMINI_API_KEY", "").strip():
         raise WorkflowError(
             f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"
@@ -77,7 +78,7 @@ def _researcher_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         _, sources = _read_workspace(job_dir)
@@ -157,7 +158,7 @@ def _iterate_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         read, sources = _read_workspace(job_dir)

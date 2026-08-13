@@ -21,6 +21,7 @@ from nine.gates.evidence import (
     exit_codes_check,
     required_artifact_check,
 )
+from nine.runtime.fsafety import contained_write
 from nine.runtime.workflows import Node, Workflow, WorkflowError
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -29,7 +30,7 @@ _DEFAULT_REG = _PLUGINS_DIR / "plugin_registry.py"
 
 
 def _require_key(lane: str) -> None:
-    if not os.environ.get("GEMINI_API_KEY"):
+    if not os.environ.get("GEMINI_API_KEY", "").strip():
         raise WorkflowError(
             f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"
@@ -118,7 +119,7 @@ def _spec_tool_node() -> Node:
         from google.adk.tools import FunctionTool
 
         def write_file(path: str, content: str) -> str:
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         agent = LlmAgent(
@@ -166,7 +167,7 @@ def _structure_tool_node() -> Node:
         from google.adk.tools import FunctionTool
 
         def write_file(path: str, content: str) -> str:
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         spec = ""
@@ -226,11 +227,11 @@ def _implement_tool_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             if path.endswith("_wf.py"):
-                (Path(_PLUGINS_DIR) / path).write_text(content, encoding="utf-8")
-                (job_dir / path).write_text(content, encoding="utf-8")
+                contained_write(Path(_PLUGINS_DIR), path, content)
+                contained_write(job_dir, path, content)
                 return (f"wrote {path} to plugins dir + job dir "
                         f"({len(content)} bytes)")
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         hop_spec = ""

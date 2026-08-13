@@ -229,6 +229,12 @@ class ChainExecutor:
                 break
 
             if verdict != "SHIP":
+                # torture-5 F3: the BLOCKED early return used to skip the
+                # terminal-state walk, leaving the container job 'submitted'
+                # forever (discover --status blocked missed it and recover
+                # refused it). Mark blocked in the durable ledger here too.
+                force_terminal(job, "blocked")
+                self.ledger.update(job)
                 self.results["final"] = {"verdict": "BLOCKED", "at_hop": hop.id}
                 return {"final": "BLOCKED", "at_hop": hop.id,
                         "hop_results": hop_results}

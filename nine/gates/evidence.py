@@ -78,7 +78,9 @@ class EvidenceGate:
 def load_eval_json(workdir: Path) -> dict[str, Any] | None:
     """Load EVAL.json if present in the workdir (the standard contract)."""
     p = workdir / "EVAL.json"
-    if p.exists():
+    # torture-6 F1 (read side): a symlinked EVAL.json certifies OUTSIDE file
+    # content as the job's own evidence — symlinks are never evidence.
+    if p.exists() and not p.is_symlink():
         try:
             data = json.loads(p.read_text())
         except json.JSONDecodeError:
@@ -97,7 +99,7 @@ def file_nonempty_check(name: str, min_chars: int = 10) -> CheckFn:
     """
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
         f = Path(workdir) / name
-        if not f.exists():
+        if f.is_symlink() or not f.exists():
             return False, f"{name} missing — cannot verify"
         size = f.stat().st_size
         if size < min_chars:
@@ -161,7 +163,8 @@ def exit_codes_check() -> CheckFn:
 def required_artifact_check(expected: list[str]) -> CheckFn:
     """Factory: a check that requires certain artifact files exist."""
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
-        missing = [e for e in expected if not (workdir / e).exists()]
+        missing = [e for e in expected
+                   if (workdir / e).is_symlink() or not (workdir / e).exists()]
         if missing:
             return False, f"missing artifacts: {missing}"
         return True, f"artifacts present: {expected}"

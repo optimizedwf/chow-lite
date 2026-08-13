@@ -28,7 +28,7 @@ def _gemini_generate(prompt: str, api_key: str | None, timeout: int = 90) -> str
     Model-or-fail: missing key or API failure raises WorkflowError — the
     summarizer never falls back to fabricated output.
     """
-    key = api_key or os.environ.get("GEMINI_API_KEY")
+    key = api_key or os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise WorkflowError(
             "summarize requires GEMINI_API_KEY — no offline fallback "

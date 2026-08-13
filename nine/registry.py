@@ -125,7 +125,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
 # hop factories per single-hop workflow id (used to build per-hop gates)
 _HOPS: dict[str, Callable] = {
     "research": research_hop,
-    "plan": plan_hop,
+    "plan": lambda: plan_hop(require_handoff=False),
     "build": build_hop,
     "review": review_hop,
     "review-multi": review_multi_hop,
@@ -228,7 +228,11 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
     "analyze": ["analyze", "analyze the data", "analyze this dataset", "explore the data", "data analysis", "what does the data show", "insights from", "analyze the csv", "explore the dataset", "look at the data"],
     "transform": ["transform", "transform this", "transform the data", "convert", "convert this", "convert this csv to json", "convert this json to csv", "convert this file to json", "convert this file to csv", "convert this file to yaml", "convert the csv", "convert the json", "convert file", "csv to json", "json to csv", "reformat", "reformat this", "change the format", "format conversion", "convert to yaml", "convert to tsv"],
     "pipeline": ["pipeline", "etl", "etl pipeline", "build a pipeline", "data pipeline", "run the pipeline", "process the data in stages", "transform and load", "multi-stage etl", "ingest and transform"],
-    "inbox-triage-task-report": ["trip", "plan", "refund", "customer", "inbox"],
+    # torture-5 F2: the demo chain (inbox-triage-task-report) must NOT be
+    # routable from production traffic - real user tasks ("customer wants a
+    # refund") were SHIPping canned boilerplate as verified jobs. The chain
+    # stays reachable ONLY via explicit `nine chain demo` / `chain
+    # inbox-triage-task-report`, never through keyword routing.
     "respond": ["hello", "hi", "help", "what can you do"],
 }
 
@@ -263,7 +267,19 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
 def _merged_keywords() -> dict[str, list[str]]:
     """Base keywords + git-tracked catalog overrides (LEARN-approved)."""
     merged = {wf: list(kws) for wf, kws in _BASE_KEYWORDS.items()}
-    for wf, extra in load_catalog().get("keyword_overrides", {}).items():
+    overrides = load_catalog().get("keyword_overrides", {})
+    if not isinstance(overrides, dict):
+        # torture-6 F6: a valid-JSON-but-wrong-shape catalog (e.g.
+        # keyword_overrides is a list) must degrade, not brick routing.
+        print("warning: catalog keyword_overrides is not an object; ignored",
+              file=sys.stderr)
+        overrides = {}
+    for wf, extra in overrides.items():
+        if not isinstance(extra, (list, tuple)) or not all(
+                isinstance(kw, str) for kw in extra):
+            print(f"warning: catalog keyword_overrides[{wf!r}] is not a "
+                  "list of strings; ignored", file=sys.stderr)
+            continue
         seen = set(merged.get(wf, []))
         merged.setdefault(wf, [])
         for kw in extra:
@@ -275,7 +291,18 @@ def _merged_keywords() -> dict[str, list[str]]:
 
 def _merged_descriptions() -> dict[str, str]:
     merged = dict(_BASE_DESCRIPTIONS)
-    merged.update(load_catalog().get("description_overrides", {}))
+    overrides = load_catalog().get("description_overrides", {})
+    if not isinstance(overrides, dict):
+        # torture-6 F6: same shape guard for descriptions.
+        print("warning: catalog description_overrides is not an object; "
+              "ignored", file=sys.stderr)
+        overrides = {}
+    for wf, desc in overrides.items():
+        if isinstance(desc, str):
+            merged[wf] = desc
+        else:
+            print(f"warning: catalog description_overrides[{wf!r}] is not a "
+                  "string; ignored", file=sys.stderr)
     return merged
 
 

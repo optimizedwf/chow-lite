@@ -28,7 +28,7 @@ from nine.runtime.workflows import Node, Workflow, WorkflowError
 
 def _require_key(lane: str) -> None:
     """Model-or-fail: every model node checks GEMINI_API_KEY first."""
-    if not os.environ.get("GEMINI_API_KEY"):
+    if not os.environ.get("GEMINI_API_KEY", "").strip():
         raise WorkflowError(
             f"{lane} requires GEMINI_API_KEY - no offline fallback, "
             "nine is model-driven"

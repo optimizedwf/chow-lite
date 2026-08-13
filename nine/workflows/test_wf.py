@@ -18,6 +18,7 @@ from nine.gates.evidence import (
     exit_codes_check,
     required_artifact_check,
 )
+from nine.runtime.fsafety import contained_write
 from nine.runtime.workflows import Node, Workflow
 
 
@@ -50,7 +51,7 @@ def _test_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a source file into the test workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         solution = ""

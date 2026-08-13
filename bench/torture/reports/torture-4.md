@@ -58,7 +58,7 @@ All repros run via `.venv/bin/nine` / `.venv/bin/python` from repo root with scr
   ```
   The `cli.py:354` comment ("ledger input is redacted for display") is therefore false for chain and server paths. Server auth is off by default (`NINE_API_KEY` unset = open, server.py:253-259), so any caller can POST a secret and read it back via `GET /v1/jobs/{id}` (`input` is returned raw — server.py:351-353 `job_detail` returns `job.to_dict()`).
 - impact: Credential/secret leakage in the durable ledger + API responses on two of three submit surfaces — a regression of T2-F6 that contradicts the redact-at-boundary doctrine; secrets also flow into backup/snapshot exports (`ledger.snapshot`).
-- suggested_fix: redact at the ledger boundary, not per-call-site: `JSONLLedger.submit` (or `Job.__init__`) applies `redact()` to `input["task"]` once (idempotent), and server/chain stop pre-redacting. Regression test: submit via chain with `password=supersecret` task, assert ledger line contains `***` and not the secret.
+- suggested_fix: redact at the ledger boundary, not per-call-site: `JSONLLedger.submit` (or `Job.__init__`) applies `redact()` to `input["task"]` once (idempotent), and server/chain stop pre-redacting. Regression test: submit via chain with `password=***` task, assert ledger line contains `***` and not the secret.
 - effort: S
 
 ## FINDING 5

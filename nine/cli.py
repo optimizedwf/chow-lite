@@ -15,8 +15,9 @@ Chains:
     flagship   research -> plan -> build -> review -> teach (5 hops)
     demo       inbox -> triage -> task -> report (demo lane)
 
-Exit codes: 0 ok, 1 error. (An exit code is NOT task success — check
-`nine status` for the SHIP/FIX/BLOCK verdict.)
+Exit codes: 0 ok, 1 error, 2 non-SHIP verdict (submit/chain). (An exit
+code is NOT task success — check `nine status` for the SHIP/FIX/BLOCK
+verdict.)
 """
 from __future__ import annotations
 
@@ -105,9 +106,21 @@ def cmd_memory(args) -> int:
     if isinstance(local_path, Path) and local_path.exists():
         import json as _json
 
-        for line in reversed(open(local_path, encoding="utf-8").read().splitlines()):
-            if line.strip():
+        # torture-6 F8: one corrupt (or non-UTF8) line must NOT raw-traceback
+        # `nine memory list` — skip it like the search path does.
+        try:
+            text = open(local_path, encoding="utf-8", errors="replace").read()
+        except OSError as e:
+            print(f"error: cannot read memory store {local_path}: {e}",
+                  file=sys.stderr)
+            return 1
+        for line in reversed(text.splitlines()):
+            if not line.strip():
+                continue
+            try:
                 rows.append(_json.loads(line))
+            except (ValueError, TypeError):
+                continue  # corrupt line skipped
     else:
         rows = list(mem.search_context("latest", k=10))
     if not rows:
@@ -345,21 +358,30 @@ def cmd_recover(args) -> int:
     recover used to park jobs in a dead-end status forever).
     """
     ledger = _ledger(args)
-    try:
-        job = ledger.recover(args.job_id)
-    except LedgerError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 1
 
-    # the raw task survives in task.txt (ledger input is redacted for
-    # display) — read it BEFORE wiping stale attempt artifacts.
+    # The RAW task survives in task.txt (ledger input is redacted for
+    # display) — check it BEFORE any state change. torture-5 F4: if task.txt
+    # is missing, re-executing from the redacted ledger input would SHIP
+    # corrupted output as a verified job. Refuse loudly — the true task is
+    # unrecoverable after a workdir hiccup, and the job stays blocked/failed
+    # so the operator can restore the workdir and try again.
+    job = ledger.get(args.job_id)
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     task = ""
     task_txt = job_dir / "task.txt"
     if task_txt.exists():
         task = task_txt.read_text(encoding="utf-8").rstrip("\n")
     if not task:
-        task = str(job.input.get("task", ""))
+        print(f"error: cannot recover {job.job_id}: task.txt is missing (raw "
+              "task not available; the ledger only stores the redacted "
+              "task). Restore the workdir or re-submit the task.", file=sys.stderr)
+        return 1
+
+    try:
+        job = ledger.recover(args.job_id)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
 
     if job_dir.exists():
         for p in job_dir.iterdir():
@@ -576,6 +598,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--ledger", default=DEFAULT_LEDGER, help="ledger path")
     p.add_argument("--events", default="jobs/events.jsonl", help="route-event store path")
     p.add_argument("--memory", default="jobs/memory.jsonl", help="semantic memory store path")
+    # torture-6 F7: --workdir belongs on the parent parser too, otherwise
+    # `nine --workdir /tmp/x submit ...` dies with a misleading error while
+    # `submit --workdir` works (surface asymmetry left by T4-F6). SUPPRESS so
+    # subparsers that re-declare it cannot clobber a pre-subcommand value.
+    p.add_argument("--workdir", default=argparse.SUPPRESS, help="job workdir")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     # T4-F6: submit/chain re-declare --ledger/--workdir. Without
@@ -615,7 +642,7 @@ def main(argv: list[str] | None = None) -> int:
 
     s = sub.add_parser("recover")
     s.add_argument("job_id")
-    s.add_argument("--workdir", default="work")
+    s.add_argument("--workdir", default=argparse.SUPPRESS)
     s.set_defaults(fn=cmd_recover)
 
     s = sub.add_parser("stats")

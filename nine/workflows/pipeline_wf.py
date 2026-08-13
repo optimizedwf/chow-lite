@@ -21,11 +21,12 @@ from nine.gates.evidence import (
     file_nonempty_check,
     required_artifact_check,
 )
+from nine.runtime.fsafety import contained_write
 from nine.runtime.workflows import Node, Workflow, WorkflowError
 
 
 def _require_key(lane: str) -> None:
-    if not os.environ.get("GEMINI_API_KEY"):
+    if not os.environ.get("GEMINI_API_KEY", "").strip():
         raise WorkflowError(
             f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"
@@ -73,7 +74,7 @@ def _transform_tool_node() -> Node:
         from google.adk.tools import FunctionTool
 
         def write_file(path: str, content: str) -> str:
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         src = ""

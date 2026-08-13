@@ -21,6 +21,7 @@ from nine.gates.evidence import (
     exit_codes_check,
     required_artifact_check,
 )
+from nine.runtime.fsafety import contained_write
 from nine.runtime.workflows import Node, Workflow
 
 _DIMENSIONS: dict[str, str] = {
@@ -68,7 +69,7 @@ def _reviewer_adk_node(dimension: str, filename: str) -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:200]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 f"review-multi ({dimension}) requires GEMINI_API_KEY "
                 "(ADK LlmAgent) - no offline fallback, nine is model-driven"
@@ -80,9 +81,7 @@ def _reviewer_adk_node(dimension: str, filename: str) -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a review file into the job dir (reviews/...)."""
-            target = job_dir / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         code = ""
@@ -129,7 +128,7 @@ def _merge_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:200]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "review-multi (merge) requires GEMINI_API_KEY (ADK LlmAgent) "
                 "- no offline fallback, nine is model-driven"
@@ -141,9 +140,7 @@ def _merge_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the job dir."""
-            target = job_dir / path
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         reports = []

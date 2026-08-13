@@ -14,6 +14,7 @@ Output conforms to schemas/route-decision.schema.json.
 from __future__ import annotations
 
 import json
+import math
 import re
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -50,8 +51,21 @@ def redact(text: str) -> str:
     leakage in logs (matching the design of the internal nine router).
     """
     patterns = [
+        # comparison tails (==, !=, ~=) FIRST so the plain [=:] pattern does
+        # not steal the leading '=' of '==' and leak the secret tail
+        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=!~]=\s*\S+", "\\1=***"),
         (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+", "\\1=***"),
         (r"(password|passwd|pwd|secret|token|api[_-]?key)\s+(?:is|was|:=|:|=)\s*\S+", "\\1=***"),
+        # torture-6 F4: JSON-quoted credentials ("api_key":"sk-123", "token": "abc")
+        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"']\S+[\"']", "\\1=***"),
+        # AWS keys: AKIA... and aws_secret_access_key = value
+        (r"AKIA[0-9A-Z]{16}", "AKIA***"),
+        (r"aws_secret_access_key\s*[=:]\s*\S+", "aws_secret_access_key=***"),
+        (r"aws_access_key_id\s*[=:]\s*\S+", "aws_access_key_id=***"),
+        # Slack tokens: xoxb-/xoxp-/xapp-/xoxs-/xoxr-...
+        (r"xox[baprs]-[0-9A-Za-z-]{10,}", "xox***"),
+        # `password == hunter2` comparison tails (==, !=, ~=)
+        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=!~]=\s*\S+", "\\1=***"),
         (r"Bearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer ***"),
         (r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "***PRIVATE KEY***"),
         (r"(sk|pk|ghp|gho|AIza)[A-Za-z0-9_\-]{10,}", "\\1***"),
@@ -167,6 +181,12 @@ class GeminiRouter:
             data = json.loads(txt)
             wf_id = str(data.get("workflow_id", ""))
             conf = float(data.get("confidence", 0.0))
+            # torture-5 F7: NaN/Infinity confidence would poison the ledger
+            # (json.dumps emits bare NaN -> not strict JSON). Treat any
+            # non-finite or out-of-range value as an unparsable response so
+            # the caller falls back to the keyword substrate.
+            if not math.isfinite(conf) or not (0.0 <= conf <= 1.0):
+                raise ValueError(f"confidence out of range: {conf!r}")
             reason = str(data.get("reason", ""))
             return wf_id, conf, reason
         except Exception as exc:  # noqa: BLE001 — parse failure = NO decision:
@@ -228,6 +248,12 @@ class Router:
             if wf_id not in self.workflows:
                 wf_id, conf, reason = "", 0.0, "model returned unknown workflow, falling back"
                 fallback_note = fallback_note or "model returned unknown workflow; keyword fallback"
+            # torture-5 F7: NaN/Infinity confidence would poison the ledger
+            # (json.dumps emits bare NaN). Guard at the Router level too —
+            # defense in depth, in case a model adapter bypasses the parser.
+            if not math.isfinite(conf) or not (0.0 <= conf <= 1.0):
+                wf_id, conf, reason = "", 0.0, "model returned non-finite/out-of-range confidence, falling back"
+                fallback_note = fallback_note or "model confidence invalid; keyword fallback"
 
         if not wf_id or wf_id not in self.workflows:
             wf_id, conf, reason = self.keyword.classify(task_red)

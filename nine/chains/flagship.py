@@ -74,16 +74,14 @@ def _research_adk_node() -> Node:
 def _contained_write(job_dir: Path, path: str, content: str) -> None:
     """Write `content` to `path` inside job_dir, refusing `..` escapes.
 
-    torture T3-F7: the model controls `path`; a confused/adversarial model
-    could write `../EVAL.json` and poison ANOTHER job's evidence (or the
-    router catalog / ledger). Resolve the target and enforce containment.
+    torture T3-F7 / T5-F1: the model controls `path`; a confused/adversarial
+    model could write `../EVAL.json` and poison ANOTHER job's evidence (or
+    the router catalog / ledger). Single shared implementation lives in
+    nine/runtime/fsafety.py (used by every workflow's write_file tool).
     """
-    root_dir = job_dir.resolve()
-    target = (root_dir / path).resolve()
-    if not target.is_relative_to(root_dir):
-        raise ValueError(f"refusing to write outside job dir: {path}")
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(content, encoding="utf-8")
+    from nine.runtime.fsafety import contained_write
+
+    contained_write(job_dir, path, content)
 
 def research_hop(include_datahub: bool = False) -> Hop:
     wf = Workflow(id="research", description="Produce findings + distilled handoff")
@@ -170,17 +168,27 @@ def _plan_adk_node() -> Node:
                 description="ADK LlmAgent writes a task-specific plan (fails loud without a model)")
 
 
-def plan_hop() -> Hop:
+def plan_hop(require_handoff: bool = True) -> Hop:
+    """Plan hop. torture-5 F5: the STANDALONE plan workflow can never SHIP
+    because its gate demands HANDOFF.md, which only the research hop's
+    summarize step writes — standalone plan (no research hop) would FIX-loop
+    forever into BLOCK. Chains pass require_handoff=True (strict: the plan
+    must build on a real research handoff); standalone `nine submit "plan x"`
+    passes require_handoff=False and gates on PLAN.md alone.
+    """
     wf = Workflow(id="plan", description="Write a build plan")
     wf.add_node(_plan_adk_node())
+    required = ["PLAN.md"] if not require_handoff else ["PLAN.md", "HANDOFF.md"]
+    checks = {
+        "plan-md": required_artifact_check(["PLAN.md"]),
+        "plan-nonempty": file_nonempty_check("PLAN.md", min_chars=30),
+    }
+    if require_handoff:
+        checks["handoff-md"] = required_artifact_check(["HANDOFF.md"])
     return Hop(
         id="plan", workflow=wf,
-        required_artifacts=["PLAN.md", "HANDOFF.md"],
-        gate_checks={
-            "plan-md": required_artifact_check(["PLAN.md"]),
-            "handoff-md": required_artifact_check(["HANDOFF.md"]),
-            "plan-nonempty": file_nonempty_check("PLAN.md", min_chars=30),
-        },
+        required_artifacts=required,
+        gate_checks=checks,
         max_fix_loops=2,
     )
 

@@ -99,7 +99,8 @@ class LocalMemoryGraph:
             return []
         terms = [t.lower() for t in query.split() if t]
         hits: list[dict[str, Any]] = []
-        for line in reversed(open(self.path, encoding="utf-8").read().splitlines()):
+        for line in reversed(open(self.path, encoding="utf-8",
+                                  errors="replace").read().splitlines()):
             if not line.strip():
                 continue
             try:

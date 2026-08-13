@@ -32,7 +32,7 @@ def gemma_generate(
     timeout: int = 90,
 ) -> str | None:
     """Call Gemma 4 via the Gemini REST API. Returns text or None on any failure."""
-    key = api_key or os.environ.get("GEMINI_API_KEY")
+    key = api_key or os.environ.get("GEMINI_API_KEY", "").strip()
     if not key or requests is None:
         return None
     model = model or DEFAULT_MODEL

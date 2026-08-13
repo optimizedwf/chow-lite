@@ -99,15 +99,17 @@ def test_chain_events_carry_real_route_decision(tmp_path):
     r = Router()
     for wf_id, kws in KEYWORDS.items():
         r.register(wf_id, kws, HOP_DESCRIPTIONS.get(wf_id, ""))
-    decision = r.classify("trip to paris needs a plan")
+    # demo keywords are NOT routable anymore (torture-5 F2); use a real
+    # workflow's decision to prove route events carry the REAL confidence
+    decision = r.classify("study black holes")
 
     cex = ChainExecutor(ledger, workdir=tmp_path / "work", learner=learner)
-    job = ledger.submit("inbox-triage-task-report", {"task": "trip to paris"})
+    job = ledger.submit("inbox-triage-task-report", {"task": "inbox item"})
     job_dir = tmp_path / "work" / job.job_id
     job_dir.mkdir(parents=True, exist_ok=True)
-    (job_dir / "task.txt").write_text("trip to paris\n")
-    (job_dir / "inbox.txt").write_text("trip to paris\n")
-    res = cex.execute(demo_lane(), job, {"task": "trip to paris"}, decision=decision)
+    (job_dir / "task.txt").write_text("inbox item\n")
+    (job_dir / "inbox.txt").write_text("inbox item\n")
+    res = cex.execute(demo_lane(), job, {"task": "inbox item"}, decision=decision)
     assert res["final"] == "SHIPPED"
 
     events = store.all()

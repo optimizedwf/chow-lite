@@ -326,6 +326,9 @@ def test_node_timeout_enforced_for_callable_nodes(tmp_path):
         ex.execute(wf, job, {"task": "x"})
     assert time.monotonic() - start < 4  # did NOT wait the full 5s
     assert job.status == "failed"
+    # t6-F5: the abandoned worker is recorded in job metadata (best-effort
+    # honest note; Python cannot kill the daemon thread)
+    assert job.metadata.get("timeout_abandoned_worker", {}).get("node") == "tool1"
 
 
 def _always_true_check(ctx, workdir):

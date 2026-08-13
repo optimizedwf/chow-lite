@@ -1,7 +1,7 @@
 # nine
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/nine/ci.yml?branch=main&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/tests-99%20passing-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-252%20passing-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
 </p>
@@ -162,7 +162,7 @@ pip install -e .
 
 nine submit "research the latest agent frameworks"
 # → route decision (workflow_id: research)
-# → workflow runs, produces research.md + EVAL.json
+# → workflow runs, produces research.md + HANDOFF.md
 # → evidence gate: SHIP (all evidence checks passed)
 # → job ledger: submitted → routing → running → awaiting_evidence → shipped
 
@@ -225,12 +225,12 @@ chains/                   chain engine + flagship 5-hop chain + demo lane
 workflows/                example workflow DAGs
 deploy/                   Cloud Run + Firestore config (FastAPI operator API)
 docs/                     architecture diagram (SVG + PNG)
-tests/                    25 tests (router, ledger, gates, executor, chains, learn, ADK)
+tests/                    252 tests (router, ledger, gates, executor, chains, learn, ADK)
 ```
 
 ## Roadmap
 
-- [x] Core loop (router → workflow → gate → ledger) with 22 passing tests
+- [x] Core loop (router → workflow → gate → ledger) with 252 passing tests
 - [x] Google ADK 2.0 agent integration (agents as `subagent` nodes)
 - [x] 5-hop chain (research → plan → build → review → teach) + demo lane
 - [x] Cloud Run + Firestore deploy layer (Dockerfile, service, rules, API)

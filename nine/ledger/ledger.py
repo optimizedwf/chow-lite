@@ -121,6 +121,34 @@ class Job:
         self.updated_at = datetime.now(UTC).isoformat()
 
 
+def _looks_like_job(rec: dict) -> bool:
+    """Shape guard for ledger records (torture-6 F3): a loaded line must look
+    like a Job before we trust its fields — status must be a known value and
+    list-valued fields must actually be lists."""
+    if not isinstance(rec.get("status", "submitted"), str):
+        return False
+    if rec.get("status", "submitted") not in VALID_STATUSES:
+        return False
+    for field in ("artifacts", "verdicts"):
+        v = rec.get(field, [])
+        if not isinstance(v, list):
+            return False
+    if not isinstance(rec.get("metadata", {}), dict):
+        return False
+    for field in ("attempts", "max_fix_loops"):
+        v = rec.get(field, 0)
+        if not isinstance(v, int) or isinstance(v, bool):
+            return False
+    inp = rec.get("input", {})
+    if not isinstance(inp, dict):
+        return False
+    for field in ("created_at", "updated_at"):
+        v = rec.get(field)
+        if v is not None and not isinstance(v, str):
+            return False
+    return True
+
+
 class JSONLLedger:
     """Zero-dependency JSONL-backed ledger. One JSON object per line.
 
@@ -145,7 +173,15 @@ class JSONLLedger:
     def _load(self) -> None:
         if not self.path.exists():
             return
-        for idx, line in enumerate(self.path.read_text().splitlines(), start=1):
+        # torture-6 F2: a single non-UTF8 byte used to raise UnicodeDecodeError
+        # here and brick EVERY nine command (the per-line json try/except never
+        # got a chance to run). Read with errors="replace" so the corrupt line
+        # is skipped and counted like any other bad line.
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as e:
+            raise LedgerError(f"cannot read ledger {self.path}: {e}") from e
+        for idx, line in enumerate(text.splitlines(), start=1):
             if not line.strip():
                 continue
             try:
@@ -160,6 +196,13 @@ class JSONLLedger:
             jid = rec.get("job_id")
             if not wf_id or not jid:
                 self.corrupt_lines.append((idx, "missing workflow_id/job_id"))
+                continue
+            # torture-6 F3: valid JSON with garbage fields used to crash later
+            # calls (cancel -> KeyError on unknown status; artifacts ->
+            # TypeError on a non-list). Validate the schema here; a record
+            # that does not look like a Job is a corrupt line, not a bomb.
+            if not _looks_like_job(rec):
+                self.corrupt_lines.append((idx, "schema mismatch"))
                 continue
             job = Job(workflow_id=wf_id, job_id=jid)
             job.__dict__.update(

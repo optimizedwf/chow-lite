@@ -20,6 +20,7 @@ from nine.gates.evidence import (
     exit_codes_check,
     required_artifact_check,
 )
+from nine.runtime.fsafety import contained_write
 from nine.runtime.workflows import Node, Workflow
 
 
@@ -36,7 +37,7 @@ def _diagnose_adk_node() -> Node:
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "debug requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
                 "fallback, nine is model-driven"
@@ -48,7 +49,7 @@ def _diagnose_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the debug workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         # Gather context: existing code, error logs, test output
@@ -119,7 +120,7 @@ def _patch_adk_node() -> Node:
         job_dir = Path(job_dir)
         task = str(inputs.get("task", ""))[:1500]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
-        if not os.environ.get("GEMINI_API_KEY"):
+        if not os.environ.get("GEMINI_API_KEY", "").strip():
             raise WorkflowError(
                 "debug requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
                 "fallback, nine is model-driven"
@@ -131,7 +132,7 @@ def _patch_adk_node() -> Node:
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the debug workspace (job dir)."""
-            (job_dir / path).write_text(content, encoding="utf-8")
+            contained_write(job_dir, path, content)
             return f"wrote {path} ({len(content)} bytes)"
 
         root_cause = ""
