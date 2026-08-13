@@ -23,6 +23,8 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 
 | 2026-08-13 | slice 25 (fixtures) | HARDEN | — | 252 tests pass | T4-F7: bench fixtures bugfix-small-006 (strict-JSON render/validate), 007 (empty/whitespace/unicode title_case), 008 (missing-env fail-loud CLI) — each with starter-broken negative control, fixed-candidate positive, check.sh->pytest convert path verified; bench_nine.py default range extended 1..5 -> 1..8 |
 
+| 2026-08-13 | 796658d (slice 25) | HARDEN (torture harvest 4) | — | 268 tests pass | torture-5 + torture-6 (DS4 Flash round 3): 16 findings - 15 FIXED + 1 PARTIAL (T6-F5 thread-kill impossible). Highlights: shared fsafety contained_write swept all 24 model write sites, demo keywords out of production routing, blocked chains reach terminal state, recover refuses missing task.txt, standalone plan can SHIP, whitespace-key guards swept (27 sites), NaN confidence rejected, symlinks never evidence, non-UTF8/garbage ledger lines skip, redact covers AWS/Slack/JSON-quoted/== shapes, --workdir parent parser, README + exit-code doc truth. Reports sanitized for GitHub push protection (secret-shaped test strings redacted). |
+
 ---
 ## Gap ledger (from bench baseline)
 1. Empty ADK output passes silently (no retry, artifact never written) -> FIXED (slice 21)
