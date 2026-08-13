@@ -21,6 +21,8 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 
 | 2026-08-13 | 346a71a (slice 24) | HARDEN (torture harvest 3) | — | 238 tests pass | torture-3+torture-4 (DS4 Flash round 2): 15 findings triaged, 11 FIXED + 2 dup (recover status, corrupt ledger) + 1 deferred w/ soundness note (FIX-loop caching) + 1 deferred (3 new fixtures). Highlights: redaction moved to ledger boundary (chain/server now covered), recover refuses non-blocked/failed cleanly, corrupt ledger/catalog degrade instead of bricking, whitespace key fails loud, review-of-nothing FAILs, debug/build-multi need real test evidence, node timeouts enforced, write_file contained |
 
+| 2026-08-13 | slice 25 (fixtures) | HARDEN | — | 252 tests pass | T4-F7: bench fixtures bugfix-small-006 (strict-JSON render/validate), 007 (empty/whitespace/unicode title_case), 008 (missing-env fail-loud CLI) — each with starter-broken negative control, fixed-candidate positive, check.sh->pytest convert path verified; bench_nine.py default range extended 1..5 -> 1..8 |
+
 ---
 ## Gap ledger (from bench baseline)
 1. Empty ADK output passes silently (no retry, artifact never written) -> FIXED (slice 21)

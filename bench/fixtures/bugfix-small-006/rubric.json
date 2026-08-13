@@ -1,0 +1,40 @@
+{
+  "fixture_id": "bugfix-small-006",
+  "lab": "chow-agent-eval-lab",
+  "version": "0.1.0",
+  "category": "robustness",
+  "difficulty": "easy",
+  "dimensions": [
+    {
+      "id": "strict_render",
+      "label": "Strict Render",
+      "weight": 0.4,
+      "description": "render_eval_json emits strict JSON that round-trips",
+      "pass_if": "validate_eval_json(render_eval_json(...)) is True for valid bool checks"
+    },
+    {
+      "id": "strict_validate",
+      "label": "Strict Validate",
+      "weight": 0.4,
+      "description": "validate_eval_json rejects stringified booleans, ints, null, NaN, missing keys, trailing commas",
+      "pass_if": "All rejection cases in tests/check.sh return False"
+    },
+    {
+      "id": "style",
+      "label": "Style & Minimality",
+      "weight": 0.2,
+      "description": "Standard library only, signature unchanged",
+      "pass_if": "uses only json + stdlib; no third-party deps"
+    }
+  ],
+  "verdict_thresholds": {
+    "pass": 0.7,
+    "partial": 0.4,
+    "fail": 0.0
+  },
+  "eval_criteria": [
+    "strict_render",
+    "strict_validate",
+    "style"
+  ]
+}

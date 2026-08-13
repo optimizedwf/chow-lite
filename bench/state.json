@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-13T06:10:34.314670+00:00",
- "cycles_run": 6,
+ "last_cycle": "2026-08-13T14:55:10.466307+00:00",
+ "cycles_run": 7,
  "last_bench": "2026-08-12T23:49:00.987037+00:00",
  "bench_runs": [
   "r0-slice17-baseline",
@@ -24,7 +24,7 @@
    45
   ]
  },
- "next_target": "BENCH when quota returns (cooldown 2026-08-14): re-run baseline fixtures; then T4-F7 fixtures (bugfix-small-006/007/008) + T3-F6 sound caching if design matures",
+ "next_target": "Torture round 3 harvest (torture-5 workflows/router/CLI/docs + torture-6 robustness/fixtures) when workers report; BENCH after cooldown 2026-08-14",
  "last_error": null,
  "last_harvest": "2026-08-13T02:50:02.084222+00:00"
 }

@@ -1,0 +1,40 @@
+{
+  "fixture_id": "bugfix-small-007",
+  "lab": "chow-agent-eval-lab",
+  "version": "0.1.0",
+  "category": "robustness",
+  "difficulty": "easy",
+  "dimensions": [
+    {
+      "id": "correctness",
+      "label": "Correctness",
+      "weight": 0.4,
+      "description": "title_case capitalizes first char, lowercases rest",
+      "pass_if": "All normal-case tests in tests/check.sh pass"
+    },
+    {
+      "id": "empty_unicode",
+      "label": "Empty & Unicode Safety",
+      "weight": 0.4,
+      "description": "Never raises on empty/whitespace/newline/unicode input",
+      "pass_if": "Empty, whitespace, newline, accent, CJK and symbol tests all pass without raising"
+    },
+    {
+      "id": "style",
+      "label": "Style & Minimality",
+      "weight": 0.2,
+      "description": "Minimal, idiomatic, standard Python only",
+      "pass_if": "Signature unchanged; no third-party deps"
+    }
+  ],
+  "verdict_thresholds": {
+    "pass": 0.7,
+    "partial": 0.4,
+    "fail": 0.0
+  },
+  "eval_criteria": [
+    "correctness",
+    "empty_unicode",
+    "style"
+  ]
+}

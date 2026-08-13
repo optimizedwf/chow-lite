@@ -1,0 +1,40 @@
+{
+  "fixture_id": "bugfix-small-008",
+  "lab": "chow-agent-eval-lab",
+  "version": "0.1.0",
+  "category": "robustness",
+  "difficulty": "easy",
+  "dimensions": [
+    {
+      "id": "check_token",
+      "label": "Token Validation",
+      "weight": 0.3,
+      "description": "check_token accepts only non-empty non-whitespace tokens",
+      "pass_if": "All check_token cases in tests/check.sh pass"
+    },
+    {
+      "id": "fail_loud",
+      "label": "Fail-Loud CLI",
+      "weight": 0.5,
+      "description": "Unset/empty/whitespace env -> exit 1 with exactly one [error] line on stderr, NO traceback",
+      "pass_if": "CLI section of tests/check.sh passes for unset/empty/whitespace/valid"
+    },
+    {
+      "id": "style",
+      "label": "Style & Minimality",
+      "weight": 0.2,
+      "description": "Standard library only, no silent defaults",
+      "pass_if": "uses os/sys only; no third-party deps"
+    }
+  ],
+  "verdict_thresholds": {
+    "pass": 0.7,
+    "partial": 0.4,
+    "fail": 0.0
+  },
+  "eval_criteria": [
+    "check_token",
+    "fail_loud",
+    "style"
+  ]
+}
