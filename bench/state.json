@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-13T02:50:02.084222+00:00",
- "cycles_run": 4,
+ "last_cycle": "2026-08-13T05:53:16.434237+00:00",
+ "cycles_run": 5,
  "last_bench": "2026-08-12T23:49:00.987037+00:00",
  "bench_runs": [
   "r0-slice17-baseline",
@@ -24,7 +24,7 @@
    45
   ]
  },
- "next_target": "BENCH when quota returns (cooldown 2026-08-14): re-run baseline fixtures to measure real gate improvement from harvests 1+2; then doc-truth sweep for remaining model-version claims",
+ "next_target": "BENCH when quota returns (cooldown 2026-08-14): re-run baseline fixtures; torture-3/torture-4 reports pending harvest (spawned 2026-08-13 slice 24)",
  "last_error": null,
  "last_harvest": "2026-08-13T02:50:02.084222+00:00"
 }

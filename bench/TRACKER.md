@@ -17,6 +17,8 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 
 | 2026-08-13 | e693917 (slice 23) | TORTURE HARVEST 2 | — | 204 tests pass | 6/6 deferred/partial findings FIXED: research+plan hops -> ADK (T2-F1/T1-F8), manifest per-attempt snapshot (T1-F5/T2-F4), recover re-executes (T1-F7), summarize-empty gate (T2-F8). ALL 16 worker findings FIXED (10 in harvest 1 @ 449accc, 6 in harvest 2 @ e693917) |
 
+| 2026-08-13 | a72d43f (slice 24) | HARDEN (test armor) | — | 223 tests pass | EVAL-gate honesty: `"passed":"false"` (string) used to SHIP (truthy); only literal JSON true passes now; non-dict roots / non-object checks / unnamed failed checks fail closed with clear messages. 19 new gate armor tests. Spawned torture-3 (runtime+gates) + torture-4 (robustness+fixtures) on DS4 Flash for next harvest |
+
 ---
 ## Gap ledger (from bench baseline)
 1. Empty ADK output passes silently (no retry, artifact never written) -> FIXED (slice 21)

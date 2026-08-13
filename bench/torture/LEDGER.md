@@ -22,3 +22,4 @@ One row per finding: id | date | worker | severity | title | disposition | slice
 | T2-F6 | 2026-08-13 | torture-2 | medium | Raw task text incl. credentials stored unredacted in ledger | FIXED 449accc (redact() at ledger boundary + space-separated secret patterns) |
 | T2-F7 | 2026-08-13 | torture-2 | low | cancel/recover unknown id -> raw Python traceback | FIXED 449accc (LedgerError -> clean one-line error, exit 1) |
 | T2-F8 | 2026-08-13 | torture-2 | medium | summarize-standalone SHIPs 'summary of nothing' (empty workspace) | FIXED e693917 (source-present gate: empty workspace -> BLOCK, never SHIP) |
+| S24-F1 | 2026-08-13 | loop self-hunt | high | EVAL gate SHIPs on `"passed": "false"` string (truthiness lie) | FIXED a72d43f (strict boolean contract: only literal JSON true passes; shape defenses for non-dict roots/non-object checks/unnamed failures) |
