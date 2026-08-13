@@ -15,7 +15,7 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 
 | 2026-08-13 | 449accc (slice 23) | TORTURE HARVEST 1 | — | 196 tests pass | 9/16 worker findings FIXED (router unparsable+word-boundary, review-multi FAIL, build-no-tests, review-from-EVAL, transform ext trust, submit exit 2, ledger redaction, cancel/recover clean); 4 deferred (manifest snapshot M, recover re-execute, research/plan ADK, summarize-empty), 1 partial (review done, research+plan next) |
 
-| 2026-08-13 | e693917 (slice 23) | TORTURE HARVEST 2 | — | 204 tests pass | 6/6 deferred/partial findings FIXED: research+plan hops -> ADK (T2-F1/T1-F8), manifest per-attempt snapshot (T1-F5/T2-F4), recover re-executes (T1-F7), summarize-empty gate (T2-F8). All 16 worker findings now have dispositions; 15 FIXED, 1 wontfix-adjacent (T2-F3 superseded by ext gate) |
+| 2026-08-13 | e693917 (slice 23) | TORTURE HARVEST 2 | — | 204 tests pass | 6/6 deferred/partial findings FIXED: research+plan hops -> ADK (T2-F1/T1-F8), manifest per-attempt snapshot (T1-F5/T2-F4), recover re-executes (T1-F7), summarize-empty gate (T2-F8). ALL 16 worker findings FIXED (10 in harvest 1 @ 449accc, 6 in harvest 2 @ e693917) |
 
 ---
 ## Gap ledger (from bench baseline)
