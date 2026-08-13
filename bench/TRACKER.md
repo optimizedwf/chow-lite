@@ -13,6 +13,8 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 | 2026-08-12 | 0bfdbe7 (slice 22) | BENCH smoke | 0/1 (quota) | 2/9 | bugfix-small-002 via real key: ADK empty stream (quota exhausted by bench run) -> loud RuntimeError per fix A. Loop validated end-to-end locally. Switching to HARDEN until cooldown 2026-08-14 |
 | 2026-08-12 | 920d3a9 (slice 21) | FIXES | — | 183 tests pass | bench-findings fixes shipped: loud empty-stream, pytest self-test, debug gate relaxed, 1500-char truncation, collection-error msgs, model-first router |
 
+| 2026-08-13 | 449accc (slice 23) | TORTURE HARVEST 1 | — | 196 tests pass | 9/16 worker findings FIXED (router unparsable+word-boundary, review-multi FAIL, build-no-tests, review-from-EVAL, transform ext trust, submit exit 2, ledger redaction, cancel/recover clean); 4 deferred (manifest snapshot M, recover re-execute, research/plan ADK, summarize-empty), 1 partial (review done, research+plan next) |
+
 ---
 ## Gap ledger (from bench baseline)
 1. Empty ADK output passes silently (no retry, artifact never written) -> FIXED (slice 21)

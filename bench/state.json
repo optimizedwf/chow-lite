@@ -1,29 +1,30 @@
 {
-  "last_cycle": "2026-08-12T23:50:09.169686+00:00",
-  "cycles_run": 2,
-  "last_bench": "2026-08-12T23:49:00.987037+00:00",
-  "bench_runs": [
-    "r0-slice17-baseline",
-    "smoke-slice22-002"
-  ],
-  "est_quota_left": 0,
-  "cooldown_until": "2026-08-14T23:49:00.987038+00:00",
-  "last_score": {
-    "ship": 3,
-    "total": 5,
-    "tests": [
-      34,
-      45
-    ]
-  },
-  "best_score": {
-    "ship": 3,
-    "total": 5,
-    "tests": [
-      34,
-      45
-    ]
-  },
-  "next_target": "HARDEN: static gap-hunt -> doc-truth (model version)",
-  "last_error": null
+ "last_cycle": "2026-08-13T00:10:24.392031+00:00",
+ "cycles_run": 3,
+ "last_bench": "2026-08-12T23:49:00.987037+00:00",
+ "bench_runs": [
+  "r0-slice17-baseline",
+  "smoke-slice22-002"
+ ],
+ "est_quota_left": 0,
+ "cooldown_until": "2026-08-14T23:49:00.987038+00:00",
+ "last_score": {
+  "ship": 3,
+  "total": 5,
+  "tests": [
+   34,
+   45
+  ]
+ },
+ "best_score": {
+  "ship": 3,
+  "total": 5,
+  "tests": [
+   34,
+   45
+  ]
+ },
+ "next_target": "HARDEN: torture harvest 2 - research/plan ADK nodes (T2-F1), manifest snapshot (T1-F5), recover re-execute (T1-F7), summarize-empty (T2-F8)",
+ "last_error": null,
+ "last_harvest": "2026-08-13T00:10:24.392031+00:00"
 }
