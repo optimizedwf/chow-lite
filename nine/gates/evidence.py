@@ -80,9 +80,12 @@ def load_eval_json(workdir: Path) -> dict[str, Any] | None:
     p = workdir / "EVAL.json"
     if p.exists():
         try:
-            return json.loads(p.read_text())
+            data = json.loads(p.read_text())
         except json.JSONDecodeError:
             return {"error": "EVAL.json is not valid JSON"}
+        if not isinstance(data, dict):
+            return {"error": f"EVAL.json must be a JSON object, got {type(data).__name__}"}
+        return data
     return None
 
 
@@ -117,14 +120,21 @@ def eval_json_check(expected_checks: list[str] | None = None) -> CheckFn:
         if "error" in ev:
             return False, ev["error"]
         checks = ev.get("checks", [])
-        if not checks:
-            return False, "EVAL.json has no checks"
+        if not isinstance(checks, list) or not checks:
+            return False, "EVAL.json has no checks (or checks is not a list)"
+        bad_entries = [c for c in checks if not isinstance(c, dict)]
+        if bad_entries:
+            return False, f"EVAL.json checks must be objects; found {len(bad_entries)} bad entry/entries"
         names = [c.get("name") for c in checks]
         if expected_checks and not set(expected_checks).issubset(set(names)):
             return False, f"expected checks {expected_checks} missing from {names}"
-        failed = [c for c in checks if not c.get("passed", False)]
+        # strict boolean contract: only literal JSON `true` passes. A check
+        # that wrote "false"/"true"/1/0/null/missing is NOT evidence of
+        # success — treat it as failed (never SHIP on a string).
+        failed = [c for c in checks if c.get("passed") is not True]
         if failed:
-            return False, f"{len(failed)} check(s) failed: {[c['name'] for c in failed]}"
+            labels = [c.get("name", "<unnamed>") for c in failed]
+            return False, f"{len(failed)} check(s) failed: {labels}"
         return True, f"{len(checks)} checks passed"
 
     return _check
