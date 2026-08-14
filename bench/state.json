@@ -2,37 +2,38 @@
  "last_cycle": "2026-08-14T19:50:20.241800+00:00",
  "cycles_run": 19,
  "last_bench": {
-  "run_id": "oai-r1",
-  "backend": "openai",
-  "model": "deepseek-v4-flash",
-  "fixtures": "001-009",
-  "ship": "9/9",
-  "tests": "84/84",
-  "at": "2026-08-14T03:20:23.511373+00:00"
+  "run_id": "gem-r1",
+  "backend": "gemini",
+  "model": "gemini-3.6-flash",
+  "fixtures": "001-010",
+  "ship": "5/10",
+  "tests": "42/42",
+  "at": "2026-08-14T21:23:53.209900+00:00"
  },
  "bench_runs": [
   "r0-slice17-baseline",
-  "smoke-slice22-002"
+  "smoke-slice22-002",
+  "gem-r1-slice38"
  ],
  "est_quota_left": 0,
- "cooldown_until": "2026-08-14T23:49:00.987038+00:00",
+ "cooldown_until": "2026-08-15T00:00:00+00:00",
  "last_score": {
-  "ship": 3,
-  "total": 5,
+  "ship": 5,
+  "total": 10,
   "tests": [
-   34,
-   45
+   42,
+   42
   ]
  },
  "best_score": {
-  "ship": 3,
-  "total": 5,
+  "ship": 9,
+  "total": 9,
   "tests": [
-   34,
-   45
+   84,
+   84
   ]
  },
- "next_target": "Canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-010); DS4 oai-r1 (9/9 SHIP 84/84) interim. Slice 37 (HARDEN): round-10 harvest SHIPPED \u2014 T19 (7) + T20 (6) all FIXED, 12 new hermetic tests, 459/464 suite. Fixture specs 011-015 deferred.",
+ "next_target": "Retry gem-r1 ERROR fixtures 002/005/006/009/010 after quota reset 2026-08-15T00:00Z -> canonical Gemini 10/10. oai-r1 (openai/DS4) SoT 9/9 84/84. Fixture specs 011-015 deferred. ARC: F-002 offline evidence refresh (chow-comp 0562a1b): H-006 REFUTE, H-003/H-005 evidence UP, H-002 stays PREPPED.",
  "last_error": null,
  "last_harvest": "2026-08-14T19:50:20.241800+00:00",
  "last_spawn": {
