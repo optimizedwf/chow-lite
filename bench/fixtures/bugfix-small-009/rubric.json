@@ -1,0 +1,56 @@
+{
+  "fixture_id": "bugfix-small-009",
+  "lab": "chow-agent-eval-lab",
+  "version": "0.1.0",
+  "category": "robustness",
+  "difficulty": "easy",
+  "dimensions": [
+    {
+      "id": "retry_success",
+      "label": "Retry Until Success",
+      "weight": 0.25,
+      "description": "retry_call returns the first successful result and retries only retryable failures",
+      "pass_if": "success-first, success-after-3 and predicate-retry cases in tests/check.sh pass"
+    },
+    {
+      "id": "backoff",
+      "label": "Exponential Backoff",
+      "weight": 0.25,
+      "description": "retries wait base_delay * backoff**(n-1); jitter never negative",
+      "pass_if": "timing test observes >= base_delay + base_delay*backoff elapsed before attempt 3"
+    },
+    {
+      "id": "failure_honesty",
+      "label": "Failure Honesty",
+      "weight": 0.25,
+      "description": "raises the LAST exception after attempts; never returns None on failure",
+      "pass_if": "raises-after-attempts and non-retryable-immediate tests raise the expected exception"
+    },
+    {
+      "id": "validation",
+      "label": "Input Validation",
+      "weight": 0.15,
+      "description": "attempts < 1 and negative delays rejected with ValueError",
+      "pass_if": "attempts=0 and attempts=-2 raise ValueError"
+    },
+    {
+      "id": "style",
+      "label": "Style & Minimality",
+      "weight": 0.1,
+      "description": "Standard library only, signature unchanged",
+      "pass_if": "uses only random + time + stdlib; no third-party deps"
+    }
+  ],
+  "verdict_thresholds": {
+    "pass": 0.7,
+    "partial": 0.4,
+    "fail": 0.0
+  },
+  "eval_criteria": [
+    "retry_success",
+    "backoff",
+    "failure_honesty",
+    "validation",
+    "style"
+  ]
+}

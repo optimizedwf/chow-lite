@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """bench_nine.py — benchmark nine (agent OS) against chow-agent-evals bugfix fixtures.
 
-For each fixture bugfix-small-001..008:
+For each fixture bugfix-small-001..009:
   1. create an isolated bench dir under bench-runs/<fixture>/
   2. seed the nine job dir with the fixture starter (solution.py) plus a pytest
      test_solution.py converted 1:1 from the fixture's own tests/check.sh
@@ -37,7 +37,7 @@ KEY_PATH = Path(os.environ.get("NINE_BENCH_KEY", os.path.expanduser("~/.agent-va
 NINE_BIN = REPO / ".venv" / "bin" / "nine"
 GEMINI_MODEL = "gemini-3.6-flash"
 _env_fx = os.environ.get("NINE_BENCH_FIXTURES", "")
-FIXTURES = _env_fx.split(",") if _env_fx else [f"bugfix-small-{i:03d}" for i in range(1, 9)]
+FIXTURES = _env_fx.split(",") if _env_fx else [f"bugfix-small-{i:03d}" for i in range(1, 10)]
 
 TASK_MODE = os.environ.get("NINE_BENCH_TASK_MODE", "full")  # full | desc
 RUNID = os.environ.get("NINE_BENCH_RUNID", "r0")
