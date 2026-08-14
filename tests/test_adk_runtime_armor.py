@@ -82,8 +82,29 @@ def _run(node, task="hello", job_id="j1"):
 
 def test_empty_stream_raises_loud(tmp_path):
     node = _make_node(_FakeRunner([[]]))
+    node._empty_backoff_s = 0
     with pytest.raises(RuntimeError, match="no output"):
         node({"task": "hi", "job_id": "j1"}, tmp_path)
+
+
+def test_empty_stream_retried_with_backoff_then_success(tmp_path):
+    # ADK swallows Gemini free-tier 429s into EMPTY streams (no exception),
+    # so an empty stream must be retried with backoff, not raised at once.
+    ev = _Event(is_final_response=True, content=_Content(parts=[_Part(text="done")]))
+    node = _make_node(_FakeRunner([[], [], [ev]]))
+    node._empty_backoff_s = 0
+    out = node({"task": "hi", "job_id": "j1"}, tmp_path)
+    assert node.runner.calls == 3
+    assert out["output"] == "done"
+
+
+def test_empty_stream_three_times_raises_with_retry_count(tmp_path):
+    node = _make_node(_FakeRunner([[], [], []]))
+    node._empty_backoff_s = 0
+    with pytest.raises(RuntimeError, match="no output") as ei:
+        node({"task": "hi", "job_id": "j1"}, tmp_path)
+    assert node.runner.calls == 3
+    assert "empty stream x3" in str(ei.value)
 
 
 def test_no_final_text_no_tool_calls_raises(tmp_path):

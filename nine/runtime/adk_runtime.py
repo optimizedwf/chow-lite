@@ -44,6 +44,10 @@ class ADKAgentNode:
     returns a dict the WorkflowExecutor can register as artifacts.
     """
 
+    # Backoff between empty-stream retry attempts (ADK swallows Gemini
+    # free-tier 429s into empty streams). Tests zero this to stay hermetic.
+    _empty_backoff_s: float = 3.0
+
     def __init__(self, agent: Any, app_name: str = "nine") -> None:
         # testing mode: register the OpenAI-compatible ADK LLM so this node's
         # LlmAgent resolves to the tunnel (DS4 Flash) instead of Gemini.
@@ -82,13 +86,19 @@ class ADKAgentNode:
         # sync run(): local-testing convenience API that drains the async
         # generator for us (verified on google-adk 2.6.3). Retry transient
         # quota/availability errors (429/503 are normal on Gemini free tier).
+        # NOTE: ADK swallows Gemini free-tier 429s into an EMPTY stream (no
+        # exception), so an empty stream is ALSO retried with backoff — the
+        # gem-r1 bench (slice 38) showed 5/10 fixtures ERRORing because each
+        # empty stream raised immediately and node-level retries re-hit the
+        # same rate limit within seconds.
         import time
 
         events: list[Any] = []
         last_exc: Exception | None = None
+        empty_attempts = 0
         for attempt in range(3):
             try:
-                events = list(
+                evs = list(
                     self.runner.run(
                         user_id=user_id,
                         session_id=session_id,
@@ -98,7 +108,13 @@ class ADKAgentNode:
                         ),
                     )
                 )
-                break
+                if evs:
+                    events = evs
+                    break
+                empty_attempts += 1
+                if attempt == 2:
+                    break
+                time.sleep(self._empty_backoff_s * (attempt + 1))
             except Exception as exc:  # noqa: BLE001 - transient API errors
                 last_exc = exc
                 if attempt == 2:
@@ -131,6 +147,8 @@ class ADKAgentNode:
             # executor retries and then fails LOUD — never a silent pass
             # that SHIPs the unmodified artifact or burns fix loops.
             hint = f" (last error: {last_exc})" if last_exc is not None else ""
+            if empty_attempts:
+                hint += f" (empty stream x{empty_attempts} with {self._empty_backoff_s:g}s backoff)"
             raise RuntimeError(
                 f"ADK agent produced no output for task: {task[:120]!r}{hint} "
                 "- empty stream (often Gemini 429 quota exhaustion; retry "
