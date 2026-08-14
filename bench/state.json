@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-14T03:20:23.511373+00:00",
- "cycles_run": 13,
+ "last_cycle": "2026-08-14T03:53:11.801246+00:00",
+ "cycles_run": 14,
  "last_bench": {
   "run_id": "oai-r1",
   "backend": "openai",
@@ -32,7 +32,16 @@
    45
   ]
  },
- "next_target": "BENCH-done (early openai sweep oai-r1: 9/9 SHIP 84/84). Canonical GEMINI bench after cooldown 2026-08-14T23:49 + est_quota_left>=30 (fixtures 001-009, range 1..9). HARDEN if the Gemini run surfaces model-specific gaps; else loop continues: next torture round (e.g. bench_nine/gates/ledger/recover surfaces) or slice 31 follow-ups.",
+ "next_target": "HARDEN round-6 DONE (t11+t12: 16 findings + 1 bonus, all fixed @ slice 32, 25 tests). Workers torture11/torture12 done - delete. Next: canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-009; early openai sweep already 9/9 SHIP 84/84 @ oai-r1; bench now exits non-zero on <100% + archives per-run). Else next torture round.",
  "last_error": null,
- "last_harvest": "2026-08-14T01:37:21.281510+00:00"
+ "last_harvest": "2026-08-14T03:53:11.801246+00:00",
+ "last_spawn": {
+  "round": 6,
+  "workers": [
+   "torture-11/sub-2de7aa07",
+   "torture-12/sub-b114f4ab"
+  ],
+  "at": "2026-08-14T03:21:24.195081+00:00",
+  "backend": "opencode-go/deepseek-v4-flash"
+ }
 }

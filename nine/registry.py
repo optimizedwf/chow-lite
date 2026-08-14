@@ -184,7 +184,13 @@ def _load_plugin_workflows() -> dict[str, Callable[[], Workflow]]:
     mod = _ilu.module_from_spec(spec)
     try:
         spec.loader.exec_module(mod)
-    except Exception:  # noqa: BLE001 - a broken plugin registry must not break nine
+    except Exception as exc:  # noqa: BLE001 - a broken plugin registry must not break nine
+        # torture-12 F7: a syntax error / import failure silently disabled
+        # EVERY plugin lane while operators believed composed lanes were
+        # live (and learned keywords kept routing into dead ids). Warn
+        # loudly, exactly like load_catalog does for corrupt catalogs.
+        print(f"warning: plugin registry {reg_path} failed to load: {exc} - "
+              "plugin workflows will NOT be available", file=sys.stderr)
         return {}
     return {
         wid: _wf(fac)
@@ -292,7 +298,13 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
 
 
 def _merged_keywords() -> dict[str, list[str]]:
-    """Base keywords + git-tracked catalog overrides (LEARN-approved)."""
+    """Base keywords + git-tracked catalog overrides (LEARN-approved).
+
+    torture-12 F6: catalog overrides can point at ids that are NOT
+    executable (a plugin removed after its keyword was learned) — the
+    router must never emit a dead id (submit would raw-traceback a
+    WorkflowError). Drop unknown ids with a loud warning.
+    """
     merged = {wf: list(kws) for wf, kws in _BASE_KEYWORDS.items()}
     overrides = load_catalog().get("keyword_overrides", {})
     if not isinstance(overrides, dict):
@@ -313,6 +325,15 @@ def _merged_keywords() -> dict[str, list[str]]:
             if kw not in seen:
                 merged[wf].append(kw)
                 seen.add(kw)
+    # torture-12 F6: keywords for ids that cannot execute are dead routes —
+    # drop them (warn once per id) so the router never emits them.
+    executable = set(WORKFLOWS) | set(CHAINS)
+    dead = [wf for wf in merged if wf not in executable]
+    for wf in dead:
+        print(f"warning: keyword entries for unregistered workflow id "
+              f"'{wf}' dropped (removed plugin?); update the catalog or "
+              "'nine learn' data", file=sys.stderr)
+        del merged[wf]
     return merged
 
 

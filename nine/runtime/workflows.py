@@ -109,6 +109,24 @@ class Workflow:
         return order
 
 
+def _manifest_files(job_dir: Path) -> list[tuple[str, Path]]:
+    """Recursive file inventory: (relative name, path), symlinks + dirs skipped.
+
+    torture-11 F5: the manifest must track SUBDIRECTORY files too — gates
+    certify reviews/security.md (review-multi) and solution/*.py
+    (build-multi); top-level-only tracking let stale attempt-1 subdir
+    content certify a SHIP. Relative names disambiguate same-named files.
+    rglob does not descend into symlinked dirs; symlinked files are skipped
+    here anyway (never evidence).
+    """
+    out: list[tuple[str, Path]] = []
+    for p in sorted(job_dir.rglob("*")):
+        if p.is_symlink() or not p.is_file():
+            continue
+        out.append((p.relative_to(job_dir).as_posix(), p))
+    return out
+
+
 class WorkflowExecutor:
     """Executes a workflow DAG, producing artifacts + a verdict.
 
@@ -131,6 +149,13 @@ class WorkflowExecutor:
         self.workdir.mkdir(parents=True, exist_ok=True)
         # chains run every hop in ONE shared directory so artifacts hand off
         self.job_dir_override = Path(job_dir_override) if job_dir_override else None
+        # torture-12 F1: the run-input snapshot must survive across
+        # execute() calls. The chain path calls execute() once PER HOP
+        # ATTEMPT on the same executor; a local variable would re-snapshot
+        # after attempt 1 wrote files, turning attempt-1 evidence into
+        # 'run inputs' for attempt 2 (stale SHIP). Key by job_dir so the
+        # same executor never confuses two jobs.
+        self._first_attempt_before: dict[str, set[str]] = {}
 
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
@@ -331,8 +356,9 @@ class WorkflowExecutor:
         # seeded solution.py) — the run never "produces" them and the
         # per-attempt manifest legitimately never registers them. Only
         # run-PRODUCED files (absent from this first snapshot) must appear
-        # in the SHIPping attempt's registered manifest.
-        first_attempt_before: set[str] | None = None
+        # in the SHIPping attempt's registered manifest. The snapshot
+        # itself lives on the executor (self._first_attempt_before, keyed
+        # by job_dir) so chain hop attempts share it (torture-12 F1).
 
         while True:
             attempt += 1
@@ -350,17 +376,18 @@ class WorkflowExecutor:
             # manifest entries). FIX reruns likewise only re-register files
             # this attempt actually rewrote.
             before: dict[str, tuple[int, int]] = {}
-            for p in job_dir.iterdir():
+            for rel, p in _manifest_files(job_dir):
                 # torture-8 F1: symlinks are NEVER evidence - a symlink to an
-                # outside file must not even enter the snapshot (is_file()
-                # follows links; the manifest loop below skips them).
-                if p.is_symlink():
-                    continue
-                if p.is_file():
-                    st = p.stat()
-                    before[p.name] = (st.st_size, st.st_mtime_ns)
-            if first_attempt_before is None:
-                first_attempt_before = set(before.keys())
+                # outside file must not even enter the snapshot (the helper
+                # skips them).
+                st = p.stat()
+                before[rel] = (st.st_size, st.st_mtime_ns)
+            key = str(job_dir)
+            if key not in self._first_attempt_before:
+                # attempt-1 snapshot = run inputs for the WHOLE job (torture-12
+                # F1: persisted per job_dir across execute() calls so chain
+                # hop attempts share it).
+                self._first_attempt_before[key] = set(before.keys())
 
             seen: dict[str, str] = {}  # reset per attempt: reruns re-register the full dir
             self.ledger.update(job)
@@ -418,24 +445,23 @@ class WorkflowExecutor:
                     node_exit_codes[nid] = result["exit_code"]
 
                 # artifact registration: name+content-deduped across attempts
-                # (a FIX rerun that rewrites a file refreshes its sha256)
-                for p in sorted(job_dir.iterdir()):
+                # (a FIX rerun that rewrites a file refreshes its sha256).
+                # Recursive (torture-11 F5): subdir files (reviews/*.md,
+                # solution/*.py) are registered with RELATIVE names so gates
+                # certifying them can prove per-attempt provenance.
+                for rel, p in _manifest_files(job_dir):
                     # torture-8 F1: is_file()/stat()/read_bytes() follow
                     # symlinks, so a symlink to a REAL outside file would be
                     # registered with the outside sha256/size as this job's
                     # evidence. Symlinks are never evidence - skip them.
-                    if p.is_symlink():
-                        continue
-                    if not p.is_file():
-                        continue
                     st = p.stat()
-                    if before.get(p.name) == (st.st_size, st.st_mtime_ns):
+                    if before.get(rel) == (st.st_size, st.st_mtime_ns):
                         continue  # pre-existing, untouched this attempt
                     data = p.read_bytes()
                     h = self._hash(data)
-                    if seen.get(p.name) == h:
+                    if seen.get(rel) == h:
                         continue
-                    seen[p.name] = h
+                    seen[rel] = h
                     kind = "document"
                     if p.suffix in (".py", ".js", ".ts", ".go", ".sh", ".json", ".yaml", ".yml"):
                         kind = "code"
@@ -444,7 +470,7 @@ class WorkflowExecutor:
                     elif p.suffix in (".csv", ".jsonl", ".parquet", ".db", ".sqlite"):
                         kind = "data"
                     artifact = {
-                        "name": p.name,
+                        "name": rel,
                         "path": str(p),
                         "kind": kind,
                         "sha256": h,
@@ -467,9 +493,15 @@ class WorkflowExecutor:
                         if p.exists() and seen.get(p.name) != self._hash(p.read_bytes()):
                             data = p.read_bytes()
                             h = self._hash(data)
-                            seen[p.name] = h
+                            # relative name when the tool certifies a file
+                            # inside the job dir (subdir artifacts included)
+                            try:
+                                rel = p.relative_to(job_dir).as_posix()
+                            except ValueError:
+                                rel = p.name
+                            seen[rel] = h
                             artifact = {
-                                "name": p.name,
+                                "name": rel,
                                 "path": str(p),
                                 "kind": "other",
                                 "sha256": h,
@@ -502,23 +534,32 @@ class WorkflowExecutor:
             # fn), a file that exists on disk but was not registered in this
             # attempt's manifest is stale - downgrade to BLOCK. Covers
             # EVAL.json (eval_json_check), required_artifact_check lists,
-            # and file_nonempty_check files.
+            # file_nonempty_check files, subdir files (torture-11 F5:
+            # reviews/*.md now tracked by the recursive manifest), and
+            # directory artifacts (solution/ - certified by content).
             if verdict["verdict"] == "SHIP":
                 registered = {a["name"] for a in artifacts}
-                inputs_ok = first_attempt_before or set()
+                inputs_ok = self._first_attempt_before.get(str(job_dir)) or set()
                 stale: list[str] = []
                 for _name, fn in self.gate.checks.items():
                     for expected_name in (getattr(fn, "expected", None) or []):
-                        if "/" in expected_name or os.sep in expected_name:
-                            # subdir files (reviews/security.md) are not
-                            # tracked by the top-level manifest — the stale
-                            # guard can only reason about top-level files.
-                            continue
                         p_expected = job_dir / expected_name
                         if p_expected.is_symlink() or not p_expected.exists():
                             continue  # not evidence / the check already failed
                         if p_expected.is_dir():
-                            continue  # manifest tracks FILES (dirs: solution/)
+                            # directory artifact (build-multi solution/):
+                            # certified by its CONTENT - stale unless a file
+                            # under it was produced this attempt (torture-11
+                            # F5), unless it was a run input from attempt 1.
+                            prefix = expected_name.rstrip("/") + "/"
+                            produced_under = any(
+                                r.startswith(prefix) for r in registered)
+                            if produced_under:
+                                continue
+                            if any(r.startswith(prefix) for r in inputs_ok):
+                                continue
+                            stale.append(expected_name.rstrip("/") + "/")
+                            continue
                         if expected_name in registered:
                             continue  # produced this attempt
                         if expected_name in inputs_ok:
@@ -530,7 +571,8 @@ class WorkflowExecutor:
                         # registered this attempt -> the gate certified
                         # stale evidence from an earlier attempt (torture-7
                         # F1 for EVAL.json; torture-10 F2 for every other
-                        # gate-certified file).
+                        # gate-certified file; torture-11 F5 for subdir
+                        # files now that the manifest is recursive).
                         stale.append(expected_name)
                 if stale:
                     verdict = {
@@ -542,9 +584,10 @@ class WorkflowExecutor:
                             f"{sorted(set(stale))} - the gate passed on "
                             "file(s) not produced this attempt - certifying "
                             "evidence missing from the shipped manifest "
-                            "(torture-7 F1 / torture-10 F2)"),
+                            "(torture-7 F1 / torture-10 F2 / torture-11 F5)"),
                         "verified_at": verdict.get("verified_at", ""),
                     }
+
             job.add_verdict(verdict)
 
             if verdict["verdict"] == "SHIP":

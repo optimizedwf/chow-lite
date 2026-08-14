@@ -25,6 +25,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -117,6 +118,15 @@ def _slug(name: str) -> str:
 def convert_to_pytest(runner_src: str) -> str:
     """Convert the fixture runner's test(...)/test_raises(...) calls to pytest funcs."""
     tree = ast.parse(runner_src)
+    # torture-11 F7: only TOP-LEVEL test()/test_raises() calls convert 1:1
+    # (nested control-flow calls have no faithful standalone form). Count
+    # ALL calls so silently-dropped assertions are at least LOUDLY warned —
+    # check.sh stays authoritative and the [warn] in main() covers the rest.
+    all_calls = [
+        n for n in ast.walk(tree)
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+        and n.func.id in ("test", "test_raises")
+    ]
     calls = []
     for node in tree.body:
         if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
@@ -125,6 +135,11 @@ def convert_to_pytest(runner_src: str) -> str:
                 calls.append((fn.id, node.value))
     if not calls:
         raise RuntimeError("no test(...) calls found in runner")
+    if len(all_calls) > len(calls):
+        print(f"warning: convert_to_pytest dropped {len(all_calls) - len(calls)} "
+              "test()/test_raises() call(s) nested in control flow (only "
+              "top-level calls convert 1:1); check.sh remains authoritative",
+              file=sys.stderr)
 
     imports = _imported_names(runner_src)
     lines = ["import pytest", "from solution import " + ", ".join(imports), ""]
@@ -153,23 +168,39 @@ def seed_worker(workdir: Path, solution_py: Path, test_solution_py: Path, stop: 
     """Poll for the job dir to appear, then seed solution.py + test_solution.py."""
     deadline = time.time() + 60.0
     seeded = False
+    # torture-11 F1: dirs that already exist when the seeder starts are NOT
+    # this submit's job dir (a repeat run with the same RUNID — the
+    # documented default — leaves them behind). Only a dir that appears
+    # AFTER we start is the one to wait for.
+    try:
+        initial = {p.name for p in workdir.iterdir() if p.is_dir()}
+    except OSError:
+        initial = set()
     while not stop.is_set() and time.time() < deadline:
         try:
             entries = [p for p in workdir.iterdir() if p.is_dir()] if workdir.exists() else []
         except OSError:
             entries = []
+        # seed EVERY job dir (idempotent overwrite) so old dirs can never
+        # starve the new one.
         for job_dir in entries:
             try:
-                if not seeded:
-                    if solution_py.exists():
-                        shutil.copy2(solution_py, job_dir / "solution.py")
-                    if test_solution_py.exists():
-                        shutil.copy2(test_solution_py, job_dir / "test_solution.py")
-                    seeded = True
-                if (job_dir / "solution.py").exists() and (job_dir / "test_solution.py").exists():
-                    return
+                if solution_py.exists():
+                    shutil.copy2(solution_py, job_dir / "solution.py")
+                if test_solution_py.exists():
+                    shutil.copy2(test_solution_py, job_dir / "test_solution.py")
+                seeded = True
             except OSError:
                 pass
+        # return only once the submit's NEW dir is seeded; the old code
+        # returned on ANY dir with both files, so a stale dir satisfied the
+        # seeder BEFORE the new dir appeared and the new run executed
+        # UNSEEDED -> every fixture BLOCKed.
+        new_dirs = [p for p in entries if p.name not in initial]
+        if new_dirs:
+            newest = max(new_dirs, key=lambda p: p.stat().st_mtime)
+            if (newest / "solution.py").exists() and (newest / "test_solution.py").exists():
+                return
         time.sleep(0.001)
     if not seeded:
         print(f"  [warn] seeder: job dir never appeared/seedable in {workdir}")
@@ -192,7 +223,8 @@ def run_submit(fixture_dir: Path, workdir: Path, ledger_path: Path) -> tuple[dic
     cmd = [str(NINE_BIN), "submit", "--workdir", str(workdir),
            "--ledger", str(ledger_path), task]
     proc = subprocess.Popen(cmd, cwd=str(REPO), env=env, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, text=True)
+                            stderr=subprocess.PIPE, text=True,
+                            start_new_session=True)
     # watcher seeds the job dir the moment it appears
     stop = threading.Event()
     t = threading.Thread(target=seed_worker,
@@ -204,7 +236,18 @@ def run_submit(fixture_dir: Path, workdir: Path, ledger_path: Path) -> tuple[dic
         out, err = proc.communicate(timeout=PER_FIXTURE_TIMEOUT_S)
         timed_out = False
     except subprocess.TimeoutExpired:
-        proc.kill()
+        # BONUS (torture-11): proc.kill() orphaned nine's DETACHED bash nodes
+        # (start_new_session in the runtime) — the ghost writer kept running
+        # into the abandoned job dir. Kill the whole process GROUP instead
+        # (SIGTERM then SIGKILL, same pattern as the runtime).
+        try:
+            os.killpg(proc.pid, signal.SIGTERM)
+            proc.wait(timeout=3.0)
+        except (ProcessLookupError, subprocess.TimeoutExpired):
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
         out, err = proc.communicate()
         timed_out = True
     finally:
@@ -247,8 +290,16 @@ def verify_with_check_sh(check_sh: Path, patch_py: Path) -> dict:
     """Run the fixture's own check.sh against the produced patch.py."""
     if not patch_py.exists():
         return {"tests_passed": 0, "tests_total": 0, "exit_code": None, "ran": False, "detail": "patch.py missing"}
-    r = subprocess.run(["bash", str(check_sh), str(patch_py)],
-                       capture_output=True, text=True, timeout=120)
+    try:
+        r = subprocess.run(["bash", str(check_sh), str(patch_py)],
+                           capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired as exc:
+        # torture-11 F4: one hanging candidate patch must NOT abort the
+        # whole bench before results.json is written.
+        return {"tests_passed": 0, "tests_total": 0, "exit_code": None,
+                "ran": False, "timed_out": True,
+                "detail": "check.sh timed out (120s): "
+                          f"{(exc.stdout or b'')[-400:]!r}"}
     passed = len(re.findall(r"✅ PASS", r.stdout))
     failed = len(re.findall(r"❌ FAIL", r.stdout))
     return {
@@ -282,6 +333,12 @@ def main() -> int:
             print(f"[skip] {fx}: fixture dir missing")
             continue
         fx_root = BENCH_ROOT / fx / f"run-{RUNID}"
+        # torture-11 F1: a repeat run with the same RUNID (the documented
+        # default) must start CLEAN — leftover job dirs from the previous
+        # run made the seeder return early and the new run execute
+        # UNSEEDED -> every fixture BLOCKed. Fresh evidence per run.
+        if fx_root.exists():
+            shutil.rmtree(fx_root)
         workdir = fx_root / "work"
         workdir.mkdir(parents=True, exist_ok=True)
         ledger = fx_root / "ledger.jsonl"
@@ -324,12 +381,23 @@ def main() -> int:
                 candidate, candidate_file = job_dir / "patch.py", "patch.py"
             elif (job_dir / "solution.py").exists():
                 candidate, candidate_file = job_dir / "solution.py", "solution.py"
-        verdict_res = verify_with_check_sh(fx_dir / "tests" / "check.sh", candidate) if candidate else {
-            "tests_passed": 0, "tests_total": 0, "exit_code": None, "ran": False,
-            "detail": "no job dir / produced solution file"}
         starter = fx_dir / "starter" / "solution.py"
         candidate_unchanged = bool(candidate and starter.exists()
                                    and candidate.read_bytes() == starter.read_bytes())
+        if candidate and not candidate_unchanged:
+            verdict_res = verify_with_check_sh(fx_dir / "tests" / "check.sh", candidate)
+        elif candidate and candidate_unchanged and info["verdict"] != "SHIP":
+            # torture-11 F8: a BLOCKed fixture still carries the SEEDED broken
+            # starter as its "candidate" — scoring it inflates the tests
+            # column with failures the run never produced (and misleads
+            # 'pick the worst fixture'). Don't score; flag it instead.
+            verdict_res = {
+                "tests_passed": 0, "tests_total": 0, "exit_code": None,
+                "ran": False, "detail": "candidate unchanged from broken starter (no fix produced)"}
+        else:
+            verdict_res = {
+                "tests_passed": 0, "tests_total": 0, "exit_code": None, "ran": False,
+                "detail": "no job dir / produced solution file"}
         attempts = attempts_from_ledger(ledger, info["job_id"])
 
         rec = {
@@ -362,13 +430,29 @@ def main() -> int:
 
     (BENCH_ROOT / "results.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     (BENCH_ROOT / f"results-{TASK_MODE}.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
+    # torture-11 F6: keep a stable per-run scorecard (results.json is the
+    # live file, overwritten by the NEXT run) — regression archives.
+    if RUNID and RUNID != "r0":
+        shutil.copy(BENCH_ROOT / "results.json",
+                    BENCH_ROOT / f"results-{RUNID}.json")
     print("\n=== RESULTS ===")
     print(f"{'fixture':<18}{'workflow':<12}{'verdict':<8}{'tests':<9}{'time_s':<8}{'attempts'}")
     for r in results:
         tests_str = f"{r['tests_passed']}/{r['tests_total']}"
         print(f"{r['fixture']:<18}{str(r['routed_workflow']):<12}{str(r['verdict']):<8}"
               f"{tests_str:<9}{r['duration_s']:<8}{r['attempts']}")
-    return 0
+    shipped = sum(1 for r in results if r["verdict"] == "SHIP")
+    total_t = sum(r["tests_passed"] for r in results)
+    total_tt = sum(r["tests_total"] for r in results)
+    if results and shipped == len(results):
+        print(f"\nSCORE: SHIP {shipped}/{len(results)}  tests {total_t}/{total_tt}  PASS")
+        return 0
+    # torture-11 F6: a non-full SHIP is a FAILING bench — exit non-zero so
+    # automation can key on the score (0/9 was indistinguishable from 9/9).
+    fails = [r["fixture"] for r in results if r["verdict"] != "SHIP"]
+    print(f"\nSCORE: SHIP {shipped}/{len(results)}  tests {total_t}/{total_tt}  "
+          f"FAIL (non-SHIP: {fails})")
+    return 1
 
 if __name__ == "__main__":
     sys.exit(main())

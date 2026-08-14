@@ -293,11 +293,11 @@ def _build_self_test_command() -> str:
     return (
         "if [ -f test_solution.py ]; then\n"
         "  python3 -B -m pytest test_solution.py --tb=short -q > test_output.log 2>&1; rc=$?;\n"
-        "  if grep -qE 'error|no tests ran|collection' test_output.log; then\n"
+        "  if [ $rc -eq 5 ] || grep -qE 'no tests ran|ERROR collecting' test_output.log; then\n"
         "    printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":false,"
         "\"message\":\"pytest collection error\"}],\"exit_code\":1}' > EVAL.json;\n"
         "  elif [ $rc -eq 0 ]; then\n"
-        "    passed=$(grep -c ' PASSED' test_output.log 2>/dev/null) || true; passed=${passed:-0};\n"
+        "    passed=$(grep -oE '[0-9]+ passed' test_output.log | tail -1 | grep -oE '[0-9]+' || true); passed=${passed:-0};\n"
         "    printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":true,"
         "\"message\":\"%s test(s) passed\"}],\"exit_code\":0}' \"$passed\" > EVAL.json;\n"
         "  else\n"
@@ -402,22 +402,28 @@ def _review_verdict_consistent(ctx: dict, workdir) -> tuple[bool, str]:
 
 
 def _review_eval_command() -> str:
-    """Write the review hop's OWN EVAL.json from review.md's verdict.
+    """Write the review hop's OWN review-eval.json from review.md's verdict.
 
-    Standalone `nine submit "review X"` has no build EVAL.json to derive
-    from, so the review must produce verifiable evidence itself — otherwise
-    the gate has nothing to certify (and the hop can never SHIP).
+    torture-12 F4: this used to write EVAL.json, CLOBBERING the build hop's
+    EVAL.json in the chain — the shipped manifest then carried two
+    conflicting EVAL.json entries and the review-consistent check compared
+    review.md against the review's OWN just-written EVAL (circular, always
+    consistent: the build's failing evidence vanished). The review writes a
+    DISTINCT review-eval.json; the consistency check keeps reading the
+    BUILD's EVAL.json. Standalone `nine submit "review X"` has no build
+    EVAL.json to derive from, so the review must produce verifiable
+    evidence itself — review-eval.json is that artifact.
     """
     return (
         "if grep -q 'Verdict: PASS' review.md; then "
         "printf '{\"checks\":[{\"name\":\"review-pass\",\"passed\":true,"
-        "\"message\":\"review verdict PASS\"}],\"exit_code\":0}' > EVAL.json; "
+        "\"message\":\"review verdict PASS\"}],\"exit_code\":0}' > review-eval.json; "
         "elif grep -q 'Verdict: FAIL' review.md; then "
         "printf '{\"checks\":[{\"name\":\"review-pass\",\"passed\":false,"
-        "\"message\":\"review verdict FAIL\"}],\"exit_code\":1}' > EVAL.json; "
+        "\"message\":\"review verdict FAIL\"}],\"exit_code\":1}' > review-eval.json; "
         "else "
         "printf '{\"checks\":[{\"name\":\"review-pass\",\"passed\":false,"
-        "\"message\":\"no verdict in review.md\"}],\"exit_code\":1}' > EVAL.json; "
+        "\"message\":\"no verdict in review.md\"}],\"exit_code\":1}' > review-eval.json; "
         "exit 1; "
         "fi"
     )
@@ -437,7 +443,7 @@ def review_hop() -> Hop:
     ))
     return Hop(
         id="review", workflow=wf,
-        required_artifacts=["review.md", "EVAL.json"],
+        required_artifacts=["review.md", "review-eval.json"],
         gate_checks={
             "review-pass": required_artifact_check(["review.md"]),
             "review-consistent": _review_verdict_consistent,

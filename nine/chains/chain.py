@@ -256,6 +256,12 @@ class ChainExecutor:
                         )
                     )
                 if verdict == "SHIP":
+                    # torture-12 F2: the FIX directive belongs to THIS hop's
+                    # retries - once the hop ships it must NOT bleed into
+                    # later hops' prompts (flagship ADK nodes append
+                    # "Previous attempt failed the gate: ..." to their
+                    # instruction on inputs.get("fix_directive")).
+                    chain_inputs.pop("fix_directive", None)
                     break
                 # FIX: any non-SHIP gate verdict retries while attempts remain
                 # (missing artifacts OR failing EVAL.json checks both re-run)

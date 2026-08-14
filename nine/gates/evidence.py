@@ -99,7 +99,7 @@ def file_nonempty_check(name: str, min_chars: int = 10) -> CheckFn:
     """
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
         # torture-10 F2: provenance metadata for the stale guard.
-        _check.expected = [name]
+        _check.expected = [name]  # type: ignore[attr-defined]  # torture-10 F2 tag  # torture-10 F2 provenance tag
         f = Path(workdir) / name
         if f.is_symlink() or not f.exists():
             return False, f"{name} missing — cannot verify"
@@ -119,7 +119,7 @@ def eval_json_check(expected_checks: list[str] | None = None) -> CheckFn:
     """
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
         # torture-10 F2: provenance metadata for the stale guard.
-        _check.expected = ["EVAL.json"]
+        _check.expected = ["EVAL.json"]  # type: ignore[attr-defined]  # torture-10 F2 tag  # torture-10 F2 provenance tag
         ev = load_eval_json(workdir)
         if ev is None:
             return False, "EVAL.json missing — cannot verify"
@@ -175,5 +175,5 @@ def required_artifact_check(expected: list[str]) -> CheckFn:
 
     # torture-10 F2: expose WHICH disk files this check certifies so the
     # executor's stale-artifact guard can require per-attempt provenance.
-    _check.expected = list(expected)  # torture-10 F2 provenance tag
+    _check.expected = list(expected)  # type: ignore[attr-defined]  # torture-10 F2 tag
     return _check

@@ -430,7 +430,9 @@ def test_chain_manifest_no_cross_hop_misattribution(tmp_path, monkeypatch):
     review_jobs = [j for j in ledger.discover() if j.workflow_id == "t::review"]
     assert review_jobs
     review_names = {a["name"] for a in review_jobs[0].artifacts}
-    assert review_names <= {"review.md", "EVAL.json"}
+    # torture-12 F4: the review hop writes review-eval.json (its OWN eval
+    # artifact) and must NOT claim the build hop's EVAL.json as its own.
+    assert review_names <= {"review.md", "review-eval.json"}
     build_jobs = [j for j in ledger.discover() if j.workflow_id == "t::build"]
     assert build_jobs
     build_names = {a["name"] for a in build_jobs[0].artifacts}

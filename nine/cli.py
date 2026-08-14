@@ -139,7 +139,11 @@ def cmd_chain(args) -> int:
 
     from nine.memory.graph import get_memory_graph
 
-    ledger = _ledger(args)
+    try:
+        ledger = _ledger(args)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     chain = chains[args.chain_id]()
     ex = ChainExecutor(ledger, workdir=getattr(args, "workdir", "work"), learner=_learner(args),
                        memory=get_memory_graph(path=args.memory))
@@ -269,7 +273,11 @@ def _execute_job(ledger, job, task: str, args) -> int:
 
 
 def cmd_submit(args) -> int:
-    ledger = _ledger(args)
+    try:
+        ledger = _ledger(args)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     router = build_default_router()
     decision = router.classify(args.task)
     print(json.dumps(decision.to_dict(), indent=2))
@@ -277,10 +285,26 @@ def cmd_submit(args) -> int:
     # EVERY prompt is a workflow: no direct-answer escape hatch. An unknown
     # task routes to `respond`, which still runs a job, writes RESPONSE.md,
     # and is verified (SHIP) before returning.
+    from nine.registry import CHAINS, WORKFLOWS
+
+    if decision.workflow_id not in WORKFLOWS and decision.workflow_id not in CHAINS:
+        # torture-12 F6: a learned/catalog keyword can point at a workflow
+        # id that is no longer executable (plugin removed/renamed) — submit
+        # would raw-traceback a WorkflowError. Refuse BEFORE submitting.
+        print(f"error: routed workflow id '{decision.workflow_id}' is not "
+              "registered (removed plugin or stale learned keyword?) — not "
+              "submitting.", file=sys.stderr)
+        return 1
     job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
     job.attach_route_decision(decision)
     ledger.update(job)
-    return _execute_job(ledger, job, args.task, args)
+    try:
+        return _execute_job(ledger, job, args.task, args)
+    except WorkflowError as exc:
+        # torture-12 F6 (belt): a route that slips past the check still
+        # fails with ONE clean line, never a raw traceback.
+        print(f"[error] job {job.job_id} failed loud: {exc}", file=sys.stderr)
+        return 1
 
 
 def _record_route_event(learner, job, decision, verdict: dict) -> None:
@@ -318,7 +342,13 @@ def cmd_status(args) -> int:
 
 
 def cmd_discover(args) -> int:
-    jobs = _ledger(args).discover(status=args.status)
+    # torture-12 F8: an unusable --ledger path must be ONE clean line, not
+    # a raw traceback (same contract as cmd_status/artifacts/cancel).
+    try:
+        jobs = _ledger(args).discover(status=args.status)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     for j in jobs:
         print(f"{j.job_id[:8]}  {j.workflow_id:12s} {j.status:10s} {j.created_at}")
     print(f"\n{len(jobs)} job(s)")
@@ -354,7 +384,11 @@ def cmd_recover(args) -> int:
     SAME workflow/chain through the registry (torture finding T1-F7:
     recover used to park jobs in a dead-end status forever).
     """
-    ledger = _ledger(args)
+    try:
+        ledger = _ledger(args)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
 
     # The RAW task survives in task.txt (ledger input is redacted for
     # display) — check it BEFORE any state change. torture-5 F4: if task.txt
@@ -363,6 +397,22 @@ def cmd_recover(args) -> int:
     # unrecoverable after a workdir hiccup, and the job stays blocked/failed
     # so the operator can restore the workdir and try again.
     job = ledger.get(args.job_id)
+
+    # torture-12 F5: recover must not tombstone jobs it cannot re-execute.
+    # A chain HOP job's workflow_id is "<chain-id>::<hop-id>" — not a
+    # registered workflow/chain — so _execute_job below would raw-traceback
+    # a WorkflowError AFTER the job dir was wiped and the job transitioned
+    # to recovered (a dead-end tombstone). Validate BEFORE any state change.
+    from nine.registry import CHAINS, WORKFLOWS
+
+    if job.workflow_id not in WORKFLOWS and job.workflow_id not in CHAINS:
+        hint = ("chain hop jobs are re-run by recovering the owning chain "
+                "job" if "::" in job.workflow_id else
+                "the workflow is not registered (removed plugin?)")
+        print(f"error: cannot recover {args.job_id}: workflow id "
+              f"'{job.workflow_id}' is not registered - {hint}.",
+              file=sys.stderr)
+        return 1
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     # torture-8 F2: a job_dir that IS a symlink means the workspace was
     # already compromised (a model-driven bash node can replace it with a
@@ -422,11 +472,23 @@ def cmd_recover(args) -> int:
                 shutil.rmtree(p)
 
     print(f"recovering {job.job_id} ({job.workflow_id}) — re-executing")
-    return _execute_job(ledger, job, task, args)
+    try:
+        return _execute_job(ledger, job, task, args)
+    except WorkflowError as exc:
+        # torture-12 F5 (belt): even after the id check a hop could raise
+        # WorkflowError mid-flight — one clean line, like the ChainError
+        # path (torture-7 F5), never a raw traceback.
+        print(f"[error] job {job.job_id} failed loud: {exc}", file=sys.stderr)
+        return 1
 
 
 def cmd_stats(args) -> int:
-    print(json.dumps(_ledger(args).stats(), indent=2))
+    try:
+        stats = _ledger(args).stats()
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
+    print(json.dumps(stats, indent=2))
     return 0
 
 

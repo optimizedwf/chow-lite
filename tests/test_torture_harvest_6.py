@@ -414,7 +414,7 @@ def test_recover_force_single_invocation(monkeypatch, tmp_path, capsys):
         exit_codes_check,
     )
     from nine.ledger.ledger import JSONLLedger
-    from nine.runtime.workflows import Node, Workflow, WorkflowError
+    from nine.runtime.workflows import Node, Workflow
 
     wd = tmp_path / "work"
     wd.mkdir()
@@ -460,15 +460,16 @@ def test_recover_force_single_invocation(monkeypatch, tmp_path, capsys):
 
     args = SimpleNamespace(job_id=jid, force=True, workdir=str(wd),
                            ledger=str(tmp_path / "ledger.jsonl"),
-                           chain=False, plugin=None, model="")
+                           chain=False, plugin=None, model="",
+                           events=str(tmp_path / "events.jsonl"))
     monkeypatch.setattr(sys, "argv", ["nine", "recover"])
+    # torture-12 F5: recover refuses to tombstone jobs it cannot re-execute —
+    # register the test workflow in the registry so the one-call recover
+    # actually re-executes (and proves the full loop works end-to-end).
+    from nine.registry import WORKFLOWS
+    monkeypatch.setitem(WORKFLOWS, "test-recover", lambda: wf)
     out, err = capsys.readouterr()
-    try:
-        cmd_recover(args)
-    except WorkflowError:
-        # re-execution of the UNREGISTERED test workflow id fails loud after
-        # recovery — that is correct model-driven behavior, out of scope.
-        pass
+    cmd_recover(args)
     out2, err2 = capsys.readouterr()
     # t10-F1: ONE --force invocation must degrade + recover + re-execute.
     # The F1 bug was that the FIRST call died on the stale CACHE with

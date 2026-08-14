@@ -119,7 +119,7 @@ def _build_test_runner_command() -> str:
     return (
         "python3 -B -m pytest test_solution.py --tb=short -q > test_output.log 2>&1; "
         'rc=$?; '
-        "if grep -qE 'error|no tests ran|collection' test_output.log; then "
+        "if [ $rc -eq 5 ] || grep -qE 'no tests ran|ERROR collecting' test_output.log; then "
         '  echo \'{"checks":[{"name":"tests-pass","passed":false,"message":"pytest collection error"}],"exit_code":1}\' > EVAL.json; '
         "elif [ $rc -eq 0 ]; then "
         '  echo \'{"checks":[{"name":"tests-pass","passed":true,"message":"all tests passed"}],"exit_code":0}\' > EVAL.json; '

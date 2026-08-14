@@ -159,13 +159,17 @@ class JSONLLedger:
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
         self._jobs: dict[str, Job] = {}
         # (line_number, reason) for records that could not be parsed. A
         # crash mid-append or a hand-edit must NOT brick the whole ledger:
         # skip the bad line, keep the healthy jobs, report the damage.
         self.corrupt_lines: list[tuple[int, str]] = []
         try:
+            # torture-12 F8: mkdir lived OUTSIDE the wrap, so an unusable
+            # --ledger path (FileExistsError from a FILE at the parent,
+            # PermissionError, read-only fs) raw-tracebacked every CLI
+            # command. Fold it into the LedgerError contract.
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             self._load()
         except OSError as e:
             raise LedgerError(f"cannot read ledger {self.path}: {e}") from e
@@ -305,7 +309,15 @@ class JSONLLedger:
         return self.get(job_id).artifacts
 
     def cancel(self, job_id: str) -> Job:
-        return self.transition(job_id, "cancelled")
+        # torture-12 F3: legality against the DURABLE file, not the
+        # construction-time cache - another process may have shipped the
+        # job since this ledger object was built; cancelling from a stale
+        # cache would stamp cancelled over the shipped terminal line.
+        job = self.refresh(job_id)
+        job.transition("cancelled")
+        self._jobs[job_id] = job
+        self._append(job)
+        return job
 
     def recover(self, job_id: str) -> Job:
         """Recovery: BLOCKED/FAILED -> recovered -> running (re-execution).
@@ -315,13 +327,20 @@ class JSONLLedger:
         transition (torture T3-F3/T4-F2). Attempts are reset so the
         re-execution gets a full fix-loop budget.
         """
-        job = self.get(job_id)
+        # torture-12 F3: the legality check reads the DURABLE file via
+        # refresh() - the in-memory cache is last-line-wins at construction
+        # and another process may have appended a terminal line since (a
+        # stale cache re-recovering a shipped job would stamp recovered/
+        # running over its shipped terminal line). The cache is synced so
+        # get()/status() agree with the durable state we just wrote.
+        job = self.refresh(job_id)
         if job.status not in ("blocked", "failed"):
             raise LedgerError(
                 f"job {job_id} is {job.status}, only blocked/failed can be recovered"
             )
         job.transition("recovered")
         job.attempts = 0
+        self._jobs[job_id] = job
         self._append(job)
         return job
 
