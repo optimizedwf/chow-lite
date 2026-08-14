@@ -176,6 +176,7 @@ def _sections_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     return True, f"FINDINGS.md has {n} sections"
 
 
+_sections_check.expected = ["FINDINGS.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def research_quick_hop() -> Hop:
     """The `research-quick` workflow: single-source quick research.
 

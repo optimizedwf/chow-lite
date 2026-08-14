@@ -139,6 +139,7 @@ def _valid_json_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     return False, "OUTPUT.json must be a JSON object or array"
 
 
+_valid_json_check.expected = ["OUTPUT.json"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def extract_hop() -> Hop:
     """The `extract` workflow: unstructured -> structured JSON.
 

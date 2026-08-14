@@ -56,6 +56,7 @@ def _review_verdict_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str
     return True, "REVIEW.md verdict is PASS"
 
 
+_review_verdict_check.expected = ["REVIEW.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def _reviewer_adk_node(dimension: str, filename: str) -> Node:
     """One ADK LlmAgent reviewer for a single dimension.
 

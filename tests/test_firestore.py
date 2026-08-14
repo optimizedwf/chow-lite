@@ -113,7 +113,11 @@ def test_firestore_ledger_discover(fake_firestore):
 def test_firestore_ledger_artifacts_and_cancel(fake_firestore):
     led = FirestoreLedger(collection="nine-jobs")
     job = led.submit("build", {"task": "y"})
-    job.artifacts = [{"name": "EVAL.json", "size": 3, "sha256": "abc", "produced_by": "build"}]
+    # torture-18 F1: update() validates the FULL record — the artifact must
+    # be a conformant artifact-manifest entry (path/kind/produced_at).
+    job.artifacts = [{"name": "EVAL.json", "path": "EVAL.json", "kind": "data",
+                      "size": 3, "sha256": "abc", "produced_by": "build",
+                      "produced_at": "2026-01-01T00:00:00+00:00"}]
     led.update(job)
     arts = led.artifacts(job.job_id)
     assert arts[0]["name"] == "EVAL.json"

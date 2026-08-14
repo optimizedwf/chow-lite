@@ -37,7 +37,21 @@ class FirestoreLedger:
 
     def submit(self, workflow_id: str, input: dict[str, Any] | None = None,
                chain_id: str | None = None) -> Job:
+        # torture-18 F1: the redact()/validate() boundary existed ONLY on
+        # JSONLLedger — Cloud Run (the production backend, preferred by
+        # deploy/server.py get_ledger) wrote RAW task text (AKIA/sk-/password
+        # values the user pasted) verbatim into Firestore, and accepted
+        # workflow_ids agent-job validation rejects. Mirror JSONLLedger.submit
+        # exactly: redact at the boundary, validate before persisting.
+        if input and isinstance(input.get("task"), str):
+            from nine.router.classifier import redact
+
+            input = dict(input)
+            input["task"] = redact(input["task"])
         job = Job(workflow_id=workflow_id, input=input, chain_id=chain_id)
+        from nine.schema_validation import validate
+
+        validate("agent-job", job.to_dict())
         self._ref(job.job_id).set(job.to_dict())
         return job
 
@@ -73,6 +87,11 @@ class FirestoreLedger:
         return job
 
     def update(self, job: Job) -> Job:
+        # torture-18 F1: validate the FULL record on update too (the raw
+        # merge=True set bypassed the agent-job boundary on every mutation).
+        from nine.schema_validation import validate
+
+        validate("agent-job", job.to_dict())
         self._ref(job.job_id).set(job.to_dict(), merge=True)
         return job
 

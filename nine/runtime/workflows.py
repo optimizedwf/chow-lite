@@ -280,6 +280,13 @@ class WorkflowExecutor:
         job.add_verdict(verdict)
         job.metadata["nodes"] = node_meta
         job.metadata["attempts"] = attempt
+        # torture-18 F3: the CANCELLED verdict was NEVER persisted —
+        # `_abort_cancelled` returned without `ledger.update(job)`, so the
+        # durable terminal row ended with verdicts: [] and the cancel
+        # reason/artifacts vanished on process exit. Append the
+        # cancelled-status row carrying the full verdict (status stays
+        # cancelled, so T8-F3's no-stamp-over-cancel invariant holds).
+        self.ledger.update(job)
         return {
             "job_id": job.job_id,
             "verdict": verdict,
@@ -638,7 +645,13 @@ class WorkflowExecutor:
                                 # and makes the manifest point outside the
                                 # job dir. Namespace external rels so they can
                                 # never collide with an inside rel.
-                                rel = "../" + p.name
+                                # torture-17 F8: two DIFFERENT outside files
+                                # with the same basename (x/report.md and
+                                # y/report.md) also collided on "../report.md"
+                                # and silently REPLACED each other — include
+                                # the immediate parent segment so the outside
+                                # namespace is unique per (parent, basename).
+                                rel = "../" + p.parent.name + "/" + p.name
                             # torture-15 F3: the explicit branch must apply
                             # the SAME byproduct exclusion as the recursive
                             # inventory — a tool naming test_output.log /
@@ -680,8 +693,20 @@ class WorkflowExecutor:
                 snap = self._first_attempt_before.get(str(job_dir)) or {}
                 inputs_ok = set(snap)
                 stale: list[str] = []
+                no_provenance: list[str] = []
                 for _name, fn in self.gate.checks.items():
-                    for expected_name in (getattr(fn, "expected", None) or []):
+                    expected = getattr(fn, "expected", None)
+                    if expected is None:
+                        # torture-17 F2: a check that never declared WHAT it
+                        # certifies (.expected) cannot prove its evidence was
+                        # produced this attempt — the provenance tag is the
+                        # ONLY hook the stale guard has. Refuse SHIP loudly
+                        # instead of silently certifying unknown disk files
+                        # (a plugin CheckFn that forgets the tag re-opens the
+                        # t7-F1/t10-F2 stale-file hole with no diagnostics).
+                        no_provenance.append(_name)
+                        continue
+                    for expected_name in expected:
                         p_expected = job_dir / expected_name
                         if not p_expected.exists():
                             continue  # the check already failed
@@ -694,6 +719,20 @@ class WorkflowExecutor:
                             # certify outside content with the file ABSENT
                             # from the shipped manifest (SHIP). Treat the
                             # substitution as stale: BLOCK.
+                            # torture-17 F7: EXCEPT a symlink whose TARGET is
+                            # a run-produced file inside the job dir that IS
+                            # in this attempt's manifest (the natural
+                            # "latest.md -> REPORT.md" versioned pattern) —
+                            # its content is registered under the target's
+                            # name, so certifying the link certifies produced
+                            # evidence. Resolve and check the target's rel.
+                            try:
+                                target_rel = p_expected.resolve().relative_to(
+                                    job_dir).as_posix()
+                            except (ValueError, OSError):
+                                target_rel = None
+                            if target_rel is not None and target_rel in registered:
+                                continue
                             stale.append(expected_name)
                             continue
                         if p_expected.is_dir():
@@ -767,17 +806,53 @@ class WorkflowExecutor:
                         # gate-certified file; torture-11 F5 for subdir
                         # files now that the manifest is recursive).
                         stale.append(expected_name)
-                if stale:
+                # torture-17 F1: name-only provenance leaves a TOCTOU hole —
+                # the manifest sha256 is hashed at node-run time; the gate
+                # certifies DISK seconds later. A concurrent/late writer
+                # (abandoned daemon thread from a timed-out callable node,
+                # nohup'd writer from a bash node) can swap a registered
+                # file between the two, and the manifest then records a hash
+                # the gate never evaluated. Re-hash every registered artifact
+                # named by a check's .expected and compare with the manifest
+                # sha256; mismatch = the manifest lies -> BLOCK.
+                refs_by_name = {a["name"]: a for a in artifacts}
+                for _name, fn in self.gate.checks.items():
+                    for expected_name in (getattr(fn, "expected", None) or []):
+                        ref = refs_by_name.get(expected_name)
+                        if ref is None:
+                            continue  # run input / dir / not registered
+                        mp = job_dir / expected_name
+                        if not mp.is_file() or mp.is_symlink():
+                            continue  # handled by the per-check audit above
+                        try:
+                            if self._hash(mp.read_bytes()) != ref["sha256"]:
+                                stale.append(
+                                    f"{expected_name} (content changed "
+                                    "during gate evaluation)")
+                        except OSError:
+                            stale.append(
+                                f"{expected_name} (unreadable during gate "
+                                "evaluation)")
+                if stale or no_provenance:
+                    summary = "; ".join(x for x in (
+                        (f"stale artifact(s): {sorted(set(stale))}"
+                         if stale else ""),
+                        (f"check(s) without .expected provenance: "
+                         f"{sorted(no_provenance)} - cannot prove their "
+                         "evidence was produced this attempt"
+                         if no_provenance else ""),
+                    ) if x)
+                    if stale:
+                        summary += (
+                            " - the gate passed on file(s) not produced "
+                            "this attempt - certifying evidence missing "
+                            "from the shipped manifest (torture-7 F1 / "
+                            "torture-10 F2 / torture-11 F5)")
                     verdict = {
                         "verdict": "BLOCK",
                         "evidence_refs": sorted(artifact_ctx.get("artifact_paths", [])),
                         "eval_results": dict(verdict.get("eval_results", {})),
-                        "summary": (
-                            "stale artifact(s): "
-                            f"{sorted(set(stale))} - the gate passed on "
-                            "file(s) not produced this attempt - certifying "
-                            "evidence missing from the shipped manifest "
-                            "(torture-7 F1 / torture-10 F2 / torture-11 F5)"),
+                        "summary": summary,
                         "verified_at": (verdict.get("verified_at")
                                         or datetime.now(UTC).isoformat()),
                         "gate_version": verdict.get("gate_version", ""),

@@ -192,6 +192,7 @@ def _revision_log_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     return True, "REVISION_LOG.md has revision entries"
 
 
+_revision_log_check.expected = ["REVISION_LOG.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def draft_hop() -> Hop:
     """The `draft` workflow: draft -> review -> revise.
 

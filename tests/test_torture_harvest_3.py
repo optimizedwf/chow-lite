@@ -335,6 +335,9 @@ def _always_true_check(ctx, workdir):
     return True, "ok"
 
 
+_always_true_check.expected = []  # type: ignore[attr-defined]  # torture-17 F2: certifies no disk files
+
+
 # ============================================================== T3-F7 containment
 
 

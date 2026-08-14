@@ -182,6 +182,7 @@ def _recommendation_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str
     return True, "COMPARISON.md has Recommendation"
 
 
+_recommendation_check.expected = ["COMPARISON.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def compare_hop() -> Hop:
     """The `compare` workflow: options vs criteria -> recommendation.
 

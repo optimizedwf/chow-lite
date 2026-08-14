@@ -130,6 +130,16 @@ class Job:
         # on the way in. The evidence-verdict schema admits CANCELLED
         # (gate_version null) so the operator's terminal marker validates
         # like every other verdict.
+        # torture-18 F8: a terminal job must not acquire post-hoc verdicts —
+        # the status machine allows shipped/blocked/failed -> archived only,
+        # so a late non-CANCELLED verdict is by construction a mutation of a
+        # closed audit record. CANCELLED is the operator's documented
+        # terminal marker (T16-F1) and stays legal for the recover gate.
+        if self.status in ("shipped", "blocked", "failed") \
+                and verdict.get("verdict") != "CANCELLED":
+            raise LedgerError(
+                f"refusing verdict on terminal job {self.job_id} "
+                f"(status={self.status}, verdict={verdict.get('verdict')})")
         validate("evidence-verdict", verdict)
         self.verdicts.append(verdict)
         self.updated_at = datetime.now(UTC).isoformat()

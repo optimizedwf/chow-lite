@@ -442,6 +442,10 @@ def _compose_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     job_copy = wd / f"{wfid}_wf.py"
     if not job_copy.exists():
         return False, f"{wfid}_wf.py missing in job dir"
+    # torture-17 F2: declare the exact job-dir files certified (dynamic
+    # name — the tag must be set at call time to match THIS run's wfid).
+    _compose_check.expected = [  # type: ignore[attr-defined]
+        "WF_ID.txt", f"{wfid}_wf.py"]  # torture-17 F2 tag
     return True, f"{wfid}_wf.py present ({size} bytes)"
 
 

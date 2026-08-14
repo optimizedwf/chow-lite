@@ -4,6 +4,7 @@
   "title": "RouteEvent",
   "description": "One recorded route decision + evidence verdict, used by the LEARN loop.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["event_id", "job_id", "workflow_id", "verdict", "recorded_at"],
   "properties": {
     "event_id": {"type": "string"},

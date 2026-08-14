@@ -173,6 +173,9 @@ def _output_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     size = outp.stat().st_size
     if size < 10:
         return False, f"OUTPUT.{ext} too small ({size} bytes)"
+    # torture-17 F2: declare the exact OUTPUT.<ext> file certified (the
+    # extension is dynamic per TARGET.txt — set at call time).
+    _output_check.expected = [f"OUTPUT.{ext}"]  # type: ignore[attr-defined]  # torture-17 F2 tag
     return True, f"OUTPUT.{ext} present ({size} bytes)"
 
 

@@ -617,6 +617,29 @@ def cmd_learn(args) -> int:
     return 2
 
 
+def _catalog_is_committed() -> bool | None:
+    """True: catalog.json matches git HEAD. False: uncommitted catalog
+    changes exist. None: cannot verify (not a git repo / git missing).
+
+    torture-18 F4: the "already present" branches flipped candidate status
+    WITHOUT checking whether the on-disk catalog mutation (left behind by a
+    failed T16-F9 commit) was ever committed — one retry later the durable
+    audit commit silently never lands while the status claims applied/
+    pending. Only a COMMITTED catalog state may flip a candidate.
+    """
+    import subprocess as _sp
+
+    _root = Path(__file__).resolve().parent.parent
+    try:
+        out = _sp.run(
+            ["git", "-C", str(_root), "status", "--porcelain",
+             "--", "nine/router/catalog.json"],
+            check=True, capture_output=True, text=True)
+        return out.stdout.strip() == ""
+    except (OSError, _sp.CalledProcessError):
+        return None
+
+
 def _apply_candidate(learner, candidate_id: str) -> int:
     """Apply an approved candidate: regression-gated catalog change + commit.
 
@@ -666,6 +689,18 @@ def _apply_candidate(learner, candidate_id: str) -> int:
               "fix nine/router/catalog.json before applying", file=sys.stderr)
         return 1
     if kw in current:
+        # torture-18 F4: "already in catalog" must only mark applied when
+        # the on-disk state is actually COMMITTED. A retry after a failed
+        # commit (T16-F9) finds the keyword already there and used to flip
+        # status to applied with NO commit and NO regression run.
+        committed = _catalog_is_committed()
+        if committed is False or committed is None:
+            print(
+                "error: keyword already in catalog but catalog.json has "
+                "uncommitted changes (or no git) — commit the catalog "
+                "change manually; candidate was NOT marked applied",
+                file=sys.stderr)
+            return 1
         print(f"keyword '{kw}' already in catalog for {wf_id} — nothing to do")
         learner.cands.update_status(candidate_id, "applied")
         return 0
@@ -721,6 +756,18 @@ def _revert_candidate(learner, candidate_id: str) -> int:
               "fix nine/router/catalog.json before reverting", file=sys.stderr)
         return 1
     if kw not in bucket:
+        # torture-18 F4: symmetric — only flip to pending when the absent
+        # keyword is actually committed on disk (a retry after a failed
+        # revert commit used to mark pending while the rollback commit
+        # never landed).
+        committed = _catalog_is_committed()
+        if committed is False or committed is None:
+            print(
+                "error: keyword already absent but catalog.json has "
+                "uncommitted changes (or no git) — commit the catalog "
+                "change manually; candidate was NOT marked pending",
+                file=sys.stderr)
+            return 1
         print(f"keyword '{kw}' not present in catalog for {wf_id} — nothing to revert")
         learner.cands.update_status(candidate_id, "pending")
         return 0

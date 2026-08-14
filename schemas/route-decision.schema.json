@@ -4,6 +4,7 @@
   "title": "RouteDecision",
   "description": "Output of the nine router: classification of a task to a workflow.",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "decision_id",
     "task_redacted",

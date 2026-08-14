@@ -29,6 +29,7 @@ from nine.gates.evidence import (
     exit_codes_check,
 )
 from nine.ledger.firestore_ledger import FirestoreLedger
+from nine.chains.chain import ChainError
 from nine.ledger.ledger import LedgerError
 from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
@@ -130,6 +131,13 @@ async def _ledger_unavailable_handler(request: Request,
                                       exc: LedgerUnavailable) -> JSONResponse:
     """A misconfigured NINE_DATA_DIR must produce one clean JSON error with
     the reason — not opaque 500s on every endpoint (torture-14 F10)."""
+    return JSONResponse({"detail": str(exc)}, status_code=502)
+
+
+@app.exception_handler(ChainError)
+async def _chain_error_handler(request: Request, exc: ChainError) -> JSONResponse:
+    """The CLI catches ChainError cleanly; the server had NO handler and
+    raw-500'd every failed chain hop (torture-18 F5)."""
     return JSONResponse({"detail": str(exc)}, status_code=502)
 
 # Cloud Run serves a read-only filesystem except /tmp; K_SERVICE is set by
@@ -396,6 +404,16 @@ def submit(payload: SubmitRequest):
     ledger = get_ledger()
     router = build_router()
     decision = router.classify(task)
+    from nine.registry import CHAINS, WORKFLOWS
+
+    # torture-18 F5: open the stores this run needs BEFORE the job is
+    # durably committed. A broken EVENTS_PATH/MEMORY_PATH raised
+    # LedgerUnavailable AFTER ledger.submit + ledger.update (chains) or
+    # AFTER ex.execute already SHIPPED (workflows) — a clean 502 for a job
+    # that is durably committed, and the client's retry duplicates it.
+    is_chain = decision.workflow_id in CHAINS
+    learner = get_learner()
+    memory = get_memory() if is_chain else None
     # EVERY prompt is a workflow: no direct-answer escape hatch. A task that
     # matches no specialist lane routes to `respond`, which still runs a job,
     # produces RESPONSE.md, and is verified before anything returns.
@@ -405,19 +423,24 @@ def submit(payload: SubmitRequest):
 
     # dispatch through the shared registry: the demo lane and the flagship
     # hops run their REAL multi-hop chains / workflows, not a canned echo.
-    from nine.registry import CHAINS, WORKFLOWS
-
     gate = build_gate()
     if decision.workflow_id in CHAINS:
         from nine.chains.chain import ChainExecutor
         chain = CHAINS[decision.workflow_id]()
         job_dir = WORKDIR / job.job_id
-        job_dir.mkdir(parents=True, exist_ok=True)
-        (job_dir / "task.txt").write_text(task + "\n")
-        if decision.workflow_id == "inbox-triage-task-report":
-            (job_dir / "inbox.txt").write_text(task + "\n")
-        cex = ChainExecutor(ledger, workdir=WORKDIR, learner=get_learner(),
-                            memory=get_memory())
+        # torture-18 F5: WORKDIR/work as a FILE made mkdir(exist_ok=True)
+        # raise FileExistsError UNCAUGHT -> HTTP 500. Same clean-502
+        # contract as every other store failure.
+        try:
+            job_dir.mkdir(parents=True, exist_ok=True)
+            (job_dir / "task.txt").write_text(task + "\n")
+            if decision.workflow_id == "inbox-triage-task-report":
+                (job_dir / "inbox.txt").write_text(task + "\n")
+        except OSError as exc:
+            raise LedgerUnavailable(
+                f"cannot prepare chain job dir: {exc}") from exc
+        cex = ChainExecutor(ledger, workdir=WORKDIR, learner=learner,
+                            memory=memory)
         res = cex.execute(chain, job, {"task": task}, decision=decision)
         return {
             "job_id": job.job_id,
@@ -454,8 +477,14 @@ def submit(payload: SubmitRequest):
 
     gate = workflow_gate(decision.workflow_id) or build_gate()
     ex = WorkflowExecutor(ledger, gate, workdir=WORKDIR)
-    result = ex.execute(wf, job, {"task": task})
-    _record_route_event(get_learner(), job, decision, result["verdict"])
+    try:
+        result = ex.execute(wf, job, {"task": task})
+    except OSError as exc:
+        # torture-18 F5: the executor's own job_dir.mkdir is unwrapped —
+        # a WORKDIR/work-as-file data dir reached the client as HTTP 500.
+        raise LedgerUnavailable(
+            f"cannot execute workflow (job dir not writable): {exc}") from exc
+    _record_route_event(learner, job, decision, result["verdict"])
     body: dict[str, Any] = {
         "job_id": job.job_id,
         "status": job.status,
@@ -475,6 +504,12 @@ def _record_route_event(learner, job, decision, verdict: dict) -> None:
     ChainExecutor; direct answers get verdict UNVERIFIED with no job)."""
     from nine.learn.learner import RouteEvent
 
+    # torture-18 F2: the CLI's skip (nine/cli.py) is duplicated here — the
+    # route-event schema admits no CANCELLED, so recording an operator-
+    # cancelled verdict would raise SchemaValidationError UNCAUGHT and turn
+    # POST /v1/submit into a raw 500 (T16-F1 fixed the CLI only).
+    if verdict.get("verdict") == "CANCELLED":
+        return
     eval_results = verdict.get("eval_results") or {}
     learner.observe(
         RouteEvent(

@@ -231,6 +231,7 @@ def _chart_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     return True, f"chart.png present ({size} bytes)"
 
 
+_chart_check.expected = ["chart.png"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def analyze_hop() -> Hop:
     """The `analyze` workflow: dataset -> explore -> insights.
 

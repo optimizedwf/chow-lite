@@ -25,6 +25,8 @@ def _flag_check(ctx, workdir) -> tuple[bool, str]:
     ok = f.exists() and f.read_text().strip() == "ok"
     return ok, ("flag present" if ok else "FLAG.txt missing")
 
+_flag_check.expected = ["FLAG.txt"]  # type: ignore[attr-defined]  # torture-17 F2 tag
+
 
 def _make_chain_hop(write_fn, hop_id="h1", max_fix_loops=1,
                     required=("research.md", "HANDOFF.md")):

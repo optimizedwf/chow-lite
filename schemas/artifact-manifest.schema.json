@@ -4,6 +4,7 @@
   "title": "ArtifactManifest",
   "description": "A produced artifact and its evidence (checksum, size) for artifact-passing between workflow nodes.",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "name",
     "path",

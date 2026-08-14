@@ -59,11 +59,20 @@ def _format_checker() -> FormatChecker:
     def _check_date_time(value: str) -> bool:
         if not isinstance(value, str):
             return True  # type mismatch handled by the schema itself
+        # torture-17 F6: RFC 3339 requires a time component AND a UTC
+        # offset — fromisoformat alone accepts naive/date-only/partial
+        # strings ("2026-08-13", "2026-08", "2026", "…T12:00:00") which
+        # then compare badly with aware datetimes and silently misorder
+        # analytics. Require a T separator (RFC 3339 uppercase; lowercase t
+        # also accepted by fromisoformat) and a non-None tzinfo (RFC 3339
+        # Z is uppercase; fromisoformat rejects lowercase z).
+        if "T" not in value.upper():
+            return False
         try:
-            _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+            dt = _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return False
-        return True
+        return dt.tzinfo is not None
 
     fc.checkers["date-time"] = (  # type: ignore[assignment]
         _check_date_time,

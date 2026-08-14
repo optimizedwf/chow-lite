@@ -130,6 +130,7 @@ def _tone_review_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     return True, "TONE_REVIEW.md has a tone verdict"
 
 
+_tone_review_check.expected = ["TONE_REVIEW.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def draft_email_hop() -> Hop:
     """The `draft-email` workflow: tone-aware draft -> reviewtone -> revise.
 

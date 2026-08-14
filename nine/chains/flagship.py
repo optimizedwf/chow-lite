@@ -401,6 +401,7 @@ def _review_verdict_consistent(ctx: dict, workdir) -> tuple[bool, str]:
     return True, "review.md verdict matches EVAL.json"
 
 
+_review_verdict_consistent.expected = ["review.md", "EVAL.json"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def _review_eval_command() -> str:
     """Write the review hop's OWN review-eval.json from review.md's verdict.
 

@@ -72,6 +72,8 @@ def _source_present_check() -> CheckFn:
     """
 
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
+        # torture-17 F2: provenance for the stale guard.
+        _check.expected = ["SOURCE.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
         src = Path(workdir) / "SOURCE.md"
         if not src.exists():
             return False, "SOURCE.md missing — nothing was collected"

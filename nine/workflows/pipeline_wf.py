@@ -178,6 +178,7 @@ def _pipeline_output_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, st
         return False, f"OUTPUT.json invalid: {exc}"
 
 
+_pipeline_output_check.expected = ["OUTPUT.json"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def pipeline_hop() -> Hop:
     """The `pipeline` workflow: multi-stage ETL.
 

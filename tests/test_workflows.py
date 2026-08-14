@@ -152,6 +152,7 @@ def test_artifact_sha_refreshes_on_fix_rerun(tmp_path):
     def big_enough(ctx, workdir):
         f = Path(workdir) / "out.txt"
         return (f.exists() and f.stat().st_size >= 5), "size ok"
+    big_enough.expected = ["out.txt"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 
     job = JSONLLedger(tmp_path / "ledger.jsonl").submit("w", {"task": "t"})
     res = _run(wf, _gate(("big", big_enough)), job, tmp_path)

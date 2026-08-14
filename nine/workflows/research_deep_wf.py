@@ -256,6 +256,7 @@ def _findings_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     return True, f"FINDINGS.md has {n} sections + Critique Pass"
 
 
+_findings_check.expected = ["FINDINGS.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def _critique_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     """CRITIQUE.md must exist with at least one section header."""
     p = Path(workdir) / "CRITIQUE.md"
@@ -268,6 +269,7 @@ def _critique_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     return True, f"CRITIQUE.md has {n} sections"
 
 
+_critique_check.expected = ["CRITIQUE.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def research_deep_hop() -> Hop:
     """The `research-deep` workflow: iterative deep research.
 

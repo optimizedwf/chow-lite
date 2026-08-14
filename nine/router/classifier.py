@@ -56,18 +56,18 @@ def redact(text: str) -> str:
         # not steal the leading '=' of '==' and leak the secret tail.
         # torture-16 F4: consume the WHOLE chained comparison — a
         # `password == hunter2 == hunter3` must not leak the tail.
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=!~]=\s*\S+(?:\s*[=!~]=\s*\S+)*", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s*[=!~]=\s*\S+(?:\s*[=!~]=\s*\S+)*", "\\1=***", re.DOTALL | re.IGNORECASE),
         # quoted values BEFORE the plain [=:] pattern so a space-containing
         # value is consumed whole — torture-16 F4: `"token": "sk-123 abc"`
         # and `api_key = "sk-123 abc def"` leaked everything after the first
         # space (\S+ stopped at it).
-        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|ssh_key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s*[=:]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
         # plain key=value / key: value
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s+(?:is|was|:=|:|=)\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s*[=:]\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s+(?:is|was|:=|:|=)\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
         # torture-6 F4: JSON-quoted credentials ("api_key":"sk-123", "token": "abc")
-        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"']\S+[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|ssh_key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"']\S+[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
         # AWS keys: AKIA... and aws_secret_access_key = value
         (r"AKIA[0-9A-Z]{16}", "AKIA***", re.DOTALL | re.IGNORECASE),
         (r"aws_secret_access_key\s*[=:]\s*\S+", "aws_secret_access_key=***", re.DOTALL | re.IGNORECASE),
@@ -80,7 +80,7 @@ def redact(text: str) -> str:
         # torture-15 F6: URI userinfo (mongodb://user:pass@host, https://u:p@h)
         (r"([a-z][a-z0-9+.-]*://)[^/@\s]+@", "\\1***@", re.DOTALL | re.IGNORECASE),
         # torture-15 F6: CLI-style `--password hunter2` / `--token xyz`
-        (r"(--(?:password|passwd|pwd|secret|token|api[_-]?key))\s+\S+", "\\1 ***", re.DOTALL | re.IGNORECASE),
+        (r"(--(?:password|passwd|pwd|secret|token|api[_-]?key|(?:private|public|consumer|access|secret|client|ssh)[_-]key))\s+\S+", "\\1 ***", re.DOTALL | re.IGNORECASE),
         (r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "***PRIVATE KEY***", re.DOTALL | re.IGNORECASE),
         # torture-16 F4: `\b` + explicit non-lowercase guard so innocent
         # words (skillfulness, skateboarding, pkill...) pass through; AIza

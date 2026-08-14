@@ -31,6 +31,8 @@ def _flag_check(ctx, workdir) -> tuple[bool, str]:
     ok = f.exists() and f.read_text().strip() == "ok"
     return ok, ("flag present" if ok else "FLAG.txt missing")
 
+_flag_check.expected = ["FLAG.txt"]  # type: ignore[attr-defined]  # torture-17 F2 tag
+
 
 def _gate(checks: dict) -> EvidenceGate:
     g = EvidenceGate()
@@ -210,7 +212,10 @@ def test_t15_f5_outside_artifact_namespaced_no_collision(tmp_path):
     res, job, job_dir = _run_workflow(tmp_path, wf, checks)
     assert res["verdict"]["verdict"] == "SHIP", res
     names = [a["name"] for a in job.artifacts]
-    assert "../outside.txt" in names, names
+    # torture-17 F8: outside-job-dir artifacts namespace as
+    # "../<parent>/<name>" (parent dir disambiguates; same-named inside
+    # files cannot collide)
+    assert "../" + outside.parent.name + "/" + outside.name in names, names
     assert "outside.txt" in names, names  # inside file still present
     inside = [a for a in job.artifacts if a["name"] == "outside.txt"][0]
     assert inside["size"] == len("inside content\n")
@@ -269,7 +274,8 @@ def test_t15_f7_outside_artifact_summary_from_own_content(tmp_path):
     recs = [json.loads(line) for line in
             (tmp_path / "memory.jsonl").read_text().splitlines() if line.strip()]
     outside_recs = [r for r in recs
-                    if r.get("artifact_name") == "../outside-artifact.md"]
+                    if r.get("artifact_name")
+                    == "../" + outside.parent.name + "/" + outside.name]
     assert outside_recs, [r.get("artifact_name") for r in recs]
     for r in outside_recs:
         assert "OUTSIDE OWN CONTENT" in r["summary"], r

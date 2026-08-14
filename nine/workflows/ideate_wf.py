@@ -145,6 +145,7 @@ def _viability_json_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str
     return True, f"VIABILITY.json valid (score={score}, verdict={verdict})"
 
 
+_viability_json_check.expected = ["VIABILITY.json"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def ideate_hop() -> Hop:
     """The `ideate` workflow: expand -> challenge -> refine.
 

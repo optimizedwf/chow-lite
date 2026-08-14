@@ -4,6 +4,7 @@
   "title": "AgentJob",
   "description": "Durable job record in the nine job ledger. A job is one execution of a workflow.",
   "type": "object",
+  "additionalProperties": false,
   "required": [
     "job_id",
     "workflow_id",

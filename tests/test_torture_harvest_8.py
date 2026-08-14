@@ -29,6 +29,8 @@ def _flag_check(ctx, workdir) -> tuple[bool, str]:
     ok = f.exists() and f.read_text().strip() == "ok"
     return ok, ("flag present" if ok else "FLAG.txt missing")
 
+_flag_check.expected = ["FLAG.txt"]  # type: ignore[attr-defined]  # torture-17 F2 tag
+
 
 def _gate(checks: dict) -> EvidenceGate:
     g = EvidenceGate()
@@ -85,6 +87,7 @@ def test_t13_f2_runtime_records_bash_node_pid(tmp_path):
 
     def _any(_ctx, workdir) -> tuple[bool, str]:
         return True, "always"
+    _any.expected = []  # type: ignore[attr-defined]  # torture-17 F2 tag
     gate = _gate({"any": _any})
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     ex = WorkflowExecutor(ledger, gate, workdir=tmp_path / "work")
@@ -137,7 +140,12 @@ def test_t13_f2_bench_kill_node_groups_kills_detached_groups(tmp_path):
     proc = subprocess.Popen(["bash", "-c", "sleep 60"], start_new_session=True)
     job_dir = tmp_path / "work" / "j1"
     job_dir.mkdir(parents=True)
-    (job_dir / ".nine-node-pids").write_text(f"{proc.pid}\n", encoding="utf-8")
+    # torture-17 F3: one-field lines are unverifiable and conservatively
+    # skipped — the killer needs pid + spawn epoch (identity gate 2).
+    start = bm._node_start_epoch(proc.pid)
+    assert start is not None
+    (job_dir / ".nine-node-pids").write_text(
+        f"{proc.pid} {start}\n", encoding="utf-8")
     try:
         killed = bm._kill_node_groups(tmp_path / "work")
         assert killed >= 1

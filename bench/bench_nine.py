@@ -139,11 +139,52 @@ def _constant_snapshots(tree: ast.Module,
     call_ids = {id(c) for c in calls}
     consts: dict[str, ast.Constant] = {}
     snapshots: list[dict[str, ast.Constant]] = []
+
+    def _aug_value(cur: ast.Constant, op: ast.operator,
+                   rhs: ast.Constant) -> ast.Constant | None:
+        # torture-17 F5: apply += / -= / etc. to the CURRENT snapshot value
+        # (int/float/str mixes are rejected; unsupported ops drop the name).
+        if not isinstance(cur.value, (int, float, str))                 or not isinstance(rhs.value, (int, float, str)):
+            return None
+        try:
+            if isinstance(op, ast.Add):
+                return ast.Constant(value=cur.value + rhs.value)
+            if isinstance(op, ast.Sub):
+                return ast.Constant(value=cur.value - rhs.value)
+            if isinstance(op, ast.Mult):
+                return ast.Constant(value=cur.value * rhs.value)
+            if isinstance(op, ast.FloorDiv):
+                return ast.Constant(value=cur.value // rhs.value)
+            if isinstance(op, ast.Div):
+                return ast.Constant(value=cur.value / rhs.value)
+            if isinstance(op, ast.Mod):
+                return ast.Constant(value=cur.value % rhs.value)
+        except (TypeError, ValueError, ZeroDivisionError):
+            return None
+        return None
+
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
             for t in node.targets:
                 if isinstance(t, ast.Name):
                     consts[t.id] = node.value
+        elif (isinstance(node, ast.AugAssign)
+              and isinstance(node.target, ast.Name)
+              and isinstance(node.value, ast.Constant)):
+            cur = consts.get(node.target.id)
+            if cur is None:
+                continue
+            updated = _aug_value(cur, node.op, node.value)
+            if updated is None:
+                # mixed types / unsupported op: the value is no longer a
+                # simple literal — drop it so nothing stale is inlined.
+                consts.pop(node.target.id, None)
+            else:
+                consts[node.target.id] = updated
+        elif isinstance(node, ast.Delete):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    consts.pop(t.id, None)
         elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
               and isinstance(node.value.func, ast.Name)
               and node.value.func.id in ("test", "test_raises")
@@ -442,7 +483,14 @@ def _kill_node_groups(workdir: Path) -> int:
                 if not parts or not parts[0].isdigit():
                     continue  # garbage line: skip
                 pid = int(parts[0])
-                start = float(parts[1]) if len(parts) > 1 else None
+                try:
+                    start = float(parts[1]) if len(parts) > 1 else None
+                except ValueError:
+                    # torture-17 F4: a garbage second field (torn write,
+                    # node-controlled pid file) must skip the LINE, not
+                    # abort the whole sweep — later pid files still get
+                    # cleaned (the stated intent at :443 "garbage line").
+                    continue
                 entries.append((pid, start))
         except OSError:
             continue
@@ -456,10 +504,17 @@ def _kill_node_groups(workdir: Path) -> int:
                 # process — a recycled pid (node exited, OS reused the
                 # number) has a different start. When we cannot verify
                 # (process already gone / no source), be conservative.
-                if start is not None:
-                    actual = _node_start_epoch(pid)
-                    if actual is None or abs(actual - start) > 3.0:
-                        continue
+                if start is None:
+                    # torture-17 F3: a one-field line (torn read, legacy
+                    # pid file, node-written .nine-node-pids) has NO
+                    # verifiable spawn epoch — killing on the
+                    # session-leader check alone can SIGKILL an innocent
+                    # recycled group (the docstring promises conservative
+                    # skip when the start time cannot be verified).
+                    continue
+                actual = _node_start_epoch(pid)
+                if actual is None or abs(actual - start) > 1.0:
+                    continue
                 os.killpg(pid, signal.SIGTERM)
             except (ProcessLookupError, PermissionError, OSError):
                 continue

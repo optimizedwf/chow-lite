@@ -13,6 +13,7 @@ callable check) and produces a schema-conformant EvidenceVerdict.
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -33,6 +34,21 @@ class EvidenceGate:
         self.checks: dict[str, CheckFn] = checks or {}
 
     def register_check(self, name: str, fn: CheckFn) -> None:
+        if getattr(fn, "expected", None) is None:
+            # torture-17 F2: the stale-artifact guard can only prove a
+            # SHIP's evidence was produced THIS attempt for checks that
+            # declare WHAT they certify (.expected). A check that forgets
+            # the tag silently re-opens the stale-file hole with zero
+            # diagnostics — refuse loudly at the boundary so a plugin
+            # author sees the contract immediately.
+            print(
+                f"WARNING: check {name!r} has no .expected provenance tag - "
+                "the stale-artifact guard cannot prove its evidence was "
+                "produced this attempt; a SHIP will be refused (tag it with "
+                ".expected = [<certified file names>] or [] if it certifies "
+                "no disk files)",
+                file=sys.stderr,
+            )
         self.checks[name] = fn
 
     def evaluate(self, artifact_ctx: dict[str, Any], workdir: Path) -> dict[str, Any]:
@@ -161,6 +177,10 @@ def exit_codes_check() -> CheckFn:
             return False, f"non-zero exit codes: {bad}"
         return True, f"all {len(codes)} bash nodes exited 0"
 
+    # torture-17 F2: exit codes are in-memory ctx data, not disk files —
+    # the explicit EMPTY provenance list declares "certifies nothing on
+    # disk" so the stale guard does not refuse SHIP for lack of a tag.
+    _check.expected = []  # type: ignore[attr-defined]  # torture-17 F2 tag
     return _check
 
 

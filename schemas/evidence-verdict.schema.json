@@ -4,6 +4,7 @@
  "title": "EvidenceVerdict",
  "description": "Evidence-gated verdict: an exit code is NOT success. SHIP only with passing evidence.",
  "type": "object",
+ "additionalProperties": false,
  "required": [
   "verdict",
   "evidence_refs",
@@ -57,6 +58,11 @@
    },
    "then": {},
    "else": {
+    "properties": {
+     "gate_version": {
+      "type": "string"
+     }
+    },
     "required": [
      "gate_version"
     ]

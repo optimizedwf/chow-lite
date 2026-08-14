@@ -32,6 +32,7 @@ from nine.runtime.workflows import (
 )
 
 _ALWAYS_TRUE = lambda ctx, wd: (True, "ok")  # noqa: E731
+_ALWAYS_TRUE.expected = []  # type: ignore[attr-defined]  # torture-17 F2: certifies no disk files
 
 
 def _gate():

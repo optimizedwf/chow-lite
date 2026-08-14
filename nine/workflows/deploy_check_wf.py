@@ -184,6 +184,7 @@ def _decision_line_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]
     return True, "DEPLOY_CHECK.md has Decision"
 
 
+_decision_line_check.expected = ["DEPLOY_CHECK.md"]  # type: ignore[attr-defined]  # torture-17 F2 tag
 def deploy_check_hop() -> Hop:
     """The `deploy-check` workflow: pre-deploy readiness.
 
