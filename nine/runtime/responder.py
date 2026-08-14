@@ -75,7 +75,7 @@ def respond_text(task: str, max_chars: int = 600) -> tuple[str, str]:
             "respond: model returned no usable text — job failed loud "
             "(no offline fallback)"
         )
-    return resp.text.strip()[:max_chars], "gemini"
+    return resp.text.strip()[:max_chars], llm_provider.model_name()
 
 
 def _respond_run(inputs: dict[str, Any], job_dir: Path) -> dict[str, Any]:

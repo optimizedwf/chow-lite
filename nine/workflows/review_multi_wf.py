@@ -71,13 +71,14 @@ def _reviewer_adk_node(dimension: str, filename: str) -> Node:
         task = str(inputs.get("task", ""))[:200]
         if not key_available():
             raise WorkflowError(
-                f"review-multi ({dimension}) requires GEMINI_API_KEY "
+                f"review-multi ({dimension}) requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) "
                 "(ADK LlmAgent) - no offline fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a review file into the job dir (reviews/...)."""
@@ -93,7 +94,7 @@ def _reviewer_adk_node(dimension: str, filename: str) -> Node:
 
         agent = LlmAgent(
             name=f"{dimension}-reviewer",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 f"You are the {dimension} reviewer of nine, an evidence-gated "
                 f"agent OS. Review the code below for {_DIMENSIONS[dimension]}. "
@@ -130,13 +131,14 @@ def _merge_adk_node() -> Node:
         task = str(inputs.get("task", ""))[:200]
         if not key_available():
             raise WorkflowError(
-                "review-multi (merge) requires GEMINI_API_KEY (ADK LlmAgent) "
+                "review-multi (merge) requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) "
                 "- no offline fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the job dir."""
@@ -151,7 +153,7 @@ def _merge_adk_node() -> Node:
 
         agent = LlmAgent(
             name="review-merger",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the review merger of nine, an evidence-gated agent "
                 "OS. Synthesize the per-dimension review reports below into "

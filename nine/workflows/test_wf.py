@@ -41,13 +41,14 @@ def _test_adk_node() -> Node:
         task = str(inputs.get("task", ""))[:1500]
         if not key_available():
             raise WorkflowError(
-                "test requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
+                "test requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a source file into the test workspace (job dir)."""
@@ -91,7 +92,7 @@ def _test_adk_node() -> Node:
 
         agent = LlmAgent(
             name="tester",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=instruction,
             tools=[FunctionTool(write_file)],
         )

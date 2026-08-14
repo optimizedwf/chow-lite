@@ -68,13 +68,14 @@ def _planner_adk_node() -> Node:
         task = str(inputs.get("task", ""))[:500]
         if not key_available():
             raise WorkflowError(
-                "refactor (planner) requires GEMINI_API_KEY (ADK LlmAgent) - "
+                "refactor (planner) requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - "
                 "no offline fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the refactor workspace (job dir)."""
@@ -88,7 +89,7 @@ def _planner_adk_node() -> Node:
 
         agent = LlmAgent(
             name="refactor-planner",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the refactor planner of nine, an evidence-gated "
                 "agent OS. Design a code refactor and write REFACTOR_PLAN.md "
@@ -179,13 +180,14 @@ def _apply_adk_node() -> Node:
         task = str(inputs.get("task", ""))[:500]
         if not key_available():
             raise WorkflowError(
-                "refactor (apply) requires GEMINI_API_KEY (ADK LlmAgent) - "
+                "refactor (apply) requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - "
                 "no offline fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the refactor workspace (job dir)."""
@@ -206,7 +208,7 @@ def _apply_adk_node() -> Node:
 
         agent = LlmAgent(
             name="refactor-apply",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the refactor applier of nine, an evidence-gated "
                 "agent OS. Apply the refactor plan to the original code and "

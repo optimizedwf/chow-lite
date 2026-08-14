@@ -24,7 +24,7 @@ from nine.runtime.workflows import Node, Workflow, WorkflowError
 def _require_key(lane: str) -> None:
     if not key_available():
         raise WorkflowError(
-            f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
+            f"{lane} requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"
         )
 
@@ -69,8 +69,9 @@ def _transform_tool_node() -> Node:
         _require_key("transform (transform)")
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             contained_write(job_dir, path, content)
@@ -83,7 +84,7 @@ def _transform_tool_node() -> Node:
 
         agent = LlmAgent(
             name="transformer",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the transformer of nine. Convert the source file "
                 "described in FORMAT.md to the target format requested in "

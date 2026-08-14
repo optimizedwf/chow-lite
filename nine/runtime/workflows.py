@@ -326,6 +326,13 @@ class WorkflowExecutor:
         node_meta: dict[str, dict[str, Any]] = {}
         verdict: dict[str, Any] = {"verdict": "BLOCK"}
         attempt = 0
+        # torture-10 F2: files present at the START of attempt 1 are RUN
+        # INPUTS (task.txt, chain handoffs, bench-seeded test files, a
+        # seeded solution.py) — the run never "produces" them and the
+        # per-attempt manifest legitimately never registers them. Only
+        # run-PRODUCED files (absent from this first snapshot) must appear
+        # in the SHIPping attempt's registered manifest.
+        first_attempt_before: set[str] | None = None
 
         while True:
             attempt += 1
@@ -352,6 +359,8 @@ class WorkflowExecutor:
                 if p.is_file():
                     st = p.stat()
                     before[p.name] = (st.st_size, st.st_mtime_ns)
+            if first_attempt_before is None:
+                first_attempt_before = set(before.keys())
 
             seen: dict[str, str] = {}  # reset per attempt: reruns re-register the full dir
             self.ledger.update(job)
@@ -483,25 +492,57 @@ class WorkflowExecutor:
                 "node_exit_codes": node_exit_codes,
             }
             verdict = self.gate.evaluate(artifact_ctx, job_dir)
-            # torture-7 F1: the gate reads DISK while the manifest is a
-            # per-attempt snapshot. On a FIX re-run the same job_dir keeps
-            # attempt-1 files, so a gate that passes on a stale EVAL.json
-            # (not rewritten this attempt) would SHIP artifacts whose
-            # certifying evidence is NOT in the shipped manifest. A SHIP
-            # must have produced its evidence THIS attempt: if the gate has
-            # an eval-json check and EVAL.json exists on disk but was not
-            # registered, the evidence is stale - downgrade to BLOCK.
-            if verdict["verdict"] == "SHIP" and "eval-json" in self.gate.checks:
+            # torture-7 F1 + torture-10 F2: the gate reads DISK while the
+            # manifest is a per-attempt snapshot. On a FIX re-run the same
+            # job_dir keeps attempt-1 files, so a gate that passes on a
+            # stale file (not rewritten this attempt) would SHIP artifacts
+            # whose certifying evidence is NOT in the shipped manifest. A
+            # SHIP must have produced its evidence THIS attempt: for EVERY
+            # gate check's certified files (tagged `.expected` on the check
+            # fn), a file that exists on disk but was not registered in this
+            # attempt's manifest is stale - downgrade to BLOCK. Covers
+            # EVAL.json (eval_json_check), required_artifact_check lists,
+            # and file_nonempty_check files.
+            if verdict["verdict"] == "SHIP":
                 registered = {a["name"] for a in artifacts}
-                if (job_dir / "EVAL.json").exists() and "EVAL.json" not in registered:
+                inputs_ok = first_attempt_before or set()
+                stale: list[str] = []
+                for _name, fn in self.gate.checks.items():
+                    for expected_name in (getattr(fn, "expected", None) or []):
+                        if "/" in expected_name or os.sep in expected_name:
+                            # subdir files (reviews/security.md) are not
+                            # tracked by the top-level manifest — the stale
+                            # guard can only reason about top-level files.
+                            continue
+                        p_expected = job_dir / expected_name
+                        if p_expected.is_symlink() or not p_expected.exists():
+                            continue  # not evidence / the check already failed
+                        if p_expected.is_dir():
+                            continue  # manifest tracks FILES (dirs: solution/)
+                        if expected_name in registered:
+                            continue  # produced this attempt
+                        if expected_name in inputs_ok:
+                            # run input/seeded (task.txt, HANDOFF.md,
+                            # test_solution.py, seeded solution.py): the run
+                            # never needs to re-produce its own inputs.
+                            continue
+                        # run-PRODUCED file that exists on disk but was NOT
+                        # registered this attempt -> the gate certified
+                        # stale evidence from an earlier attempt (torture-7
+                        # F1 for EVAL.json; torture-10 F2 for every other
+                        # gate-certified file).
+                        stale.append(expected_name)
+                if stale:
                     verdict = {
                         "verdict": "BLOCK",
                         "evidence_refs": sorted(artifact_ctx.get("artifact_paths", [])),
                         "eval_results": dict(verdict.get("eval_results", {})),
-                        "summary": ("stale EVAL.json: the gate passed on a "
-                                    "file not produced this attempt - "
-                                    "certifying evidence missing from the "
-                                    "shipped manifest (torture-7 F1)"),
+                        "summary": (
+                            "stale artifact(s): "
+                            f"{sorted(set(stale))} - the gate passed on "
+                            "file(s) not produced this attempt - certifying "
+                            "evidence missing from the shipped manifest "
+                            "(torture-7 F1 / torture-10 F2)"),
                         "verified_at": verdict.get("verified_at", ""),
                     }
             job.add_verdict(verdict)

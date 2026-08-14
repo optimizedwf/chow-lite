@@ -39,13 +39,14 @@ def _diagnose_adk_node() -> Node:
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
-                "debug requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
+                "debug requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - no offline "
                 "fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the debug workspace (job dir)."""
@@ -93,7 +94,7 @@ def _diagnose_adk_node() -> Node:
 
         agent = LlmAgent(
             name="diagnostician",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=instruction,
             tools=[FunctionTool(write_file)],
         )
@@ -122,13 +123,14 @@ def _patch_adk_node() -> Node:
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
-                "debug requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
+                "debug requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - no offline "
                 "fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the debug workspace (job dir)."""
@@ -169,7 +171,7 @@ def _patch_adk_node() -> Node:
 
         agent = LlmAgent(
             name="patcher",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=instruction,
             tools=[FunctionTool(write_file)],
         )

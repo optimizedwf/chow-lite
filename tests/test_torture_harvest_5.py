@@ -331,7 +331,8 @@ def test_no_stale_gemini_35_flash_claims():
     """Doc-truth: code + docs must say gemini-3.6-flash, not 3.5 Flash."""
     root = Path(__file__).resolve().parent.parent
     for rel in ["nine/runtime/gemma.py", "nine/chains/flagship.py",
-                "nine/router/classifier.py", "deploy/server.py"]:
+                "nine/router/classifier.py", "deploy/server.py",
+                "demo_live.py"]:
         txt = (root / rel).read_text()
         assert "3.5 Flash" not in txt, rel
     for rel in ["docs/architecture.svg", "docs/demo-script.md",
@@ -369,7 +370,8 @@ def test_stale_eval_json_never_ships(tmp_path):
     wf.add_node(Node(id="t1", kind="tool", run=node_run))
     res = ex.execute(wf, job, {"task": "x"})
     assert res["verdict"]["verdict"] == "BLOCK"
-    assert "stale EVAL.json" in res["verdict"]["summary"]
+    assert "stale artifact" in res["verdict"]["summary"]
+    assert "EVAL.json" in res["verdict"]["summary"]
     assert job.status == "blocked"
 
 

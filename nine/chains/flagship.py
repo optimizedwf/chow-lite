@@ -51,13 +51,14 @@ def _research_adk_node() -> Node:
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
-                "research requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
+                "research requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a findings file into the research workspace (job dir)."""
@@ -66,7 +67,7 @@ def _research_adk_node() -> Node:
 
         agent = LlmAgent(
             name="researcher",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the research hop of nine, an evidence-gated agent OS.\n"
                 "Research the task below and write ONE file with the "
@@ -146,13 +147,14 @@ def _plan_adk_node() -> Node:
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
-                "plan requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
+                "plan requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write the plan file into the plan workspace (job dir)."""
@@ -165,7 +167,7 @@ def _plan_adk_node() -> Node:
 
         agent = LlmAgent(
             name="planner",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the plan hop of nine, an evidence-gated agent OS.\n"
                 "Read the distilled research (HANDOFF.md) and the task, then "
@@ -235,13 +237,14 @@ def _build_adk_node() -> Node:
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
-                "build requires GEMINI_API_KEY (ADK LlmAgent) — no offline "
+                "build requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) — no offline "
                 "fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a source file into the build workspace (job dir)."""
@@ -254,7 +257,7 @@ def _build_adk_node() -> Node:
 
         agent = LlmAgent(
             name="coder",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the build hop of nine, an evidence-gated agent OS.\n"
                 "Read the task and plan, then write TWO files with the "

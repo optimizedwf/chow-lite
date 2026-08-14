@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """nine LIVE demo — model-routed, evidence-gated, learning.
 
-Same loop as demo.py but the ROUTE step is a real Gemini 3.5 Flash call
-and the teach hop uses Gemma 4 (second Google model). Routing may use the
+Same loop as demo.py but the ROUTE step is a real model call on the active
+backend (Gemini 3.6 Flash default; NINE_LLM_BACKEND=openai routes to the
+testing tunnel / deepseek-v4-flash) and the teach hop uses a second model
+(Gemma 4 on Gemini, DS4 Flash on the tunnel). Routing may use the
 KeywordRouter substrate without a key (routing is not answer generation),
 but every hop that PRODUCES output requires its model — nine fails loud
 rather than fabricate.
@@ -49,7 +51,7 @@ def main() -> int:
         learner = Learner(events)
         ex = ChainExecutor(ledger, workdir=td / "work", learner=learner)
 
-        # ---- ROUTE (real Gemini 3.5 Flash) ----
+        # ---- ROUTE (active backend model) ----
         print("== ROUTE ==")
         router = _model_router()
         decision = router.classify(task)

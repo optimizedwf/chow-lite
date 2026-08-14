@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json as _json
 import os
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -30,11 +31,29 @@ OPENAI_DEFAULT_BASE = "https://opencode.ai/zen/go/v1"
 OPENAI_DEFAULT_MODEL = "deepseek-v4-flash"
 
 
+_BACKEND_WARNED: set[str] = set()
+
+
 def backend() -> str:
-    """'gemini' (default) or 'openai' (testing tunnel)."""
-    b = os.environ.get("NINE_LLM_BACKEND", "").strip().lower()
+    """'gemini' (default) or 'openai' (testing tunnel).
+
+    Unknown NON-EMPTY NINE_LLM_BACKEND values warn loudly (once per value,
+    to stderr) instead of silently switching to the gemini backend — a typo
+    like ``openai `` (trailing space) or ``OPENAI_TUNNEL`` must never burn
+    real Gemini quota while the operator believes the tunnel is active.
+    """
+    raw = os.environ.get("NINE_LLM_BACKEND", "")
+    b = raw.strip().lower()
     if b in ("openai", "opencode", "rue"):
         return "openai"
+    if raw.strip() and b not in _BACKEND_WARNED:
+        _BACKEND_WARNED.add(b)
+        print(
+            f"[nine.llm_provider] WARNING: unknown NINE_LLM_BACKEND={raw!r}; "
+            "valid values: openai|opencode|rue (tunnel/testing) or unset "
+            "(gemini default). Falling back to the GEMINI backend.",
+            file=sys.stderr,
+        )
     return "gemini"
 
 
@@ -157,6 +176,22 @@ def make_model_client() -> Any | None:
         return None
 
 
+def adk_model() -> Any:
+    """LlmAgent `model=` argument for ADK workflow nodes.
+
+    gemini backend: the real Gemini instance (status quo — all workflow
+    nodes construct `Gemini(model="gemini-3.6-flash")`).
+    openai backend: the registry STRING `gemini-3.6-flash` so
+    install_adk_override()'s `gemini-.*` takeover resolves the LlmAgent to
+    the tunnel (instance-based models bypass LLMRegistry — t9-F4).
+    """
+    if backend() == "openai":
+        return GEMINI_DEFAULT_MODEL
+    from google.adk.models import Gemini
+
+    return Gemini(model=GEMINI_DEFAULT_MODEL)
+
+
 # ---------------------------------------------------------------------------
 # ADK override (testing mode): LlmAgent(model="gemini-3.6-flash") -> tunnel.
 # ---------------------------------------------------------------------------
@@ -241,8 +276,29 @@ def install_adk_override() -> None:
         return tools
 
     def _messages_from(llm_request: LlmRequest) -> list[dict[str, Any]]:
-        """genai Contents -> OpenAI messages (incl. tool rounds)."""
+        """genai Contents -> OpenAI messages (incl. tool rounds).
+
+        t9-F2: LlmAgent.instruction arrives as config.system_instruction and
+        must become a leading system message (agents otherwise run with NO
+        system prompt in testing mode).
+        t9-F3/t10-F3: function_response parts must produce EXACTLY ONE tool
+        message per response — no duplicate tool messages, and no spurious
+        empty user message between an assistant tool_calls turn and the tool
+        result (google-adk sends tool results as role="user" parts).
+        """
         out: list[dict[str, Any]] = []
+        cfg = getattr(llm_request, "config", None)
+        sysinst = getattr(cfg, "system_instruction", None) if cfg is not None else None
+        if sysinst:
+            if isinstance(sysinst, str):
+                out.append({"role": "system", "content": sysinst})
+            else:  # genai Content with text parts
+                text = "".join(
+                    getattr(pt, "text", "") or ""
+                    for pt in (getattr(sysinst, "parts", None) or [])
+                )
+                if text.strip():
+                    out.append({"role": "system", "content": text})
         for content in llm_request.contents:
             role = getattr(content, "role", "user") or "user"
             text_parts: list[str] = []
@@ -267,15 +323,23 @@ def install_adk_override() -> None:
                         "name": fr.name,
                         "content": _json.dumps(fr.response or {}),
                     })
+            if tool_msgs and not tool_calls and not text_parts:
+                # pure tool-result content (role user OR tool): tool msgs only
+                out.extend(tool_msgs)
+                continue
             if role == "model":
                 m: dict[str, Any] = {"role": "assistant", "content": "".join(text_parts)}
                 if tool_calls:
                     m["tool_calls"] = tool_calls
                 out.append(m)
-            elif role == "tool":
+                continue
+            if role == "tool":
                 out.extend(tool_msgs)
-            else:
-                out.append({"role": "user", "content": "".join(text_parts)})
+                continue
+            # user content
+            text = "".join(text_parts)
+            if text:
+                out.append({"role": "user", "content": text})
             if tool_msgs:
                 out.extend(tool_msgs)
         return out
@@ -290,6 +354,20 @@ def install_adk_override() -> None:
         async def generate_content_async(self, llm_request, stream=False):
             import json as _json
 
+            def _err(msg: str) -> LlmResponse:
+                # t9-F7: "ERROR" is not a valid genai FinishReason (emits a
+                # UserWarning per failure + breaks the empty-content STOP
+                # guard) — map errors to the valid OTHER member.
+                return LlmResponse(
+                    content=types.Content(role="model", parts=[]),
+                    partial=False, finish_reason=types.FinishReason.OTHER,
+                    error_message=msg,
+                )
+
+            # t9-F7: never POST without a key (mirror chat_text's guard).
+            if not api_key():
+                yield _err("tunnel key missing (model-or-fail: no POST without a key)")
+                return
             payload: dict[str, Any] = {
                 "model": model_name(),
                 "messages": _messages_from(llm_request),
@@ -311,20 +389,12 @@ def install_adk_override() -> None:
                     json=payload, timeout=120,
                 )
                 if resp.status_code != 200:
-                    yield LlmResponse(
-                        content=types.Content(role="model", parts=[]),
-                        partial=False, finish_reason="ERROR",
-                        error_message=f"tunnel HTTP {resp.status_code}",
-                    )
+                    yield _err(f"tunnel HTTP {resp.status_code}")
                     return
                 data = resp.json()
                 choices = data.get("choices") or []
                 if not choices:
-                    yield LlmResponse(
-                        content=types.Content(role="model", parts=[]),
-                        partial=False, finish_reason="ERROR",
-                        error_message="tunnel empty choices",
-                    )
+                    yield _err("tunnel empty choices")
                     return
                 msg = choices[0].get("message") or {}
                 parts: list[Any] = []
@@ -340,14 +410,10 @@ def install_adk_override() -> None:
                         id=tc.get("id"), name=fn.get("name", ""), args=args)))
                 yield LlmResponse(
                     content=types.Content(role="model", parts=parts),
-                    partial=False, finish_reason="STOP",
+                    partial=False, finish_reason=types.FinishReason.STOP,
                 )
             except Exception as exc:  # noqa: BLE001 - model-or-fail
-                yield LlmResponse(
-                    content=types.Content(role="model", parts=[]),
-                    partial=False, finish_reason="ERROR",
-                    error_message=f"tunnel call failed: {exc}",
-                )
+                yield _err(f"tunnel call failed: {exc}")
 
     # register + take over the built-in gemini-.* entry (testing mode)
     registry.LLMRegistry.register(_OpenAILlm)
@@ -356,14 +422,33 @@ def install_adk_override() -> None:
 
 
 def uninstall_adk_override() -> None:
-    """Test helper: drop the override and restore lazily-loaded Gemini."""
+    """Test helper: FULLY drop the override and restore Gemini resolution.
+
+    t9-F1 (critical): install adds BOTH registry keys (via
+    LLMRegistry.register: `^gemini-[0-9].*$`, `^deepseek-v4-flash$`) and the
+    manual takeover keys (`gemini-.*`, `^gemini-.*$`); resolve() is
+    lru-cached. A partial uninstall left _OpenAILlm resolvable AFTER
+    "restore" — with the backend flipped back to gemini, api_key() returns
+    GEMINI_API_KEY and the stale override POSTs the real Gemini key to the
+    tunnel host. Pop EVERY added key, clear the resolve cache, and restore
+    the lazy Gemini entry so post-uninstall resolution is the original.
+    """
     global _ADK_OVERRIDE_INSTALLED  # noqa: PLW0603 - test helper resets the flag
     _ADK_OVERRIDE_INSTALLED = False
     try:
         from google.adk.models import registry
 
-        registry._llm_registry_dict.pop("gemini-.*", None)
-        registry._llm_registry_dict.pop("^gemini-.*$", None)
+        for key in (
+            "^gemini-[0-9].*$",   # added by LLMRegistry.register()
+            "^deepseek-v4-flash$",  # added by LLMRegistry.register()
+            "gemini-.*",           # manual takeover
+            "^gemini-.*$",         # manual takeover
+        ):
+            registry._llm_registry_dict.pop(key, None)
+        try:
+            registry.LLMRegistry.resolve.cache_clear()
+        except Exception:  # noqa: BLE001 - cache may not exist in some ADK builds
+            pass
         registry.LLMRegistry._register_lazy(
             ["gemini-.*"], "google.adk.models.google_llm", "Gemini")
     except Exception:  # noqa: BLE001 - best-effort test helper

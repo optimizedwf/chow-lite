@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from nine.runtime import llm_provider
 from nine.schema_validation import validate
 
 
@@ -196,6 +197,11 @@ class GeminiRouter:
             return "", 0.0, f"model output unparsable: {exc}"
 
 
+def _provider_model_name() -> str:
+    """Actual serving model of the active backend (t9-F5: no hardcoded ids)."""
+
+    return llm_provider.model_name()
+
 class Router:
     """Router facade: model first, keyword substrate fallback (routing only).
 
@@ -234,7 +240,12 @@ class Router:
         if self.model_router is not None:
             try:
                 wf_id, conf, reason = self.model_router.classify(task_red)
-                model_used = "gemini-3.6-flash"
+                # t9-F5: report the ACTUAL serving model, not a hardcoded id
+                # (openai backend serves deepseek-v4-flash via the tunnel)
+                model_used = (
+                    getattr(self.model_router.model, "model_name", None)
+                    or _provider_model_name()
+                )
             except Exception as exc:  # noqa: BLE001 - quota/network errors must never crash the loop
                 fallback_note = (
                     f"model unavailable ({type(exc).__name__}); keyword fallback"

@@ -402,6 +402,12 @@ def cmd_recover(args) -> int:
                   file=sys.stderr)
             live.transition("failed")
             ledger.update(live)
+            # torture-10 F1: update() only appends the durable line — the
+            # in-memory cache still says 'running', so the recover() below
+            # (which reads the CACHE) would error "is running, only
+            # blocked/failed can be recovered" and force a SECOND invocation.
+            # Sync the cache to the durable state we just wrote: one call.
+            ledger._jobs[args.job_id] = live
     try:
         job = ledger.recover(args.job_id)
     except LedgerError as e:

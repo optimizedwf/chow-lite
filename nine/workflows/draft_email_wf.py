@@ -30,7 +30,7 @@ def _require_key(lane: str) -> None:
     """Model-or-fail: every model node checks GEMINI_API_KEY first."""
     if not key_available():
         raise WorkflowError(
-            f"{lane} requires GEMINI_API_KEY - no offline fallback, "
+            f"{lane} requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) - no offline fallback, "
             "nine is model-driven"
         )
 

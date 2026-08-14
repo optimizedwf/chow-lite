@@ -32,7 +32,7 @@ _DEFAULT_REG = _PLUGINS_DIR / "plugin_registry.py"
 def _require_key(lane: str) -> None:
     if not key_available():
         raise WorkflowError(
-            f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
+            f"{lane} requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"
         )
 
@@ -115,8 +115,9 @@ def _spec_tool_node() -> Node:
         _require_key("compose (spec)")
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             contained_write(job_dir, path, content)
@@ -124,7 +125,7 @@ def _spec_tool_node() -> Node:
 
         agent = LlmAgent(
             name="compose-spec",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the spec designer of nine's compose meta-workflow. "
                 "Design a small workflow (2-5 nodes) that accomplishes the "
@@ -163,8 +164,9 @@ def _structure_tool_node() -> Node:
         _require_key("compose (structure-design)")
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             contained_write(job_dir, path, content)
@@ -181,7 +183,7 @@ def _structure_tool_node() -> Node:
 
         agent = LlmAgent(
             name="compose-structure",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the structure designer of nine's compose "
                 "meta-workflow. Turn SPEC.md into HOP_SPEC.json - a "
@@ -222,8 +224,9 @@ def _implement_tool_node() -> Node:
         _require_key("compose (implement)")
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             if path.endswith("_wf.py"):
@@ -249,7 +252,7 @@ def _implement_tool_node() -> Node:
 
         agent = LlmAgent(
             name="compose-implement",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the implementer of nine's compose meta-workflow. "
                 "Generate a complete, importable Python workflow module "

@@ -63,6 +63,25 @@ PER_FIXTURE_TIMEOUT_S = 1500.0
 
 # ---------------------------------------------------------------- key load ---
 def load_api_key() -> str:
+    """Key for the ACTIVE backend (torture-10 F6).
+
+    gemini backend (default): GEMINI_API_KEY from NINE_BENCH_KEY ->
+    ~/.agent-vault/keys/gemini.key (path-only; the value is never printed).
+    openai backend (NINE_LLM_BACKEND=openai, slice-28 testing mode): mirror
+    llm_provider.api_key() — NINE_LLM_API_KEY -> OPENCODE_GO_API_KEY ->
+    ~/.agent-vault/keys/opencode-go.key -> ~/.prime/agent/auth.json
+    [opencode-go]. The gemini key file is NOT required on the openai backend.
+    """
+    if os.environ.get("NINE_LLM_BACKEND", "").strip().lower() in ("openai", "opencode", "rue"):
+        from nine.runtime import llm_provider
+
+        key = llm_provider.api_key()
+        if not key:
+            sys.exit("FATAL: NINE_LLM_BACKEND=openai but no tunnel key found "
+                     "(NINE_LLM_API_KEY -> OPENCODE_GO_API_KEY -> "
+                     "~/.agent-vault/keys/opencode-go.key -> auth.json "
+                     "[opencode-go]); reference the path only, never inline keys")
+        return key
     if not KEY_PATH.exists():
         sys.exit(f"FATAL: key file not found at {KEY_PATH} (reference the path only, never inline keys)")
     with open(KEY_PATH, encoding="utf-8") as fh:
@@ -159,8 +178,15 @@ def seed_worker(workdir: Path, solution_py: Path, test_solution_py: Path, stop: 
 def run_submit(fixture_dir: Path, workdir: Path, ledger_path: Path) -> tuple[dict, str, str]:
     task = (fixture_dir / "task.md").read_text(encoding="utf-8").strip()
     env = dict(os.environ)
-    env["GEMINI_API_KEY"] = load_api_key()
-    env["GEMINI_MODEL"] = GEMINI_MODEL
+    key = load_api_key()
+    if env.get("NINE_LLM_BACKEND", "").strip().lower() in ("openai", "opencode", "rue"):
+        # testing tunnel backend: the child's provider reads the NINE_LLM_*
+        # chain — inject the loaded key explicitly so a bench run is honest
+        # about which key/backend it used (torture-10 F6).
+        env["NINE_LLM_API_KEY"] = key
+    else:
+        env["GEMINI_API_KEY"] = key
+        env["GEMINI_MODEL"] = GEMINI_MODEL
     env["PYTHONUNBUFFERED"] = "1"
 
     cmd = [str(NINE_BIN), "submit", "--workdir", str(workdir),

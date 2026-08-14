@@ -60,13 +60,14 @@ def _docgen_adk_node() -> Node:
         task = str(inputs.get("task", ""))[:500]
         if not key_available():
             raise WorkflowError(
-                "document (docgen) requires GEMINI_API_KEY (ADK LlmAgent) - "
+                "document (docgen) requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - "
                 "no offline fallback, nine is model-driven"
             )
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a doc file into the workspace (job dir)."""
@@ -98,7 +99,7 @@ def _docgen_adk_node() -> Node:
 
         agent = LlmAgent(
             name="docgen",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the docgen of nine, an evidence-gated agent OS. "
                 "Write two documentation files for the codebase using the "

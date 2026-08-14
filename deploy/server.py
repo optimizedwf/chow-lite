@@ -128,7 +128,9 @@ LEDGER_PATH = _RUNTIME / "jobs" / "ledger.jsonl"
 WORKDIR = _RUNTIME / "work"
 EVENTS_PATH = _RUNTIME / "jobs" / "events.jsonl"
 MEMORY_PATH = _RUNTIME / "jobs" / "memory.jsonl"
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.6-flash")
+from nine.runtime import llm_provider  # noqa: E402 - after path setup
+
+MODEL = llm_provider.model_name()
 
 
 _ledger: Any | None = None

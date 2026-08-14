@@ -278,7 +278,7 @@ def test_adk_override_error_yields_error_response(monkeypatch):
         return [r async for r in inst.generate_content_async(lr)]
 
     responses = asyncio.run(_collect())
-    assert responses[0].finish_reason == "ERROR"
+    assert responses[0].finish_reason == types.FinishReason.OTHER
     assert "429" in responses[0].error_message
 
 

@@ -192,7 +192,7 @@ def _load_plugin_workflows() -> dict[str, Callable[[], Workflow]]:
     }
 
 
-WORKFLOWS.update(_load_plugin_workflows())
+_PLUGIN_WORKFLOWS = _load_plugin_workflows()
 
 
 CHAINS: dict[str, Callable[[], Chain]] = {
@@ -200,11 +200,38 @@ CHAINS: dict[str, Callable[[], Chain]] = {
     "inbox-triage-task-report": demo_lane,
 }
 
+
+def _merge_plugins() -> None:
+    """Merge compose-registered plugin workflows with collision protection.
+
+    torture-10 F4: WORKFLOWS.update() used to silently REPLACE core ids — a
+    plugin named "research" (stale/hand-edited registry) hijacked every
+    "research" submit with no warning. A plugin id colliding with a core
+    workflow or chain id is SKIPPED with a loud warning: plugins are only
+    ever user-generated lanes, never core replacements.
+    """
+    for pid in sorted(_PLUGIN_WORKFLOWS):
+        if pid in WORKFLOWS or pid in CHAINS:
+            print(
+                f"warning: plugin workflow id {pid!r} collides with a core "
+                "workflow/chain — SKIPPED (plugin lanes can never replace "
+                "core lanes; torture-10 F4)",
+                file=sys.stderr,
+            )
+            continue
+        WORKFLOWS[pid] = _PLUGIN_WORKFLOWS[pid]
+
+
+_merge_plugins()
+
 # keywords used by the router registries (kept here so server/cli/demo agree)
 _BASE_KEYWORDS: dict[str, list[str]] = {
     "research": ["research", "investigate", "find out", "study"],
     "plan": ["plan", "break down", "decompose", "roadmap", "step by step"],
-    "build": ["build", "implement", "write code", "create the"],
+    "build": ["build", "implement", "write code", "create the app",
+            "create the service", "create the api", "create the cli",
+            "create the function", "create the module", "create the script",
+            "create the package"],
     "build-multi": ["multi-file", "multifile", "multi file", "multiple files", "scaffold", "full project", "project scaffold"],
     "review": ["review", "audit", "check the code", "qa"],
     "review-multi": ["multi review", "comprehensive review", "code review",

@@ -42,7 +42,7 @@ def _gemini_generate(prompt: str, api_key: str | None, timeout: int = 90) -> str
     key = api_key or os.environ.get("GEMINI_API_KEY", "").strip()
     if not key:
         raise WorkflowError(
-            "summarize requires GEMINI_API_KEY — no offline fallback "
+            "summarize requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) — no offline fallback "
             "(nine is model-driven)"
         )
     from google import genai

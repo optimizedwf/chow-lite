@@ -32,7 +32,7 @@ def _require_key(lane: str) -> None:
     """Model-or-fail: every model node checks GEMINI_API_KEY first."""
     if not key_available():
         raise WorkflowError(
-            f"{lane} requires GEMINI_API_KEY (ADK LlmAgent) - no offline "
+            f"{lane} requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - no offline "
             "fallback, nine is model-driven"
         )
 
@@ -73,8 +73,9 @@ def _researcher_adk_node() -> Node:
         _require_key("research-deep (researcher)")
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the workspace (job dir)."""
@@ -84,7 +85,7 @@ def _researcher_adk_node() -> Node:
         _, sources = _read_workspace(job_dir)
         agent = LlmAgent(
             name="researcher",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the deep researcher of nine, an evidence-gated "
                 "agent OS. Produce the first deep research pass on the "
@@ -153,8 +154,9 @@ def _iterate_adk_node() -> Node:
         _require_key("research-deep (iterate)")
 
         from google.adk.agents import LlmAgent
-        from google.adk.models import Gemini
         from google.adk.tools import FunctionTool
+
+        from nine.runtime import llm_provider
 
         def write_file(path: str, content: str) -> str:
             """Write a file into the workspace (job dir)."""
@@ -164,7 +166,7 @@ def _iterate_adk_node() -> Node:
         read, sources = _read_workspace(job_dir)
         agent = LlmAgent(
             name="iterate",
-            model=Gemini(model="gemini-3.6-flash"),
+            model=llm_provider.adk_model(),
             instruction=(
                 "You are the iteration researcher of nine. Revise the "
                 "research using the critique: address EVERY point in "

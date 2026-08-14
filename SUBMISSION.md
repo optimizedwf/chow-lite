@@ -55,8 +55,12 @@ every CLI run ships a full artifact trail.
 ```bash
 git clone https://github.com/optimizedwf/nine
 cd nine && pip install -e .
-python demo.py "plan a weekend trip to Big Sur"    # full loop, SHIP verdict
-nine chain flagship "build a calculator"            # 5-hop chain
+python demo.py "plan a weekend trip to Big Sur"    # full loop, SHIP verdict (no key)
+nine chain demo "respond to a refund question"     # offline demo lane (no key)
+nine chain flagship "build a calculator"           # 5-hop chain — REQUIRES an
+                                                   # API key (set GEMINI_API_KEY,
+                                                   # or NINE_LLM_BACKEND=openai
+                                                   # with a tunnel key)
 ```
 
 ## 4. Architecture diagram

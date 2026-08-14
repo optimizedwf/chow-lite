@@ -14,8 +14,12 @@ the evidence gate refuses to say "done" without proof. Nothing ships until
 it's done **to the nines**.
 
 *Model-agnostic by design: defaults to the latest Gemini Flash, works with
-any provider through Google ADK's model registry — set `GEMINI_MODEL` (and
-the matching API key) to pin a different model.*
+any provider through Google ADK's model registry. `GEMINI_MODEL` drives the
+raw-client nodes (router, responder, summarizer) — the ADK workflow nodes
+are pinned to `gemini-3.6-flash` unless `NINE_LLM_BACKEND=openai` routes
+every model node to an OpenAI-compatible tunnel (`NINE_LLM_MODEL` picks the
+tunnel model, default `deepseek-v4-flash`). See the LLM provider switch
+section below.*
 
 ```
   ROUTE → EXECUTE → VERIFY → LEARN
@@ -120,6 +124,11 @@ pip install -e .            # or: uv pip install -e .
 export GEMINI_API_KEY=...   # required for any output; routing works without it, execution never does
 nine submit "research the history of the typewriter"
 nine chain demo "respond to customer refund question"   # 3-hop demo lane
+                                                       # (demo lane = canned
+                                                       #  boilerplate, by
+                                                       #  design: it proves the
+                                                       #  pipeline, it is NOT in
+                                                       #  production routing)
 nine chain flagship "build a calculator"                # 5-hop full chain
 nine stats
 ```

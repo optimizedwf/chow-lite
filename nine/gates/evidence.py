@@ -98,6 +98,8 @@ def file_nonempty_check(name: str, min_chars: int = 10) -> CheckFn:
     read back as non-trivial text does not SHIP.
     """
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
+        # torture-10 F2: provenance metadata for the stale guard.
+        _check.expected = [name]
         f = Path(workdir) / name
         if f.is_symlink() or not f.exists():
             return False, f"{name} missing — cannot verify"
@@ -116,6 +118,8 @@ def eval_json_check(expected_checks: list[str] | None = None) -> CheckFn:
         {"checks": [{"name": "...", "passed": true, "message": "..."}, ...]}
     """
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
+        # torture-10 F2: provenance metadata for the stale guard.
+        _check.expected = ["EVAL.json"]
         ev = load_eval_json(workdir)
         if ev is None:
             return False, "EVAL.json missing — cannot verify"
@@ -169,4 +173,7 @@ def required_artifact_check(expected: list[str]) -> CheckFn:
             return False, f"missing artifacts: {missing}"
         return True, f"artifacts present: {expected}"
 
+    # torture-10 F2: expose WHICH disk files this check certifies so the
+    # executor's stale-artifact guard can require per-attempt provenance.
+    _check.expected = list(expected)  # torture-10 F2 provenance tag
     return _check
