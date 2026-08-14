@@ -1,49 +1,49 @@
 {
-  "last_cycle": "2026-08-14T13:30:19.819656+00:00",
-  "cycles_run": 17,
-  "last_bench": {
-    "run_id": "oai-r1",
-    "backend": "openai",
-    "model": "deepseek-v4-flash",
-    "fixtures": "001-009",
-    "ship": "9/9",
-    "tests": "84/84",
-    "at": "2026-08-14T03:20:23.511373+00:00"
-  },
-  "bench_runs": [
-    "r0-slice17-baseline",
-    "smoke-slice22-002"
+ "last_cycle": "2026-08-14T19:13:14.334931+00:00",
+ "cycles_run": 18,
+ "last_bench": {
+  "run_id": "oai-r1",
+  "backend": "openai",
+  "model": "deepseek-v4-flash",
+  "fixtures": "001-009",
+  "ship": "9/9",
+  "tests": "84/84",
+  "at": "2026-08-14T03:20:23.511373+00:00"
+ },
+ "bench_runs": [
+  "r0-slice17-baseline",
+  "smoke-slice22-002"
+ ],
+ "est_quota_left": 0,
+ "cooldown_until": "2026-08-14T23:49:00.987038+00:00",
+ "last_score": {
+  "ship": 3,
+  "total": 5,
+  "tests": [
+   34,
+   45
+  ]
+ },
+ "best_score": {
+  "ship": 3,
+  "total": 5,
+  "tests": [
+   34,
+   45
+  ]
+ },
+ "next_target": "Canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-010); DS4 oai-r1 (9/9 SHIP 84/84) interim. Slice 36 (HARDEN): fixture 010 built, T17/T18 LEDGER backfill, round-10 torture spawned (torture-19/20). Fixture specs 011-015 deferred.",
+ "last_error": null,
+ "last_harvest": "2026-08-14T19:13:14.334931+00:00",
+ "last_spawn": {
+  "round": 10,
+  "attempt": 1,
+  "workers": [
+   "torture-19/sub-5c2c2a7c",
+   "torture-20/sub-627a43a4"
   ],
-  "est_quota_left": 0,
-  "cooldown_until": "2026-08-14T23:49:00.987038+00:00",
-  "last_score": {
-    "ship": 3,
-    "total": 5,
-    "tests": [
-      34,
-      45
-    ]
-  },
-  "best_score": {
-    "ship": 3,
-    "total": 5,
-    "tests": [
-      34,
-      45
-    ]
-  },
-  "next_target": "Canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-009); DS4 oai-r1 (9/9 SHIP 84/84) interim. Fixture specs 012-015 deferred. Round-9 (slice 35) fully shipped: T17+T18 16 findings fixed, 447 passed / 5 skipped.",
-  "last_error": null,
-  "last_harvest": "2026-08-14T13:30:19.819656+00:00",
-  "last_spawn": {
-    "round": 8,
-    "attempt": 2,
-    "workers": [
-      "torture-15b/sub-31a0a6f1",
-      "torture-16b/sub-2d34de1c"
-    ],
-    "at": "2026-08-14T06:16:04.703385+00:00",
-    "backend": "opencode-go/deepseek-v4-flash",
-    "note": "attempt 1 (sub-ea01b670/sub-e0c0d771) interrupted by daemon stop; no reports written; deleted"
-  }
+  "at": "2026-08-14T19:13:14.334931+00:00",
+  "backend": "opencode-go/deepseek-v4-flash",
+  "note": "t19 = slice-35-fix edge audit; t20 = workflows/router/CLI/docs/fixtures"
+ }
 }

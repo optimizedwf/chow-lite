@@ -1,0 +1,56 @@
+{
+  "fixture_id": "bugfix-small-010",
+  "lab": "chow-agent-eval-lab",
+  "version": "0.1.0",
+  "category": "robustness",
+  "difficulty": "easy",
+  "dimensions": [
+    {
+      "id": "cancel_mid_run",
+      "label": "Cooperative Cancel Mid-Run",
+      "weight": 0.35,
+      "description": "run returns ('cancelled', n) with the exact completed count and performs no further work",
+      "pass_if": "self-cancel-in-step and next-step-would-crash cases return the exact partial count and never execute the post-cancel step"
+    },
+    {
+      "id": "no_work_after_cancel",
+      "label": "No Work After Cancel",
+      "weight": 0.15,
+      "description": "cancel() before run() returns ('cancelled', 0) immediately with zero steps executed",
+      "pass_if": "cancel-before-run test returns ('cancelled', 0) and the crashing step after cancel is never invoked"
+    },
+    {
+      "id": "idempotent",
+      "label": "Idempotent Cancel",
+      "weight": 0.2,
+      "description": "cancel() twice (or after completion) never raises and never corrupts state",
+      "pass_if": "double-cancel and cancel-after-completion tests pass without RuntimeError"
+    },
+    {
+      "id": "thread_safety",
+      "label": "Thread Safety",
+      "weight": 0.2,
+      "description": "a concurrent cancel() during a running run() never lets a step start after the flag is set",
+      "pass_if": "two-thread test (run thread with slow steps, main thread cancels) ends with exactly the steps started before cancel"
+    },
+    {
+      "id": "style",
+      "label": "Style & Minimality",
+      "weight": 0.1,
+      "description": "threading.Event, standard library only, signature unchanged",
+      "pass_if": "uses only threading + stdlib; no third-party deps; no lock/flag bookkeeping beyond Event"
+    }
+  ],
+  "verdict_thresholds": {
+    "pass": 0.7,
+    "partial": 0.4,
+    "fail": 0.0
+  },
+  "eval_criteria": [
+    "cancel_mid_run",
+    "no_work_after_cancel",
+    "idempotent",
+    "thread_safety",
+    "style"
+  ]
+}
