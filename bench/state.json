@@ -1,7 +1,15 @@
 {
- "last_cycle": "2026-08-14T01:37:21.281510+00:00",
- "cycles_run": 12,
- "last_bench": "2026-08-12T23:49:00.987037+00:00",
+ "last_cycle": "2026-08-14T03:20:23.511373+00:00",
+ "cycles_run": 13,
+ "last_bench": {
+  "run_id": "oai-r1",
+  "backend": "openai",
+  "model": "deepseek-v4-flash",
+  "fixtures": "001-009",
+  "ship": "9/9",
+  "tests": "84/84",
+  "at": "2026-08-14T03:20:23.511373+00:00"
+ },
  "bench_runs": [
   "r0-slice17-baseline",
   "smoke-slice22-002"
@@ -24,7 +32,7 @@
    45
   ]
  },
- "next_target": "HARDEN: round-5 torture harvest DONE (t9+t10: 15 findings, 14 fixed + 1 dup @ slice 30). Workers torture9/torture10 active or idle - verify + delete. Next: BENCH after cooldown 2026-08-14T23:49 (fixtures 001-009, range now 1..9) OR early BENCH via NINE_LLM_BACKEND=openai (slice-28/30 provider switch now fully honest: adk_model() covers all ADK nodes, tool/system messages correct, bench_nine key backend-aware).",
+ "next_target": "BENCH-done (early openai sweep oai-r1: 9/9 SHIP 84/84). Canonical GEMINI bench after cooldown 2026-08-14T23:49 + est_quota_left>=30 (fixtures 001-009, range 1..9). HARDEN if the Gemini run surfaces model-specific gaps; else loop continues: next torture round (e.g. bench_nine/gates/ledger/recover surfaces) or slice 31 follow-ups.",
  "last_error": null,
  "last_harvest": "2026-08-14T01:37:21.281510+00:00"
 }
