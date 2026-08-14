@@ -72,7 +72,14 @@ def cmd_memory(args) -> int:
     """Semantic memory: search distilled hop summaries / list recent entries."""
     from nine.memory.graph import get_memory_graph
 
-    mem = get_memory_graph(path=getattr(args, "memory", "jobs/memory.jsonl"))
+    try:
+        # torture-14 F7: a bad --memory path raw-tracebacked FileExistsError
+        # from LocalMemoryGraph.__init__ mkdir (T12-F8 only wrapped the
+        # ledger). One clean line.
+        mem = get_memory_graph(path=getattr(args, "memory", "jobs/memory.jsonl"))
+    except OSError as e:
+        print(f"error: cannot open memory store: {e}", file=sys.stderr)
+        return 1
     if mem is None:
         print("memory disabled (NINE_MEMORY=none)", file=sys.stderr)
         return 1
@@ -85,6 +92,13 @@ def cmd_memory(args) -> int:
             print(f"no memory entries match '{args.query}'")
             return 0
         for h in hits:
+            # torture-14 F9: a valid-JSON wrong-shape record (hand-edited or
+            # version-skewed store) must not KeyError-crash search — skip it.
+            if not (isinstance(h, dict)
+                    and all(k in h for k in ("memory_id", "hop_id",
+                                             "artifact_name", "verdict",
+                                             "created_at", "summary"))):
+                continue
             print(f"{h['memory_id']}  [{h['hop_id']}] {h['artifact_name']}  "
                   f"verdict={h['verdict']}  {h['created_at'][:19]}")
             print(f"    {h['summary'][:160].replace(chr(10), ' ')}")
@@ -116,6 +130,12 @@ def cmd_memory(args) -> int:
         print("memory is empty (run a chain to record hop summaries)")
         return 0
     for h in rows[-10:][::-1]:
+        # torture-14 F9: same shape guard as search — a wrong-shape record
+        # must not KeyError-crash `nine memory list`.
+        if not (isinstance(h, dict)
+                and all(k in h for k in ("memory_id", "chain_id", "hop_id",
+                                         "artifact_name", "verdict"))):
+            continue
         print(f"{h['memory_id']}  [{h['chain_id']}::{h['hop_id']}] "
               f"{h['artifact_name']}  verdict={h['verdict']}")
     print(f"\n{len(rows)} memory entries (last 10 shown)")
@@ -145,8 +165,16 @@ def cmd_chain(args) -> int:
         print(f"error: {e}", file=sys.stderr)
         return 1
     chain = chains[args.chain_id]()
-    ex = ChainExecutor(ledger, workdir=getattr(args, "workdir", "work"), learner=_learner(args),
-                       memory=get_memory_graph(path=args.memory))
+    try:
+        # torture-14 F7: learn/memory store construction on a bad --events/
+        # --memory path raw-tracebacked FileExistsError (T12-F8 only wrapped
+        # the ledger). One clean line for the learn + memory stores too.
+        ex = ChainExecutor(ledger, workdir=getattr(args, "workdir", "work"),
+                           learner=_learner(args),
+                           memory=get_memory_graph(path=args.memory))
+    except OSError as e:
+        print(f"error: cannot open learn/memory store: {e}", file=sys.stderr)
+        return 1
 
     # seed the chain job dir with the task input file
     job = ledger.submit(chain.id, input={"task": args.task})
@@ -396,7 +424,14 @@ def cmd_recover(args) -> int:
     # corrupted output as a verified job. Refuse loudly — the true task is
     # unrecoverable after a workdir hiccup, and the job stays blocked/failed
     # so the operator can restore the workdir and try again.
-    job = ledger.get(args.job_id)
+    try:
+        # torture-13 F1: ledger.get raises LedgerError on an unknown id —
+        # outside any try it raw-tracebacked (the slice-32 F8 clean-error
+        # claim skipped recover's job-get path). One clean line instead.
+        job = ledger.get(args.job_id)
+    except LedgerError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
 
     # torture-12 F5: recover must not tombstone jobs it cannot re-execute.
     # A chain HOP job's workflow_id is "<chain-id>::<hop-id>" — not a
@@ -510,7 +545,13 @@ def _print_candidate(c) -> None:
 
 def cmd_learn(args) -> int:
     """LEARN loop: events, candidates, and regression-gated apply/revert."""
-    learner = _learner(args)
+    try:
+        # torture-14 F7: RouteEventStore.__init__ mkdir on a bad --events
+        # path raw-tracebacked FileExistsError. One clean line.
+        learner = _learner(args)
+    except OSError as e:
+        print(f"error: cannot open event store: {e}", file=sys.stderr)
+        return 1
     action = args.action
 
     if action == "events":
@@ -568,10 +609,27 @@ def _apply_candidate(learner, candidate_id: str) -> int:
               "edit nine/router/catalog.json manually, then nine learn apply")
         return 2
 
-    from nine.registry import load_catalog, save_catalog
+    from nine.registry import NON_ROUTABLE_IDS, load_catalog, save_catalog
+
+    if wf_id in NON_ROUTABLE_IDS:
+        # torture-14 F1: the LEARN loop must never re-expose the canned demo
+        # lane to production routing — T5-F2's keyword ban is enforceable at
+        # the merge, but apply() is the ONE file path that could re-add it.
+        print(f"error: cannot apply a keyword for non-routable workflow id "
+              f"'{wf_id}' (demo lane is never reachable from the router)",
+              file=sys.stderr)
+        return 1
 
     catalog = load_catalog()
     current = catalog.setdefault("keyword_overrides", {}).setdefault(wf_id, [])
+    if not isinstance(current, list):
+        # torture-14 F8: a valid-JSON wrong-shape catalog entry (string
+        # instead of list) raw-tracebacked 'str' object has no attribute
+        # 'append'. Refuse with the established shape-guard warning; never
+        # mutate a corrupt bucket.
+        print(f"error: catalog keyword_overrides[{wf_id!r}] is not a list; "
+              "fix nine/router/catalog.json before applying", file=sys.stderr)
+        return 1
     if kw in current:
         print(f"keyword '{kw}' already in catalog for {wf_id} — nothing to do")
         learner.cands.update_status(candidate_id, "applied")
@@ -618,6 +676,12 @@ def _revert_candidate(learner, candidate_id: str) -> int:
     catalog = load_catalog()
     overrides = catalog.get("keyword_overrides", {})
     bucket = overrides.get(wf_id, [])
+    if not isinstance(bucket, list):
+        # torture-14 F8: same shape guard as apply — a string bucket must
+        # not crash revert with AttributeError.
+        print(f"error: catalog keyword_overrides[{wf_id!r}] is not a list; "
+              "fix nine/router/catalog.json before reverting", file=sys.stderr)
+        return 1
     if kw not in bucket:
         print(f"keyword '{kw}' not present in catalog for {wf_id} — nothing to revert")
         learner.cands.update_status(candidate_id, "pending")

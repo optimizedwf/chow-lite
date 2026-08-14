@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-14T03:53:11.801246+00:00",
- "cycles_run": 14,
+ "last_cycle": "2026-08-14T04:27:45.513630+00:00",
+ "cycles_run": 15,
  "last_bench": {
   "run_id": "oai-r1",
   "backend": "openai",
@@ -32,16 +32,16 @@
    45
   ]
  },
- "next_target": "HARDEN round-6 DONE (t11+t12: 16 findings + 1 bonus, all fixed @ slice 32, 25 tests). Workers torture11/torture12 done - delete. Next: canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-009; early openai sweep already 9/9 SHIP 84/84 @ oai-r1; bench now exits non-zero on <100% + archives per-run). Else next torture round.",
+ "next_target": "Slice 33 DONE (round-7 harvest: 15 findings all fixed @ 54a0c83+; 409 tests). Workers torture-13/torture-14 done - delete. Canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-009; early openai sweep 9/9 SHIP 84/84 @ oai-r1; bench now archives every run incl. r0). Else next torture round or build fixture specs 012-015.",
  "last_error": null,
- "last_harvest": "2026-08-14T03:53:11.801246+00:00",
+ "last_harvest": "2026-08-14T04:27:45.513630+00:00",
  "last_spawn": {
-  "round": 6,
+  "round": 7,
   "workers": [
-   "torture-11/sub-2de7aa07",
-   "torture-12/sub-b114f4ab"
+   "torture-13/sub-4966d516",
+   "torture-14/sub-54172979"
   ],
-  "at": "2026-08-14T03:21:24.195081+00:00",
+  "at": "2026-08-14T03:55:03.311120+00:00",
   "backend": "opencode-go/deepseek-v4-flash"
  }
 }

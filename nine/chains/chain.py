@@ -319,12 +319,35 @@ class ChainExecutor:
         distill then store, never raw conversation)."""
         from nine.router.classifier import redact
 
-        handoff = job_dir / "HANDOFF.md"
-        summary = (
-            handoff.read_text(encoding="utf-8", errors="replace")[:2000]
-            if handoff.exists()
-            else ""
-        )
+        # torture-14 F2: the memory write-path contract is "distill then
+        # store, never raw". This used to stamp the plan hop's RAW HANDOFF.md
+        # (unredacted, up to 2000 chars) as the summary for EVERY artifact of
+        # EVERY hop — credentials the model echoed from the raw task landed
+        # verbatim in memory.jsonl (Firestore on Cloud Run), and build/review/
+        # teach entries misattributed the plan handoff as their own content.
+        # Now: redact() every summary and use the ARTIFACT's own content head
+        # (falling back to the plan handoff only for the handoff artifact
+        # itself / when the artifact file is gone).
+        def _artifact_summary(name: str, size: int) -> str:
+            src = job_dir / name
+            if src.exists() and not src.is_symlink():
+                try:
+                    head = src.read_text(encoding="utf-8",
+                                         errors="replace")[:400]
+                except OSError:
+                    head = ""
+                if head.strip():
+                    return redact(head)
+            handoff = job_dir / "HANDOFF.md"
+            if handoff.exists() and not handoff.is_symlink():
+                try:
+                    head = handoff.read_text(encoding="utf-8",
+                                             errors="replace")[:400]
+                except OSError:
+                    head = ""
+                if head.strip():
+                    return redact(head)
+            return redact(name)
         task_redacted = redact(str(inputs.get("task", "")))[:200]
         for art in self.ledger.get(hop_job.job_id).artifacts:
             self.memory.save_artifact_summary(
@@ -336,7 +359,7 @@ class ChainExecutor:
                 kind=art.get("kind", "document"),
                 sha256=art.get("sha256", ""),
                 size=art.get("size", 0),
-                summary=summary or art["name"],
+                summary=_artifact_summary(art["name"], art.get("size", 0)),
                 task_redacted=task_redacted,
                 verdict=verdict,
             )

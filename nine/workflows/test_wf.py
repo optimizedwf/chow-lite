@@ -124,9 +124,9 @@ def _build_test_runner_command() -> str:
         "elif [ $rc -eq 0 ]; then "
         '  echo \'{"checks":[{"name":"tests-pass","passed":true,"message":"all tests passed"}],"exit_code":0}\' > EVAL.json; '
         "else "
-        "  failed=$(grep -c 'FAILED' test_output.log 2>/dev/null) || true; "
+        "  failed=$(grep -oE '[0-9]+ failed' test_output.log | tail -1 | grep -oE '[0-9]+' || true); "
         "  failed=${failed:-0}; "
-        "  passed=$(grep -c ' PASSED' test_output.log 2>/dev/null) || true; "
+        "  passed=$(grep -oE '[0-9]+ passed' test_output.log | tail -1 | grep -oE '[0-9]+' || true); "
         "  passed=${passed:-0}; "
         "  printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":false,"
         "\"message\":\"%s test(s) failed, %s passed\"}],\"exit_code\":%s}'"

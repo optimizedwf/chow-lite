@@ -34,6 +34,12 @@ from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
 
+class LedgerUnavailable(Exception):
+    """Raised when the durable ledger cannot be constructed (bad data dir,
+    unwritable path). The API returns a clean JSON 502 with the reason —
+    never a raw 500 (torture-14 F10)."""
+
+
 class BodyLimitMiddleware:
     """ASGI-level body cap for mutating routes (torture-7 F6).
 
@@ -118,6 +124,14 @@ async def _workflow_error_handler(request: Request, exc: WorkflowError) -> JSONR
     the reason — never a fabricated answer."""
     return JSONResponse({"detail": str(exc)}, status_code=502)
 
+
+@app.exception_handler(LedgerUnavailable)
+async def _ledger_unavailable_handler(request: Request,
+                                      exc: LedgerUnavailable) -> JSONResponse:
+    """A misconfigured NINE_DATA_DIR must produce one clean JSON error with
+    the reason — not opaque 500s on every endpoint (torture-14 F10)."""
+    return JSONResponse({"detail": str(exc)}, status_code=502)
+
 # Cloud Run serves a read-only filesystem except /tmp; K_SERVICE is set by
 # Cloud Run so data always lands on writable scratch. Override via NINE_DATA_DIR.
 _RUNTIME = Path(os.environ.get(
@@ -165,7 +179,10 @@ def get_ledger():
     if _ledger_failed:
         from nine.ledger.ledger import JSONLLedger
 
-        return JSONLLedger(LEDGER_PATH)
+        try:
+            return JSONLLedger(LEDGER_PATH)
+        except LedgerError as e:
+            raise LedgerUnavailable(str(e)) from e
     try:
         from google.cloud import firestore  # noqa: F401
 
@@ -185,7 +202,10 @@ def get_ledger():
         )
         from nine.ledger.ledger import JSONLLedger
 
-        return JSONLLedger(LEDGER_PATH)
+        try:
+            return JSONLLedger(LEDGER_PATH)
+        except LedgerError as e:
+            raise LedgerUnavailable(str(e)) from e
 
 
 class _LazyFallbackLedger:
@@ -212,6 +232,7 @@ class _LazyFallbackLedger:
         primary_attr = getattr(self._primary, name)
 
         def wrapper(*args, **kwargs):
+            global _ledger_failed  # noqa: PLW0603
             try:
                 return primary_attr(*args, **kwargs)
             except Exception as exc:  # noqa: BLE001 - switch to JSONL on any query failure
@@ -222,7 +243,18 @@ class _LazyFallbackLedger:
                         f"ledger at {LEDGER_PATH}. Jobs will NOT survive a "
                         "container restart.", flush=True
                     )
-                    self._fallback = JSONLLedger(LEDGER_PATH)
+                    try:
+                        self._fallback = JSONLLedger(LEDGER_PATH)
+                    except LedgerError as e:
+                        # torture-14 F10: an unusable fallback path must not
+                        # leave the API retrying Firestore per request — latch
+                        # the failure and surface one clean JSON 502.
+                        _ledger_failed = True
+                        raise LedgerUnavailable(str(e)) from e
+                # torture-14 F10: only fallback CONSTRUCTION failure is a
+                # misconfig (clean 502 + latch). A LedgerError from a
+                # fallback QUERY (unknown job id, etc.) is legitimate and
+                # propagates to the endpoint's own handling (404).
                 return getattr(self._fallback, name)(*args, **kwargs)
 
         return wrapper
@@ -349,7 +381,17 @@ def submit(payload: SubmitRequest):
             "job_id": job.job_id,
             "status": job.status,
             "final": res["final"],
-            "verdict": res.get("verdict", {}),
+            # torture-14 F6: ChainExecutor.execute returns no 'verdict' key,
+            # so the API used to claim 'verdict: {}' on every SHIPPED chain
+            # while the container job carried verdicts: []. Surface the
+            # per-hop evidence: the chain's final verdict + every hop's
+            # gate result (per-hop verdicts live on the hop jobs, which the
+            # API never links — this is the only per-hop view a consumer
+            # gets).
+            "verdict": {
+                "verdict": res["final"],
+                "hops": res.get("hop_results", {}),
+            },
             "decision": decision.to_dict(),
         }
 

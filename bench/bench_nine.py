@@ -21,6 +21,7 @@ Secrets policy: GEMINI_API_KEY is read from ~/.agent-vault/keys/gemini.key
 from __future__ import annotations
 
 import ast
+import builtins
 import json
 import os
 import re
@@ -115,6 +116,33 @@ def _slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     return (s or "case")[:48]
 
+def _runner_constants(runner_src: str) -> dict[str, ast.Constant]:
+    """Module-level literal constants in the runner (inline-able values).
+
+    torture-14 F5: the converted pytest suite only imports names from
+    `solution`; a runner-local constant referenced by a test expression
+    (EXPECTED_SUM = 5) would NameError at RUN time. Names that resolve to a
+    module-level literal are inlined into the converted tests.
+    """
+    tree = ast.parse(runner_src)
+    consts: dict[str, ast.Constant] = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    consts[t.id] = node.value
+    return consts
+
+
+def _imported_name_set(runner_src: str) -> set[str]:
+    tree = ast.parse(runner_src)
+    names: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, ast.ImportFrom) and (node.module or "").endswith("implementation"):
+            names.update(a.name for a in node.names if a.name != "*")
+    return names
+
+
 def convert_to_pytest(runner_src: str) -> str:
     """Convert the fixture runner's test(...)/test_raises(...) calls to pytest funcs."""
     tree = ast.parse(runner_src)
@@ -143,24 +171,87 @@ def convert_to_pytest(runner_src: str) -> str:
 
     imports = _imported_names(runner_src)
     lines = ["import pytest", "from solution import " + ", ".join(imports), ""]
+    imported = _imported_name_set(runner_src)
+    consts = _runner_constants(runner_src)
+    # torture-14 F5: converted tests run with ONLY solution imports — any
+    # other Load name (runner-local helper/constant) is dangling. Literal
+    # constants are inlined; anything else fails conversion LOUDLY (a
+    # NameError-at-run-time suite would send the debug fix-loop chasing a
+    # bug in the seeded test file the model cannot edit).
+    builtin_names = set(dir(builtins)) | {"pytest"}
+    dangling: list[str] = []
+
+    def _local_names(node: ast.AST) -> set[str]:
+        """Names BOUND inside the expression (lambda params, comprehension
+        targets, walrus) — they are not dangling module names."""
+        bound: set[str] = set()
+
+        def visit(n: ast.AST) -> None:
+            if isinstance(n, ast.Lambda):
+                a = n.args
+                for arg in (a.posonlyargs + a.args + a.kwonlyargs):
+                    bound.add(arg.arg)
+                if a.vararg:
+                    bound.add(a.vararg.arg)
+                if a.kwarg:
+                    bound.add(a.kwarg.arg)
+            elif isinstance(n, ast.comprehension):
+                target = n.target
+                if isinstance(target, ast.Name):
+                    bound.add(target.id)
+            elif isinstance(n, ast.NamedExpr) and isinstance(n.target, ast.Name):
+                bound.add(n.target.id)
+            for child in ast.iter_child_nodes(n):
+                visit(child)
+
+        visit(node)
+        return {b for b in bound if b}
+
+    class _InlineDangling(ast.NodeTransformer):
+        def __init__(self, allowed: set[str]) -> None:
+            self.allowed = allowed
+
+        def visit_Name(self, node: ast.Name) -> ast.AST:
+            if isinstance(node.ctx, ast.Load) and node.id not in self.allowed:
+                if node.id in consts:
+                    return ast.copy_location(consts[node.id], node)
+                dangling.append(node.id)
+            return node
+
     for idx, (kind, call) in enumerate(calls, start=1):
         args = call.args
         name = ast.literal_eval(args[0]) if args else f"case_{idx}"
-        expr_src = ast.unparse(args[1])
         # a lambda arg means the runner calls it; otherwise it is an eager call
         is_lambda = isinstance(args[1], ast.Lambda)
-        if is_lambda:
-            expr_src = ast.unparse(args[1].body)  # strip the lambda wrapper
+        expr = args[1].body if is_lambda else args[1]
+        expr = _InlineDangling(imported | builtin_names
+                               | _local_names(expr)).visit(expr)
+        expr_src = ast.unparse(expr)
         defname = f"test_{idx:02d}_{_slug(name)}"
         lines.append(f"def {defname}():")
         if kind == "test":
-            expected = ast.unparse(args[2])
-            lines.append(f"    assert {expr_src} == {expected}")
+            expected_ast = _InlineDangling(
+                imported | builtin_names
+                | _local_names(args[2])).visit(args[2])
+            lines.append(f"    assert {expr_src} == {ast.unparse(expected_ast)}")
         else:  # test_raises
-            exc = ast.unparse(args[2]) if len(args) > 2 else "ValueError"
-            lines.append(f"    with pytest.raises({exc}):")
+            if len(args) > 2:
+                exc_ast = _InlineDangling(
+                    imported | builtin_names
+                    | _local_names(args[2])).visit(args[2])
+                exc_src = ast.unparse(exc_ast)
+            else:
+                exc_src = "ValueError"
+            lines.append(f"    with pytest.raises({exc_src}):")
             lines.append(f"        {expr_src}")
         lines.append("")
+    if dangling:
+        raise RuntimeError(
+            "converted tests reference names not importable from "
+            f"'solution' and not runner constants: {sorted(set(dangling))} — "
+            "move helpers/constants into the implementation or inline them "
+            "in the runner (convert_to_pytest will not emit a suite that "
+            "NameErrors at run time)")
     return "\n".join(lines)
 
 # -------------------------------------------------------------- job seeding ---
@@ -248,12 +339,49 @@ def run_submit(fixture_dir: Path, workdir: Path, ledger_path: Path) -> tuple[dic
                 os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+        # torture-13 F2: killpg(proc.pid) reaches only the nine CLI — the
+        # runtime spawns every bash node in its OWN process group
+        # (start_new_session), and the CLI's own node-timeout cleanup dies
+        # with it. Kill the recorded node groups too, or the detached pytest
+        # tree keeps writing into the abandoned job dir.
+        _kill_node_groups(workdir)
         out, err = proc.communicate()
         timed_out = True
     finally:
         stop.set()
         t.join(timeout=2.0)
     return parse_submit_output(out, err, timed_out), out, err
+
+
+def _kill_node_groups(workdir: Path) -> int:
+    """SIGTERM->SIGKILL every runtime bash-node process group recorded in
+    the fixture run dir (torture-13 F2).
+
+    The runtime appends each detached bash node's group-leader pid to
+    .nine-node-pids in the job dir (never a manifest entry). After a
+    per-fixture timeout kills the nine CLI, these groups are orphaned —
+    read the pid files and kill each group. Best-effort: a pid that is
+    already gone is fine.
+    """
+    killed = 0
+    for pid_file in workdir.rglob(".nine-node-pids"):
+        try:
+            pids = [int(line) for line in pid_file.read_text().split()
+                    if line.strip().isdigit()]
+        except OSError:
+            continue
+        for pid in pids:
+            try:
+                os.killpg(pid, signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            try:
+                time.sleep(0.2)
+                os.killpg(pid, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError, OSError):
+                pass
+            killed += 1
+    return killed
 
 def parse_submit_output(stdout: str, stderr: str, timed_out: bool) -> dict:
     info = {
@@ -432,7 +560,10 @@ def main() -> int:
     (BENCH_ROOT / f"results-{TASK_MODE}.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     # torture-11 F6: keep a stable per-run scorecard (results.json is the
     # live file, overwritten by the NEXT run) — regression archives.
-    if RUNID and RUNID != "r0":
+    # torture-13 F5: the documented default invocation (RUNID="r0") must
+    # archive too, or every default run silently destroys the previous
+    # scoreboard with no comparison source.
+    if RUNID:
         shutil.copy(BENCH_ROOT / "results.json",
                     BENCH_ROOT / f"results-{RUNID}.json")
     print("\n=== RESULTS ===")

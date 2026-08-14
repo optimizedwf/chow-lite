@@ -109,6 +109,16 @@ class Workflow:
         return order
 
 
+# torture-14 F4: runtime cache/pytest byproducts are NOT job evidence —
+# certifying .pytest_cache/*, __pycache__/*.pyc, or test_output.log as
+# shipped artifacts would pollute `nine artifacts`, memory lineage, and
+# evidence replay. .nine-node-pids is the runtime's own process-group
+# tracker (torture-13 F2) — also never evidence.
+_MANIFEST_IGNORE_DIRS = (".pytest_cache", "__pycache__", ".git")
+_MANIFEST_IGNORE_SUFFIXES = (".pyc", ".log")
+_MANIFEST_IGNORE_NAMES = (".nine-node-pids",)
+
+
 def _manifest_files(job_dir: Path) -> list[tuple[str, Path]]:
     """Recursive file inventory: (relative name, path), symlinks + dirs skipped.
 
@@ -117,14 +127,36 @@ def _manifest_files(job_dir: Path) -> list[tuple[str, Path]]:
     (build-multi); top-level-only tracking let stale attempt-1 subdir
     content certify a SHIP. Relative names disambiguate same-named files.
     rglob does not descend into symlinked dirs; symlinked files are skipped
-    here anyway (never evidence).
+    here anyway (never evidence). torture-14 F4: pytest cache/pyc/log
+    byproducts and the runtime's own .nine-node-pids tracker are excluded.
     """
     out: list[tuple[str, Path]] = []
     for p in sorted(job_dir.rglob("*")):
         if p.is_symlink() or not p.is_file():
             continue
-        out.append((p.relative_to(job_dir).as_posix(), p))
+        rel = p.relative_to(job_dir).as_posix()
+        parts = rel.split("/")
+        if any(part in _MANIFEST_IGNORE_DIRS for part in parts):
+            continue
+        if rel in _MANIFEST_IGNORE_NAMES or p.suffix in _MANIFEST_IGNORE_SUFFIXES:
+            continue
+        out.append((rel, p))
     return out
+
+
+def _record_node_pid(job_dir: Path, pid: int) -> None:
+    """Best-effort append of a bash-node process-group leader pid.
+
+    The pid file (.nine-node-pids, excluded from manifests) lets an external
+    supervisor (bench_nine timeout cleanup) kill detached node groups after
+    the CLI itself is dead (torture-13 F2). Purely a cleanup aid — failure
+    to write it never affects job correctness.
+    """
+    try:
+        with open(job_dir / ".nine-node-pids", "a", encoding="utf-8") as fh:
+            fh.write(f"{pid}\n")
+    except OSError:
+        pass
 
 
 class WorkflowExecutor:
@@ -154,8 +186,12 @@ class WorkflowExecutor:
         # ATTEMPT on the same executor; a local variable would re-snapshot
         # after attempt 1 wrote files, turning attempt-1 evidence into
         # 'run inputs' for attempt 2 (stale SHIP). Key by job_dir so the
-        # same executor never confuses two jobs.
-        self._first_attempt_before: dict[str, set[str]] = {}
+        # same executor never confuses two jobs. Value = rel name -> sha256
+        # of the attempt-1 content (torture-13 F3: the run-input exemption
+        # only holds while the file is UNCHANGED — a run that modifies an
+        # input turns it into run-produced evidence that must be
+        # re-registered in the shipping attempt).
+        self._first_attempt_before: dict[str, dict[str, str]] = {}
 
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
@@ -223,6 +259,13 @@ class WorkflowExecutor:
                 stdout=sp.PIPE, stderr=sp.PIPE, text=True,
                 env=bash_env, start_new_session=True,
             )
+            # torture-13 F2: the node runs in its OWN session/process group
+            # (start_new_session). When an EXTERNAL killer (bench per-fixture
+            # timeout) kills the nine CLI, the CLI's own timeout handler —
+            # which would killpg the node group — dies with it, and the
+            # detached node tree keeps writing into the abandoned job dir.
+            # Record the group leader so the external killer can clean up.
+            _record_node_pid(job_dir, proc.pid)
             try:
                 out, err = proc.communicate(timeout=node.timeout_seconds)
             except sp.TimeoutExpired:
@@ -375,8 +418,9 @@ class WorkflowExecutor:
             # (torture findings T1-F5/T2-F4: duplicate + misattributed
             # manifest entries). FIX reruns likewise only re-register files
             # this attempt actually rewrote.
+            before_files = _manifest_files(job_dir)
             before: dict[str, tuple[int, int]] = {}
-            for rel, p in _manifest_files(job_dir):
+            for rel, p in before_files:
                 # torture-8 F1: symlinks are NEVER evidence - a symlink to an
                 # outside file must not even enter the snapshot (the helper
                 # skips them).
@@ -386,10 +430,17 @@ class WorkflowExecutor:
             if key not in self._first_attempt_before:
                 # attempt-1 snapshot = run inputs for the WHOLE job (torture-12
                 # F1: persisted per job_dir across execute() calls so chain
-                # hop attempts share it).
-                self._first_attempt_before[key] = set(before.keys())
+                # hop attempts share it). torture-13 F3: record the CONTENT
+                # digest too — the exemption for a run input only holds while
+                # the file is unchanged; a run that modifies an input makes it
+                # run-produced evidence (must be registered in the shipping
+                # attempt's manifest).
+                self._first_attempt_before[key] = {
+                    rel: self._hash(p.read_bytes()) for rel, p in before_files
+                }
 
             seen: dict[str, str] = {}  # reset per attempt: reruns re-register the full dir
+            seen_idx: dict[str, int] = {}  # rel -> position in artifacts (same-name replace)
             self.ledger.update(job)
 
             artifacts: list[dict[str, Any]] = []
@@ -449,6 +500,41 @@ class WorkflowExecutor:
                 # Recursive (torture-11 F5): subdir files (reviews/*.md,
                 # solution/*.py) are registered with RELATIVE names so gates
                 # certifying them can prove per-attempt provenance.
+                # torture-14 F4: two nodes writing the same name within one
+                # attempt (flagship build node + self-test node both write
+                # EVAL.json) used to produce two conflicting entries — the
+                # last writer is the final disk state the gate certifies, so
+                # a same-name different-hash registration REPLACES the
+                # earlier entry instead of appending a duplicate.
+                def _register(name: str, path: str, kind: str, h: str,
+                              size: int, produced_by: str,
+                              seen=seen, seen_idx=seen_idx,
+                              artifacts=artifacts) -> None:
+                    # B023-safe: the per-attempt dicts are bound as defaults
+                    # (the closure is redefined per node; the objects are the
+                    # per-attempt mutable state, mutated in place).
+                    artifact = {
+                        "name": name,
+                        "path": path,
+                        "kind": kind,
+                        "sha256": h,
+                        "size": size,
+                        "produced_by": produced_by,
+                        "produced_at": job.updated_at,
+                    }
+                    if seen.get(name) == h:
+                        return  # same content already registered
+                    if name in seen_idx:
+                        idx = seen_idx[name]
+                        artifacts[idx] = artifact
+                        job.artifacts[idx] = artifact
+                        seen[name] = h
+                        return
+                    seen[name] = h
+                    seen_idx[name] = len(artifacts)
+                    artifacts.append(artifact)
+                    job.add_artifact(artifact)
+
                 for rel, p in _manifest_files(job_dir):
                     # torture-8 F1: is_file()/stat()/read_bytes() follow
                     # symlinks, so a symlink to a REAL outside file would be
@@ -459,9 +545,6 @@ class WorkflowExecutor:
                         continue  # pre-existing, untouched this attempt
                     data = p.read_bytes()
                     h = self._hash(data)
-                    if seen.get(rel) == h:
-                        continue
-                    seen[rel] = h
                     kind = "document"
                     if p.suffix in (".py", ".js", ".ts", ".go", ".sh", ".json", ".yaml", ".yml"):
                         kind = "code"
@@ -469,17 +552,7 @@ class WorkflowExecutor:
                         kind = "media"
                     elif p.suffix in (".csv", ".jsonl", ".parquet", ".db", ".sqlite"):
                         kind = "data"
-                    artifact = {
-                        "name": rel,
-                        "path": str(p),
-                        "kind": kind,
-                        "sha256": h,
-                        "size": len(data),
-                        "produced_by": nid,
-                        "produced_at": job.updated_at,
-                    }
-                    artifacts.append(artifact)
-                    job.add_artifact(artifact)
+                    _register(rel, str(p), kind, h, len(data), nid)
 
                 # explicit artifact paths in node output (tool nodes)
                 for key in ("artifact", "artifact_path"):
@@ -490,27 +563,20 @@ class WorkflowExecutor:
                         # is a symlink certifies OUTSIDE content - skip it.
                         if p.is_symlink():
                             continue
-                        if p.exists() and seen.get(p.name) != self._hash(p.read_bytes()):
+                        if p.exists():
                             data = p.read_bytes()
                             h = self._hash(data)
                             # relative name when the tool certifies a file
-                            # inside the job dir (subdir artifacts included)
+                            # inside the job dir (subdir artifacts included);
+                            # dedupe on the RELATIVE key, not the basename
+                            # (torture-13 F4: a subdir artifact_path was
+                            # registered twice because seen was keyed by
+                            # p.name while the manifest is relative).
                             try:
                                 rel = p.relative_to(job_dir).as_posix()
                             except ValueError:
                                 rel = p.name
-                            seen[rel] = h
-                            artifact = {
-                                "name": rel,
-                                "path": str(p),
-                                "kind": "other",
-                                "sha256": h,
-                                "size": len(data),
-                                "produced_by": nid,
-                                "produced_at": job.updated_at,
-                            }
-                            artifacts.append(artifact)
-                            job.add_artifact(artifact)
+                            _register(rel, str(p), "other", h, len(data), nid)
 
             if self._cancelled(job):
                 return self._abort_cancelled(
@@ -539,7 +605,8 @@ class WorkflowExecutor:
             # directory artifacts (solution/ - certified by content).
             if verdict["verdict"] == "SHIP":
                 registered = {a["name"] for a in artifacts}
-                inputs_ok = self._first_attempt_before.get(str(job_dir)) or set()
+                snap = self._first_attempt_before.get(str(job_dir)) or {}
+                inputs_ok = set(snap)
                 stale: list[str] = []
                 for _name, fn in self.gate.checks.items():
                     for expected_name in (getattr(fn, "expected", None) or []):
@@ -550,14 +617,28 @@ class WorkflowExecutor:
                             # directory artifact (build-multi solution/):
                             # certified by its CONTENT - stale unless a file
                             # under it was produced this attempt (torture-11
-                            # F5), unless it was a run input from attempt 1.
+                            # F5), unless it was a run input from attempt 1
+                            # (torture-13 F3: only while UNCHANGED since the
+                            # attempt-1 snapshot - a run that modifies an
+                            # input dir makes it run-produced evidence).
                             prefix = expected_name.rstrip("/") + "/"
                             produced_under = any(
                                 r.startswith(prefix) for r in registered)
                             if produced_under:
                                 continue
-                            if any(r.startswith(prefix) for r in inputs_ok):
-                                continue
+                            input_under = [r for r in inputs_ok
+                                           if r.startswith(prefix)]
+                            if input_under:
+                                modified = any(
+                                    (job_dir / r).is_file()
+                                    and not (job_dir / r).is_symlink()
+                                    and self._hash(
+                                        (job_dir / r).read_bytes()
+                                    ) != snap.get(r)
+                                    for r in input_under
+                                )
+                                if not modified:
+                                    continue
                             stale.append(expected_name.rstrip("/") + "/")
                             continue
                         if expected_name in registered:
@@ -565,7 +646,15 @@ class WorkflowExecutor:
                         if expected_name in inputs_ok:
                             # run input/seeded (task.txt, HANDOFF.md,
                             # test_solution.py, seeded solution.py): the run
-                            # never needs to re-produce its own inputs.
+                            # never needs to re-produce its own inputs —
+                            # EXCEPT once the run MODIFIES one (torture-13
+                            # F3): a gate-certified input rewritten in an
+                            # earlier attempt is run-produced evidence that
+                            # must be re-registered in the shipping attempt,
+                            # or the manifest omits the certified content.
+                            if self._hash(p_expected.read_bytes()) == snap.get(expected_name):
+                                continue
+                            stale.append(expected_name)
                             continue
                         # run-PRODUCED file that exists on disk but was NOT
                         # registered this attempt -> the gate certified

@@ -206,6 +206,16 @@ CHAINS: dict[str, Callable[[], Chain]] = {
     "inbox-triage-task-report": demo_lane,
 }
 
+# torture-14 F1 (T5-F2 regression): the CANNED demo lane must never be
+# reachable from production routing. T5-F2 removed its keywords from
+# _BASE_KEYWORDS, but the LEARN catalog merge path re-added them (the id IS
+# in CHAINS, so the torture-12 F6 dead-id filter kept them) — a catalog
+# override for "inbox-triage-task-report" routed real submits ("customer
+# wants a refund") into the demo chain, which SHIPs hardcoded boilerplate
+# as verified. Non-routable ids are dropped from the merged keywords with a
+# loud warning and refused by `nine learn apply`.
+NON_ROUTABLE_IDS: frozenset[str] = frozenset({"inbox-triage-task-report"})
+
 
 def _merge_plugins() -> None:
     """Merge compose-registered plugin workflows with collision protection.
@@ -334,6 +344,16 @@ def _merged_keywords() -> dict[str, list[str]]:
               f"'{wf}' dropped (removed plugin?); update the catalog or "
               "'nine learn' data", file=sys.stderr)
         del merged[wf]
+    # torture-14 F1: keywords for NON-ROUTABLE ids (the canned demo lane)
+    # are never allowed in — even a catalog/LEARN-approved override would
+    # expose production traffic to the demo's hardcoded SHIPs.
+    for wf in NON_ROUTABLE_IDS:
+        if wf in merged:
+            print(f"warning: keyword entries for non-routable workflow id "
+                  f"'{wf}' dropped (demo lane is never reachable from the "
+                  "router); remove it from nine/router/catalog.json "
+                  "keyword_overrides", file=sys.stderr)
+            del merged[wf]
     return merged
 
 
