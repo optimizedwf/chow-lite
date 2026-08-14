@@ -51,32 +51,50 @@ def redact(text: str) -> str:
     NOTE: this is not a security boundary — it reduces accidental secret
     leakage in logs (matching the design of the internal nine router).
     """
-    patterns = [
-        # comparison tails (==, !=, ~=) FIRST so the plain [=:] pattern does
-        # not steal the leading '=' of '==' and leak the secret tail
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=!~]=\s*\S+", "\\1=***"),
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+", "\\1=***"),
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s+(?:is|was|:=|:|=)\s*\S+", "\\1=***"),
+    patterns: list[tuple[str, str, re.RegexFlag]] = [
+        # comparison chains (==, !=, ~=) FIRST so the plain [=:] pattern does
+        # not steal the leading '=' of '==' and leak the secret tail.
+        # torture-16 F4: consume the WHOLE chained comparison — a
+        # `password == hunter2 == hunter3` must not leak the tail.
+        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=!~]=\s*\S+(?:\s*[=!~]=\s*\S+)*", "\\1=***", re.DOTALL | re.IGNORECASE),
+        # quoted values BEFORE the plain [=:] pattern so a space-containing
+        # value is consumed whole — torture-16 F4: `"token": "sk-123 abc"`
+        # and `api_key = "sk-123 abc def"` leaked everything after the first
+        # space (\S+ stopped at it).
+        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
+        # plain key=value / key: value
+        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=:]\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s+(?:is|was|:=|:|=)\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
         # torture-6 F4: JSON-quoted credentials ("api_key":"sk-123", "token": "abc")
-        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"']\S+[\"']", "\\1=***"),
+        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"']\S+[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
         # AWS keys: AKIA... and aws_secret_access_key = value
-        (r"AKIA[0-9A-Z]{16}", "AKIA***"),
-        (r"aws_secret_access_key\s*[=:]\s*\S+", "aws_secret_access_key=***"),
-        (r"aws_access_key_id\s*[=:]\s*\S+", "aws_access_key_id=***"),
+        (r"AKIA[0-9A-Z]{16}", "AKIA***", re.DOTALL | re.IGNORECASE),
+        (r"aws_secret_access_key\s*[=:]\s*\S+", "aws_secret_access_key=***", re.DOTALL | re.IGNORECASE),
+        (r"aws_access_key_id\s*[=:]\s*\S+", "aws_access_key_id=***", re.DOTALL | re.IGNORECASE),
         # Slack tokens: xoxb-/xoxp-/xapp-/xoxs-/xoxr-...
-        (r"xox[baprs]-[0-9A-Za-z-]{10,}", "xox***"),
-        # `password == hunter2` comparison tails (==, !=, ~=)
-        (r"(password|passwd|pwd|secret|token|api[_-]?key)\s*[=!~]=\s*\S+", "\\1=***"),
-        (r"Bearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer ***"),
-        (r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "***PRIVATE KEY***"),
-        (r"(sk|pk|ghp|gho|AIza)[A-Za-z0-9_\-]{10,}", "\\1***"),
+        (r"xox[baprs]-[0-9A-Za-z-]{10,}", "xox***", re.DOTALL | re.IGNORECASE),
+        (r"Bearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer ***", re.DOTALL | re.IGNORECASE),
+        # torture-15 F6: HTTP Basic auth header — Authorization: Basic <b64>
+        (r"Authorization\s*:\s*Basic\s+[A-Za-z0-9+/=]{8,}", "Authorization: Basic ***", re.DOTALL | re.IGNORECASE),
+        # torture-15 F6: URI userinfo (mongodb://user:pass@host, https://u:p@h)
+        (r"([a-z][a-z0-9+.-]*://)[^/@\s]+@", "\\1***@", re.DOTALL | re.IGNORECASE),
+        # torture-15 F6: CLI-style `--password hunter2` / `--token xyz`
+        (r"(--(?:password|passwd|pwd|secret|token|api[_-]?key))\s+\S+", "\\1 ***", re.DOTALL | re.IGNORECASE),
+        (r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "***PRIVATE KEY***", re.DOTALL | re.IGNORECASE),
+        # torture-16 F4: `\b` + explicit non-lowercase guard so innocent
+        # words (skillfulness, skateboarding, pkill...) pass through; AIza
+        # keys are always followed by letters (AIzaSy...) so they keep the
+        # unguarded branch. Case-SENSITIVE (no IGNORECASE) so the guard is
+        # meaningful — real keys (sk-ABC..., pk_live..., ghp_...) still match.
+        (r"\b((?:sk|pk|gh[po])(?![a-z])|AIza)[A-Za-z0-9_\-]{10,}", "\\1***", re.DOTALL),
     ]
     out = text
-    for pat, repl in patterns:
-        # torture T3-F8: case-insensitive — API_KEY=, PASSWORD=, TOKEN: all
-        # leak verbatim today; uppercase credential forms are the common
-        # ones in real tasks ("my API_KEY is ...").
-        out = re.sub(pat, repl, out, flags=re.DOTALL | re.IGNORECASE)
+    # torture T3-F8: case-insensitive — API_KEY=, PASSWORD=, TOKEN: all
+    # leak verbatim today; uppercase credential forms are the common
+    # ones in real tasks ("my API_KEY is ...").
+    for pat, repl, fl in patterns:
+        out = re.sub(pat, repl, out, flags=fl)
     return out
 
 

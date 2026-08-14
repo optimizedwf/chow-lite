@@ -12,7 +12,7 @@
 **nine — an evidence-gated agent OS (ROUTE→EXECUTE→VERIFY→LEARN)**
 
 ## 2. Tagline
-Open-source agent operating system on Google ADK 2 + Gemini 3.5 Flash: every
+Open-source agent operating system on Google ADK 2 + gemini-3.6-flash: every
 task is routed, executed by a typed workflow, verified by an evidence gate,
 and logged for learning. Runs on Cloud Run + Firestore. No chatbot wrap —
 a real autonomy kernel.
@@ -26,7 +26,7 @@ and get smarter from the trail.
 
 **nine** is that kernel, in ~2700 lines of Python, open source (MIT):
 
-- **ROUTE** — a Gemini 3.5 Flash router (KeywordRouter substrate when no
+- **ROUTE** — a gemini-3.6-flash router (KeywordRouter substrate when no
   model is configured — routing only, never fabricated output) turns
   free-text tasks into typed `RouteDecision`s against a workflow catalog.
 - **EXECUTE** — Google ADK 2 `LlmAgent` + `FunctionTool` run typed workflows
@@ -48,7 +48,7 @@ hop that PRODUCES output requires its model and fails loud otherwise —
 CI-friendly and judge-friendly, with zero fabricated answers.
 
 **Dogfooding.** The repo's own roadmap, tracker, and this submission were
-managed with the same route→execute→verify→learn loop. 99/99 tests pass (5 live-gated skips);
+managed with the same route→execute→verify→learn loop. 431/431 tests pass (5 live-gated skips);
 every CLI run ships a full artifact trail.
 
 **Try it (5 minutes, no key needed):**
@@ -94,8 +94,8 @@ the deployed API.
 | Criterion (weight) | How nine hits it |
 |---|---|
 | Innovation & Operational Utility (40%) | autonomy kernel with evidence-gated SHIP/FIX/BLOCK; candidate-only learning loop; dogfooded on its own build |
-| Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + Gemini 3.5 + Cloud Run/Firestore; JSON Schema validation in tests |
-| Demo & Production Readiness (30%) | one-command demo, 99 tests, Dockerfile + deploy.sh, FastAPI operator API, model-or-fail (no fabricated output) |
+| Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + gemini-3.6-flash + Cloud Run/Firestore; JSON Schema validation in tests |
+| Demo & Production Readiness (30%) | one-command demo, 431 tests, Dockerfile + deploy.sh, FastAPI operator API, model-or-fail (no fabricated output) |
 
 ## 9. Post-submission freeze
 Video, repo, and live site are frozen after submission (Aug 31 17:00 PDT);

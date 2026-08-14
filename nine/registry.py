@@ -347,8 +347,13 @@ def _merged_keywords() -> dict[str, list[str]]:
     # torture-14 F1: keywords for NON-ROUTABLE ids (the canned demo lane)
     # are never allowed in — even a catalog/LEARN-approved override would
     # expose production traffic to the demo's hardcoded SHIPs.
-    for wf in NON_ROUTABLE_IDS:
-        if wf in merged:
+    # torture-15 F8: normalize BOTH sides — a catalog override whose key is
+    # a case/whitespace variant of a non-routable id (" Inbox-Triage-… ")
+    # must still be dropped (the demo lane is never reachable from the
+    # router, whatever the casing in the override file).
+    blocked = {i.strip().casefold() for i in NON_ROUTABLE_IDS}
+    for wf in list(merged):
+        if wf.strip().casefold() in blocked:
             print(f"warning: keyword entries for non-routable workflow id "
                   f"'{wf}' dropped (demo lane is never reachable from the "
                   "router); remove it from nine/router/catalog.json "

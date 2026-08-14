@@ -158,14 +158,25 @@ def get_learner():
     are a future step — the route-event log is append-only and small)."""
     from nine.learn.learner import Learner, RouteEventStore
 
-    return Learner(RouteEventStore(EVENTS_PATH))
+    try:
+        return Learner(RouteEventStore(EVENTS_PATH))
+    except OSError as exc:
+        # torture-15 F12: a bad NINE_DATA_DIR made /v1/events raw-500 —
+        # the get_ledger wrap (torture-14 F10) never covered the LEARN
+        # store construction. One clean 502, same as every ledger-family
+        # endpoint.
+        raise LedgerUnavailable(f"cannot open events store: {exc}") from exc
 
 
 def get_memory():
     """Semantic MemoryGraph (NINE_MEMORY=firestore on Cloud Run, JSONL local)."""
     from nine.memory.graph import get_memory_graph
 
-    return get_memory_graph(path=MEMORY_PATH)
+    try:
+        return get_memory_graph(path=MEMORY_PATH)
+    except OSError as exc:
+        # torture-15 F12: same clean-502 contract for the memory store.
+        raise LedgerUnavailable(f"cannot open memory store: {exc}") from exc
 def get_ledger():
     """Firestore in cloud, JSONL locally.
 
@@ -251,6 +262,12 @@ class _LazyFallbackLedger:
                         # the failure and surface one clean JSON 502.
                         _ledger_failed = True
                         raise LedgerUnavailable(str(e)) from e
+                    # torture-15 F13: once the JSONL fallback has ENGAGED,
+                    # stop paying the Firestore round trip on every request —
+                    # latch so get_ledger() returns the plain JSONL ledger
+                    # from now on (previously the proxy retried Firestore per
+                    # request forever, printing the warning each time).
+                    _ledger_failed = True
                 # torture-14 F10: only fallback CONSTRUCTION failure is a
                 # misconfig (clean 502 + latch). A LedgerError from a
                 # fallback QUERY (unknown job id, etc.) is legitimate and
@@ -267,9 +284,17 @@ class SubmitRequest(BaseModel):
 
 # --- lightweight auth + rate limiting (demo-appropriate; no OAuth needed) ---
 _API_KEY = os.environ.get("NINE_API_KEY", "")
+if os.environ.get("K_SERVICE") and not _API_KEY:
+    # torture-16 F5: the documented Cloud Run recipe used to ship PUBLIC —
+    # --allow-unauthenticated with no NINE_API_KEY. If this looks like a
+    # Cloud Run deployment and no key is configured, say so at boot.
+    print("[nine] WARNING: NINE_API_KEY is NOT set and K_SERVICE is set — "
+          "this API is PUBLIC. Set the NINE_API_KEY secret to require "
+          "X-API-Key on every endpoint.", flush=True)
 MAX_BODY_BYTES = 1_048_576  # 1 MiB
 RATE_LIMIT = {"window_s": 60.0, "max": 30}
 _hits: dict[str, deque] = defaultdict(deque)
+_hits_swept = monotonic()
 
 
 def _check_auth(x_api_key: str | None) -> JSONResponse | None:
@@ -281,8 +306,23 @@ def _check_auth(x_api_key: str | None) -> JSONResponse | None:
 
 
 def _check_rate_limit(request: Request) -> JSONResponse | None:
+    """Per-IP sliding-window limiter with IDLE-ENTRY EVICTION.
+
+    torture-16 F6: _hits used to grow WITHOUT bound — a single-request IP
+    left a deque entry forever (memory DoS on the 512MiB Cloud Run
+    container under distributed scanners). Every call sweeps IPs whose
+    newest request is older than the window (idle) or whose deque is empty,
+    so the table size tracks ACTIVE IPs only.
+    """
+    global _hits_swept  # noqa: PLW0603
     ip = request.client.host if request.client else "unknown"
     now = monotonic()
+    if now - _hits_swept >= RATE_LIMIT["window_s"]:
+        _hits_swept = now
+        idle = [k for k, q in _hits.items()
+                if not q or q[-1] < now - RATE_LIMIT["window_s"]]
+        for k in idle:
+            del _hits[k]
     q = _hits[ip]
     while q and q[0] < now - RATE_LIMIT["window_s"]:
         q.popleft()
@@ -300,12 +340,14 @@ async def _guard(request: Request, call_next):
         return JSONResponse({"detail": "payload too large"}, status_code=413)
     path = request.url.path
     if path.startswith("/v1/"):
-        limited = _check_rate_limit(request)
-        if limited is not None:
-            return limited
+        # torture-16 F6: auth BEFORE rate — a wrong/missing key must not
+        # consume the (shared) per-IP quota that legitimate callers pay for.
         denied = _check_auth(request.headers.get("x-api-key"))
         if denied is not None:
             return denied
+        limited = _check_rate_limit(request)
+        if limited is not None:
+            return limited
     return await call_next(request)
 
 

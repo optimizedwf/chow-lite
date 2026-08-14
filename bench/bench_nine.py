@@ -27,6 +27,7 @@ import os
 import re
 import shutil
 import signal
+import datetime
 import subprocess
 import sys
 import threading
@@ -116,22 +117,39 @@ def _slug(name: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
     return (s or "case")[:48]
 
-def _runner_constants(runner_src: str) -> dict[str, ast.Constant]:
-    """Module-level literal constants in the runner (inline-able values).
+def _constant_snapshots(tree: ast.Module,
+                        calls: list[ast.Call]) -> list[dict[str, ast.Constant]]:
+    """For each top-level test()/test_raises() call, the module-level
+    literal constants IN EFFECT AT THAT CALL SITE.
 
     torture-14 F5: the converted pytest suite only imports names from
     `solution`; a runner-local constant referenced by a test expression
     (EXPECTED_SUM = 5) would NameError at RUN time. Names that resolve to a
     module-level literal are inlined into the converted tests.
+    torture-15 F10: the runner may REASSIGN a constant between calls
+    (EXPECTED = 5; test(...); EXPECTED = 6; test(...)) — inlining the LAST
+    assignment for every call asserts the wrong contract (green on broken
+    code, red on correct code). Snapshot the value in effect at each call.
+
+    NOTE: takes the ALREADY-PARSED tree (not source text) — matching by
+    object identity across two separate ast.parse() calls NEVER matches
+    (fresh AST objects get fresh ids), which silently returned zero
+    snapshots and left every runner constant dangling.
     """
-    tree = ast.parse(runner_src)
+    call_ids = {id(c) for c in calls}
     consts: dict[str, ast.Constant] = {}
+    snapshots: list[dict[str, ast.Constant]] = []
     for node in tree.body:
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
             for t in node.targets:
                 if isinstance(t, ast.Name):
                     consts[t.id] = node.value
-    return consts
+        elif (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+              and isinstance(node.value.func, ast.Name)
+              and node.value.func.id in ("test", "test_raises")
+              and id(node.value) in call_ids):
+            snapshots.append(dict(consts))
+    return snapshots
 
 
 def _imported_name_set(runner_src: str) -> set[str]:
@@ -172,7 +190,7 @@ def convert_to_pytest(runner_src: str) -> str:
     imports = _imported_names(runner_src)
     lines = ["import pytest", "from solution import " + ", ".join(imports), ""]
     imported = _imported_name_set(runner_src)
-    consts = _runner_constants(runner_src)
+    const_snapshots = _constant_snapshots(tree, [c for _, c in calls])
     # torture-14 F5: converted tests run with ONLY solution imports — any
     # other Load name (runner-local helper/constant) is dangling. Literal
     # constants are inlined; anything else fails conversion LOUDLY (a
@@ -208,37 +226,47 @@ def convert_to_pytest(runner_src: str) -> str:
         return {b for b in bound if b}
 
     class _InlineDangling(ast.NodeTransformer):
-        def __init__(self, allowed: set[str]) -> None:
+        def __init__(self, allowed: set[str], consts: dict[str, ast.Constant]) -> None:
             self.allowed = allowed
+            self.consts = consts
 
         def visit_Name(self, node: ast.Name) -> ast.AST:
             if isinstance(node.ctx, ast.Load) and node.id not in self.allowed:
-                if node.id in consts:
-                    return ast.copy_location(consts[node.id], node)
+                if node.id in self.consts:
+                    return ast.copy_location(self.consts[node.id], node)
                 dangling.append(node.id)
             return node
 
     for idx, (kind, call) in enumerate(calls, start=1):
         args = call.args
-        name = ast.literal_eval(args[0]) if args else f"case_{idx}"
+        # torture-15 F10: only inline the constant values in effect at THIS
+        # call site (a reassigned constant must not bleed into earlier calls).
+        consts = const_snapshots[idx - 1] if idx - 1 < len(const_snapshots) else {}
+        try:
+            name = ast.literal_eval(args[0]) if args else f"case_{idx}"
+        except (ValueError, TypeError):
+            # torture-15 F11: a non-literal name arg (test_raises(EXC, ...)
+            # with EXC = ValueError) must not crash with a raw traceback —
+            # slug the source text as a readable case name.
+            name = _slug(ast.unparse(args[0])) if args else f"case_{idx}"
         # a lambda arg means the runner calls it; otherwise it is an eager call
         is_lambda = isinstance(args[1], ast.Lambda)
         expr = args[1].body if is_lambda else args[1]
         expr = _InlineDangling(imported | builtin_names
-                               | _local_names(expr)).visit(expr)
+                               | _local_names(expr), consts).visit(expr)
         expr_src = ast.unparse(expr)
         defname = f"test_{idx:02d}_{_slug(name)}"
         lines.append(f"def {defname}():")
         if kind == "test":
             expected_ast = _InlineDangling(
                 imported | builtin_names
-                | _local_names(args[2])).visit(args[2])
+                | _local_names(args[2]), consts).visit(args[2])
             lines.append(f"    assert {expr_src} == {ast.unparse(expected_ast)}")
         else:  # test_raises
             if len(args) > 2:
                 exc_ast = _InlineDangling(
                     imported | builtin_names
-                    | _local_names(args[2])).visit(args[2])
+                    | _local_names(args[2]), consts).visit(args[2])
                 exc_src = ast.unparse(exc_ast)
             else:
                 exc_src = "ValueError"
@@ -353,28 +381,88 @@ def run_submit(fixture_dir: Path, workdir: Path, ledger_path: Path) -> tuple[dic
     return parse_submit_output(out, err, timed_out), out, err
 
 
+def _node_start_epoch(pid: int) -> float | None:
+    """Wall-clock start time of a live process (best-effort, portable).
+
+    torture-15 F9: identity validation for the pid-file killer. Linux uses
+    /proc/<pid>/stat starttime + /proc/stat btime (robust against pid
+    reuse); other platforms fall back to `ps -o lstart=` (macOS, BSD).
+    Returns None when the process is gone or the source is unavailable —
+    the caller must then be CONSERVATIVE (do not kill).
+    """
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as fh:
+            after_comm = fh.read().rsplit(")", 1)[1].split()
+        start_ticks = int(after_comm[19])  # field 22, idx 19 after comm
+        with open("/proc/stat", encoding="utf-8") as fh:
+            btime = None
+            for line in fh:
+                if line.startswith("btime "):
+                    btime = int(line.split()[1])
+                    break
+        if btime is None:
+            return None
+        clk = os.sysconf("SC_CLK_TCK")
+        return btime + start_ticks / clk
+    except (OSError, IndexError, ValueError):
+        pass
+    try:
+        out = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True, text=True, timeout=2.0, check=False,
+        ).stdout.strip()
+        if not out:
+            return None
+        return datetime.datetime.strptime(
+            out, "%a %b %d %H:%M:%S %Y").timestamp()
+    except Exception:  # noqa: BLE001 - best-effort identity check
+        return None
+
+
 def _kill_node_groups(workdir: Path) -> int:
     """SIGTERM->SIGKILL every runtime bash-node process group recorded in
     the fixture run dir (torture-13 F2).
 
-    The runtime appends each detached bash node's group-leader pid to
-    .nine-node-pids in the job dir (never a manifest entry). After a
-    per-fixture timeout kills the nine CLI, these groups are orphaned —
-    read the pid files and kill each group. Best-effort: a pid that is
-    already gone is fine.
+    The runtime appends each detached bash node's group-leader pid +
+    spawn wall-clock time to .nine-node-pids in the job dir (never a
+    manifest entry). After a per-fixture timeout kills the nine CLI, these
+    groups are orphaned — read the pid files and kill each group.
+    torture-15 F9: only kill a pid that is (a) a session leader (the
+    runtime's bash nodes are start_new_session=True) AND (b) still the
+    SAME process as recorded (spawn time matches) — a recycled pid must
+    never SIGKILL an innocent process group. Stale pids whose start time
+    can no longer be verified are skipped conservatively.
     """
     killed = 0
     for pid_file in workdir.rglob(".nine-node-pids"):
         try:
-            pids = [int(line) for line in pid_file.read_text().split()
-                    if line.strip().isdigit()]
+            entries: list[tuple[int, float | None]] = []
+            for line in pid_file.read_text().splitlines():
+                parts = line.strip().split()
+                if not parts or not parts[0].isdigit():
+                    continue  # garbage line: skip
+                pid = int(parts[0])
+                start = float(parts[1]) if len(parts) > 1 else None
+                entries.append((pid, start))
         except OSError:
             continue
-        for pid in pids:
+        for pid, start in entries:
             try:
+                # identity gate 1: must still be a session leader (the
+                # runtime spawns every bash node start_new_session=True)
+                if os.getsid(pid) != pid:
+                    continue
+                # identity gate 2: recorded spawn time must match the live
+                # process — a recycled pid (node exited, OS reused the
+                # number) has a different start. When we cannot verify
+                # (process already gone / no source), be conservative.
+                if start is not None:
+                    actual = _node_start_epoch(pid)
+                    if actual is None or abs(actual - start) > 3.0:
+                        continue
                 os.killpg(pid, signal.SIGTERM)
             except (ProcessLookupError, PermissionError, OSError):
-                pass
+                continue
             try:
                 time.sleep(0.2)
                 os.killpg(pid, signal.SIGKILL)

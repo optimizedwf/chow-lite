@@ -109,14 +109,28 @@ class Job:
             self.completed_at = self.updated_at
 
     def attach_route_decision(self, decision: RouteDecision) -> None:
+        # torture-16 F3: route-decision was appended UNVALIDATED (the
+        # agent-job $refs are only exercised on a fresh empty job at submit
+        # — a decision attached later could be malformed and crash every
+        # read path with KeyError). Validate the boundary on the way in.
+        validate("route-decision", decision.to_dict())
         self.route_decision = decision.to_dict()
         self.updated_at = datetime.now(UTC).isoformat()
 
     def add_artifact(self, artifact: dict[str, Any]) -> None:
+        # torture-16 F3: artifact entries are a declared boundary object —
+        # validate them at the mutator so `nine artifacts`/`nine chain`/
+        # demo_live never KeyError on a malformed entry.
+        validate("artifact-manifest", artifact)
         self.artifacts.append(artifact)
         self.updated_at = datetime.now(UTC).isoformat()
 
     def add_verdict(self, verdict: dict[str, Any]) -> None:
+        # torture-16 F3: verdicts are a declared boundary object; validate
+        # on the way in. The evidence-verdict schema admits CANCELLED
+        # (gate_version null) so the operator's terminal marker validates
+        # like every other verdict.
+        validate("evidence-verdict", verdict)
         self.verdicts.append(verdict)
         self.updated_at = datetime.now(UTC).isoformat()
 
@@ -132,6 +146,15 @@ def _looks_like_job(rec: dict) -> bool:
     for field in ("artifacts", "verdicts"):
         v = rec.get(field, [])
         if not isinstance(v, list):
+            return False
+    # torture-16 F3: entry-level shape guard — a malformed artifact entry
+    # (missing 'name') used to pass _looks_like_job and KeyError later on
+    # every read path. Refuse to load the record at all.
+    for art in rec.get("artifacts", []):
+        if not isinstance(art, dict) or "name" not in art:
+            return False
+    for vd in rec.get("verdicts", []):
+        if not isinstance(vd, dict) or "verdict" not in vd:
             return False
     if not isinstance(rec.get("metadata", {}), dict):
         return False
@@ -299,6 +322,11 @@ class JSONLLedger:
         return job
 
     def update(self, job: Job) -> Job:
+        # torture-16 F3: re-validate the ASSEMBLED job on every update so
+        # the agent-job $refs (artifact-manifest/evidence-verdict/
+        # route-decision) are exercised against the actual appended data —
+        # submit-time validation alone only saw an empty job.
+        validate("agent-job", job.to_dict())
         self._append(job)
         return job
 

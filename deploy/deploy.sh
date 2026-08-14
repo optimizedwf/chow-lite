@@ -30,9 +30,37 @@ else
   echo "==> no GEMINI_API_KEY secret -> routing via keyword substrate; output workflows will fail loud (model-or-fail doctrine)"
 fi
 
+# torture-16 F5: the API MUST NOT ship publicly unauthenticated. Every
+# request can burn the operator's paid Gemini quota and read job records,
+# so a public (--allow-unauthenticated) deployment REQUIRES the NINE_API_KEY
+# secret. Provide it by setting NINE_API_KEY locally (created + wired
+# automatically) or pre-creating the secret:
+#   echo -n "$NINE_API_KEY" | gcloud secrets create NINE_API_KEY \
+#       --data-file=- --project "$PROJECT_ID"
+AUTH_FLAG="--allow-unauthenticated"
+if gcloud secrets describe NINE_API_KEY --project "$PROJECT_ID" >/dev/null 2>&1; then
+  SECRETS="$SECRETS --set-secrets NINE_API_KEY=NINE_API_KEY:latest"
+  echo "==> NINE_API_KEY secret found; X-API-Key required on every endpoint"
+elif [ -n "${NINE_API_KEY:-}" ]; then
+  if ! gcloud secrets describe NINE_API_KEY --project "$PROJECT_ID" >/dev/null 2>&1; then
+    echo -n "$NINE_API_KEY" | gcloud secrets create NINE_API_KEY \
+        --data-file=- --project "$PROJECT_ID"
+  else
+    echo -n "$NINE_API_KEY" | gcloud secrets versions add NINE_API_KEY \
+        --data-file=- --project "$PROJECT_ID" >/dev/null
+  fi
+  SECRETS="$SECRETS --set-secrets NINE_API_KEY=NINE_API_KEY:latest"
+  echo "==> NINE_API_KEY created from environment; X-API-Key required on every endpoint"
+else
+  echo "!! WARNING: no NINE_API_KEY configured — refusing to deploy a PUBLIC unauthenticated API."
+  echo "!! Set NINE_API_KEY (local env) or create the NINE_API_KEY secret, then re-run."
+  echo "!! (Private deploy: gcloud run deploy --no-allow-unauthenticated + IAP/SA auth.)"
+  AUTH_FLAG="--no-allow-unauthenticated"
+fi
+
 echo "==> Deploying $SERVICE to Cloud Run"
 gcloud run deploy "$SERVICE" --source . --region "$REGION" --project "$PROJECT_ID" \
-    --allow-unauthenticated --min-instances 0 --max-instances 2 \
+    $AUTH_FLAG --min-instances 0 --max-instances 2 \
     --set-env-vars GEMINI_MODEL=gemini-3.6-flash,FIRESTORE_COLLECTION=nine-jobs,NINE_MEMORY=firestore \
     $SECRETS
 

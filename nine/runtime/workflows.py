@@ -24,6 +24,7 @@ import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
 from typing import Any
@@ -119,6 +120,27 @@ _MANIFEST_IGNORE_SUFFIXES = (".pyc", ".log")
 _MANIFEST_IGNORE_NAMES = (".nine-node-pids",)
 
 
+def _is_ignored(rel: str, p: Path) -> bool:
+    """One byproduct-exclusion predicate for BOTH inventory paths.
+
+    torture-14 F4 + torture-15 F3/F4: pytest cache/pyc/log byproducts and
+    the runtime's own .nine-node-pids tracker are never job evidence. The
+    recursive inventory AND the explicit artifact_path branch must agree —
+    a tool naming test_output.log or .nine-node-pids as artifact_path must
+    not re-certify what F4 removed. Name matching covers ANY path part
+    (nested sub/.nine-node-pids); suffix matching is case-insensitive
+    (output.LOG).
+    """
+    parts = rel.split("/")
+    if any(part in _MANIFEST_IGNORE_DIRS for part in parts):
+        return True
+    if p.suffix.lower() in _MANIFEST_IGNORE_SUFFIXES:
+        return True
+    if any(part in _MANIFEST_IGNORE_NAMES for part in parts):
+        return True
+    return False
+
+
 def _manifest_files(job_dir: Path) -> list[tuple[str, Path]]:
     """Recursive file inventory: (relative name, path), symlinks + dirs skipped.
 
@@ -128,33 +150,56 @@ def _manifest_files(job_dir: Path) -> list[tuple[str, Path]]:
     content certify a SHIP. Relative names disambiguate same-named files.
     rglob does not descend into symlinked dirs; symlinked files are skipped
     here anyway (never evidence). torture-14 F4: pytest cache/pyc/log
-    byproducts and the runtime's own .nine-node-pids tracker are excluded.
+    byproducts and the runtime's own .nine-node-pids tracker are excluded
+    (torture-15 F4: via the shared predicate, so nested + case variants too).
     """
     out: list[tuple[str, Path]] = []
     for p in sorted(job_dir.rglob("*")):
         if p.is_symlink() or not p.is_file():
             continue
         rel = p.relative_to(job_dir).as_posix()
-        parts = rel.split("/")
-        if any(part in _MANIFEST_IGNORE_DIRS for part in parts):
-            continue
-        if rel in _MANIFEST_IGNORE_NAMES or p.suffix in _MANIFEST_IGNORE_SUFFIXES:
+        if _is_ignored(rel, p):
             continue
         out.append((rel, p))
     return out
 
 
 def _record_node_pid(job_dir: Path, pid: int) -> None:
-    """Best-effort append of a bash-node process-group leader pid.
+    """Best-effort append of a bash-node process-group leader pid + spawn time.
 
     The pid file (.nine-node-pids, excluded from manifests) lets an external
     supervisor (bench_nine timeout cleanup) kill detached node groups after
-    the CLI itself is dead (torture-13 F2). Purely a cleanup aid — failure
-    to write it never affects job correctness.
+    the CLI itself is dead (torture-13 F2). torture-15 F9: the spawn
+    wall-clock time is recorded alongside so the external killer can verify
+    the pid still refers to the SAME process (a recycled pid must never be
+    SIGKILLed). Purely a cleanup aid — failure to write it never affects
+    job correctness.
     """
     try:
         with open(job_dir / ".nine-node-pids", "a", encoding="utf-8") as fh:
-            fh.write(f"{pid}\n")
+            fh.write(f"{pid} {int(time.time())}\n")
+    except OSError:
+        pass
+
+
+def _prune_node_pid(job_dir: Path, pid: int) -> None:
+    """Best-effort removal of a node's pid line once the node completed.
+
+    torture-15 F9: without pruning, every bash node leaves a stale pid in
+    the file for the rest of the run — when the OS reuses that pid within
+    the run window, the external killer would SIGTERM/SIGKILL an innocent
+    process group. The runtime knows when a node is done; remove it.
+    """
+    try:
+        f = job_dir / ".nine-node-pids"
+        if not f.exists():
+            return
+        lines = f.read_text(encoding="utf-8").splitlines()
+        kept = [ln for ln in lines
+                if not (ln.strip().split()[0] == str(pid)
+                        if ln.strip() else False)]
+        f.write_text("\n".join(kept) + ("\n" if kept else ""),
+                     encoding="utf-8")
     except OSError:
         pass
 
@@ -224,12 +269,13 @@ class WorkflowExecutor:
         from datetime import UTC, datetime
 
         job.status = "cancelled"  # direct terminal set; matches durable truth
-        verdict = {
+        verdict: dict[str, Any] = {
             "verdict": "CANCELLED",
             "evidence_refs": sorted(a["path"] for a in artifacts),
             "eval_results": {},
             "summary": "cancelled by operator during execution",
             "verified_at": datetime.now(UTC).isoformat(),
+            "gate_version": None,
         }
         job.add_verdict(verdict)
         job.metadata["nodes"] = node_meta
@@ -285,7 +331,11 @@ class WorkflowExecutor:
                 except (ProcessLookupError, PermissionError, OSError):  # noqa: BLE001
                     pass
                 out, err = proc.communicate()
+                _prune_node_pid(job_dir, proc.pid)
                 raise
+            # torture-15 F9: the node completed — its pid must not linger
+            # for the external killer to mis-attribute to a recycled process.
+            _prune_node_pid(job_dir, proc.pid)
             return {"exit_code": proc.returncode, "stdout": (out or "")[-2000:],
                     "stderr": (err or "")[-2000:]}
         if node.kind in ("prompt", "tool", "subagent", "summarize"):
@@ -435,9 +485,17 @@ class WorkflowExecutor:
                 # the file is unchanged; a run that modifies an input makes it
                 # run-produced evidence (must be registered in the shipping
                 # attempt's manifest).
-                self._first_attempt_before[key] = {
-                    rel: self._hash(p.read_bytes()) for rel, p in before_files
-                }
+                snap = {}
+                for rel, p in before_files:
+                    # torture-15 F2: an unreadable input (chmod 000,
+                    # permission drift) must not raw-crash execute() — skip
+                    # it from the snapshot so the stale guard treats it as
+                    # run-produced (BLOCK) instead of exempting it.
+                    try:
+                        snap[rel] = self._hash(p.read_bytes())
+                    except OSError:
+                        continue
+                self._first_attempt_before[key] = snap
 
             seen: dict[str, str] = {}  # reset per attempt: reruns re-register the full dir
             seen_idx: dict[str, int] = {}  # rel -> position in artifacts (same-name replace)
@@ -564,8 +622,6 @@ class WorkflowExecutor:
                         if p.is_symlink():
                             continue
                         if p.exists():
-                            data = p.read_bytes()
-                            h = self._hash(data)
                             # relative name when the tool certifies a file
                             # inside the job dir (subdir artifacts included);
                             # dedupe on the RELATIVE key, not the basename
@@ -575,7 +631,23 @@ class WorkflowExecutor:
                             try:
                                 rel = p.relative_to(job_dir).as_posix()
                             except ValueError:
-                                rel = p.name
+                                # torture-15 F5: an artifact OUTSIDE the job
+                                # dir must not register under its bare
+                                # basename — that collides with (and
+                                # silently REPLACES) a same-named inside file
+                                # and makes the manifest point outside the
+                                # job dir. Namespace external rels so they can
+                                # never collide with an inside rel.
+                                rel = "../" + p.name
+                            # torture-15 F3: the explicit branch must apply
+                            # the SAME byproduct exclusion as the recursive
+                            # inventory — a tool naming test_output.log /
+                            # .nine-node-pids / __pycache__ as artifact_path
+                            # must not re-certify them as shipped evidence.
+                            if _is_ignored(rel, p):
+                                continue
+                            data = p.read_bytes()
+                            h = self._hash(data)
                             _register(rel, str(p), "other", h, len(data), nid)
 
             if self._cancelled(job):
@@ -611,8 +683,19 @@ class WorkflowExecutor:
                 for _name, fn in self.gate.checks.items():
                     for expected_name in (getattr(fn, "expected", None) or []):
                         p_expected = job_dir / expected_name
-                        if p_expected.is_symlink() or not p_expected.exists():
-                            continue  # not evidence / the check already failed
+                        if not p_expected.exists():
+                            continue  # the check already failed
+                        if p_expected.is_symlink():
+                            # torture-15 F1: a symlink at an expected input
+                            # path is a CONTENT CHANGE, not "not evidence" —
+                            # the exemption is for unchanged run inputs, and a
+                            # symlink can never match the attempt-1 content
+                            # digest. Skipping let a symlink-following check
+                            # certify outside content with the file ABSENT
+                            # from the shipped manifest (SHIP). Treat the
+                            # substitution as stale: BLOCK.
+                            stale.append(expected_name)
+                            continue
                         if p_expected.is_dir():
                             # directory artifact (build-multi solution/):
                             # certified by its CONTENT - stale unless a file
@@ -629,14 +712,27 @@ class WorkflowExecutor:
                             input_under = [r for r in inputs_ok
                                            if r.startswith(prefix)]
                             if input_under:
-                                modified = any(
-                                    (job_dir / r).is_file()
-                                    and not (job_dir / r).is_symlink()
-                                    and self._hash(
-                                        (job_dir / r).read_bytes()
-                                    ) != snap.get(r)
-                                    for r in input_under
-                                )
+                                def _member_modified(
+                                    r: str, snap: dict = snap
+                                ) -> bool:
+                                    # B023: snap bound as a DEFAULT ARG so
+                                    # the closure sees THIS iteration's
+                                    # snapshot (defaults capture the current
+                                    # object; the closure is redefined per
+                                    # loop iteration anyway).
+                                    mp = job_dir / r
+                                    if not mp.is_file() or mp.is_symlink():
+                                        return True  # gone/replaced
+                                    try:
+                                        return self._hash(
+                                            mp.read_bytes()
+                                        ) != snap.get(r)
+                                    except OSError:
+                                        # torture-15 F2: an unreadable member
+                                        # is not unchanged content.
+                                        return True
+                                modified = any(_member_modified(r)
+                                               for r in input_under)
                                 if not modified:
                                     continue
                             stale.append(expected_name.rstrip("/") + "/")
@@ -652,7 +748,15 @@ class WorkflowExecutor:
                             # earlier attempt is run-produced evidence that
                             # must be re-registered in the shipping attempt,
                             # or the manifest omits the certified content.
-                            if self._hash(p_expected.read_bytes()) == snap.get(expected_name):
+                            try:
+                                unchanged = self._hash(
+                                    p_expected.read_bytes()
+                                ) == snap.get(expected_name)
+                            except OSError:
+                                # torture-15 F2: an unreadable input is not
+                                # unchanged content — BLOCK, never raise.
+                                unchanged = False
+                            if unchanged:
                                 continue
                             stale.append(expected_name)
                             continue
@@ -674,7 +778,9 @@ class WorkflowExecutor:
                             "file(s) not produced this attempt - certifying "
                             "evidence missing from the shipped manifest "
                             "(torture-7 F1 / torture-10 F2 / torture-11 F5)"),
-                        "verified_at": verdict.get("verified_at", ""),
+                        "verified_at": (verdict.get("verified_at")
+                                        or datetime.now(UTC).isoformat()),
+                        "gate_version": verdict.get("gate_version", ""),
                     }
 
             job.add_verdict(verdict)

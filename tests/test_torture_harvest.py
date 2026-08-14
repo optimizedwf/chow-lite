@@ -256,10 +256,22 @@ def test_cmd_submit_returns_2_on_nonship(tmp_path, monkeypatch):
     wf = Workflow(id="blockme")
     wf.add_node(Node(id="noop", kind="bash", command="echo hi > note.txt"))
     monkeypatch.setitem(WORKFLOWS, "blockme", lambda: wf)
+    def _fake_decision(task):
+        # T16-F3: route decisions are validated at attach (schema boundary);
+        # the fake must produce a schema-valid decision dict.
+        return SimpleNamespace(workflow_id="blockme", to_dict=lambda: {
+            "decision_id": "d-fake",
+            "task_redacted": "x",
+            "workflow_id": "blockme",
+            "confidence": 1.0,
+            "reason": "test",
+            "decided_at": "2026-01-01T00:00:00+00:00",
+            "router_version": "test",
+        })
+
     monkeypatch.setattr(
         nine_cli, "build_default_router",
-        lambda: SimpleNamespace(classify=lambda t: SimpleNamespace(
-            workflow_id="blockme", to_dict=lambda: {})))
+        lambda: SimpleNamespace(classify=_fake_decision))
     monkeypatch.setattr(nine_cli, "_record_route_event", lambda *a, **k: None)
     monkeypatch.setattr(nine_cli, "_learner", lambda args: None)
     args = SimpleNamespace(task="x", ledger=str(tmp_path / "l.jsonl"),
@@ -278,10 +290,22 @@ def test_cmd_submit_redacts_task_in_ledger(tmp_path, monkeypatch):
     from nine import cli as nine_cli
     from nine.ledger.ledger import JSONLLedger
 
+    def _fake_decision(task):
+        # T16-F3: route decisions are validated at attach (schema boundary);
+        # the fake must produce a schema-valid decision dict.
+        return SimpleNamespace(workflow_id="respond", to_dict=lambda: {
+            "decision_id": "d-fake",
+            "task_redacted": "redacted",
+            "workflow_id": "respond",
+            "confidence": 1.0,
+            "reason": "test",
+            "decided_at": "2026-01-01T00:00:00+00:00",
+            "router_version": "test",
+        })
+
     monkeypatch.setattr(
         nine_cli, "build_default_router",
-        lambda: SimpleNamespace(classify=lambda t: SimpleNamespace(
-            workflow_id="respond", to_dict=lambda: {})))
+        lambda: SimpleNamespace(classify=_fake_decision))
     monkeypatch.setattr(nine_cli, "_record_route_event", lambda *a, **k: None)
     monkeypatch.setattr(nine_cli, "_learner", lambda args: None)
     monkeypatch.setattr(
@@ -454,7 +478,8 @@ def test_recover_reexecutes_blocked_job(tmp_path, monkeypatch):
     ledger = JSONLLedger(tmp_path / "ledger.jsonl")
     dec = RouteDecision(
         decision_id="d1", task_redacted="zzz qqq recover me", workflow_id="respond",
-        confidence=0.9, reason="fallback", decided_at="now", router_version="0.1.0",
+        confidence=0.9, reason="fallback",
+        decided_at="2026-01-01T00:00:00+00:00", router_version="0.1.0",
     )
     job = ledger.submit("respond", {"task": dec.task_redacted})
     job.attach_route_decision(dec)

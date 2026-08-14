@@ -179,7 +179,14 @@ def cmd_chain(args) -> int:
     # seed the chain job dir with the task input file
     job = ledger.submit(chain.id, input={"task": args.task})
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # torture-16 F7: a `work` FILE in cwd made mkdir raw-traceback
+        # FileExistsError on submit/recover/chain/server — one clean line.
+        job_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"error: cannot create job dir {job_dir}: {e}",
+              file=sys.stderr)
+        return 1
     (job_dir / "task.txt").write_text(args.task + "\n")
     if chain.id == "inbox-triage-task-report":
         (job_dir / "inbox.txt").write_text(args.task + "\n")
@@ -219,8 +226,15 @@ def _execute_job(ledger, job, task: str, args) -> int:
     workflow_id, write task.txt into the job dir, run the registry
     workflow/chain, and return an exit code (0 SHIP / 1 error / 2 non-SHIP).
     """
-    # LEARN: every completed run records a route event (durable, per P2)
-    learner = _learner(args)
+    # LEARN: every completed run records a route event (durable, per P2).
+    # torture-16 F7: a bad --events path (parent component is a FILE)
+    # raw-tracebacked FileExistsError from RouteEventStore's mkdir — the
+    # T14-F7 guard covered cmd_learn/cmd_chain but not this shared path.
+    try:
+        learner = _learner(args)
+    except OSError as e:
+        print(f"error: cannot open event store: {e}", file=sys.stderr)
+        return 1
     decision = getattr(job, "route_decision", None)
     if isinstance(decision, dict) and decision.get("workflow_id"):
         # ledger stores route_decision via to_dict(); restore the object so
@@ -239,7 +253,14 @@ def _execute_job(ledger, job, task: str, args) -> int:
     from nine.registry import CHAINS, WORKFLOWS, workflow_gate
 
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        # torture-16 F7: a `work` FILE in cwd made mkdir raw-traceback
+        # FileExistsError on submit/recover/chain/server — one clean line.
+        job_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        print(f"error: cannot create job dir {job_dir}: {e}",
+              file=sys.stderr)
+        return 1
     (job_dir / "task.txt").write_text(task + "\n")
     if job.workflow_id == "inbox-triage-task-report":
         (job_dir / "inbox.txt").write_text(task + "\n")
@@ -328,9 +349,11 @@ def cmd_submit(args) -> int:
     ledger.update(job)
     try:
         return _execute_job(ledger, job, args.task, args)
-    except WorkflowError as exc:
+    except (WorkflowError, ValueError) as exc:
         # torture-12 F6 (belt): a route that slips past the check still
-        # fails with ONE clean line, never a raw traceback.
+        # fails with ONE clean line, never a raw traceback. ValueError
+        # included (torture-16 F1 belt): a CANCELLED verdict racing a
+        # schema-validated route event must not raw-traceback submit.
         print(f"[error] job {job.job_id} failed loud: {exc}", file=sys.stderr)
         return 1
 
@@ -340,6 +363,12 @@ def _record_route_event(learner, job, decision, verdict: dict) -> None:
     per-hop events inside ChainExecutor). job is None for direct answers."""
     if decision is None:
         return  # nothing real to learn from (stubbed/restored decision)
+    if verdict.get("verdict") == "CANCELLED":
+        # torture-16 F1: an operator-cancelled run never completed — there
+        # is nothing to learn, and CANCELLED is not a route-event verdict
+        # (the schema would reject it, raw-tracebacking submit/recover and
+        # losing the event). Skip the observation entirely.
+        return
     from nine.learn.learner import RouteEvent
 
     eval_results = verdict.get("eval_results") or {}
@@ -509,10 +538,11 @@ def cmd_recover(args) -> int:
     print(f"recovering {job.job_id} ({job.workflow_id}) — re-executing")
     try:
         return _execute_job(ledger, job, task, args)
-    except WorkflowError as exc:
+    except (WorkflowError, ValueError) as exc:
         # torture-12 F5 (belt): even after the id check a hop could raise
         # WorkflowError mid-flight — one clean line, like the ChainError
-        # path (torture-7 F5), never a raw traceback.
+        # path (torture-7 F5), never a raw traceback. ValueError included
+        # (torture-16 F1 belt): a cancelled recover must not raw-traceback.
         print(f"[error] job {job.job_id} failed loud: {exc}", file=sys.stderr)
         return 1
 
@@ -611,7 +641,12 @@ def _apply_candidate(learner, candidate_id: str) -> int:
 
     from nine.registry import NON_ROUTABLE_IDS, load_catalog, save_catalog
 
-    if wf_id in NON_ROUTABLE_IDS:
+    # torture-15 F8: the refusal must be case/whitespace-insensitive — a
+    # candidate whose workflow_id is " Inbox-Triage-Task-Report " (or any
+    # case variant) must not slip past the exact-match guard and re-expose
+    # the canned demo lane to production routing.
+    if wf_id.strip().casefold() in {i.strip().casefold()
+                                    for i in NON_ROUTABLE_IDS}:
         # torture-14 F1: the LEARN loop must never re-expose the canned demo
         # lane to production routing — T5-F2's keyword ban is enforceable at
         # the merge, but apply() is the ONE file path that could re-add it.
@@ -651,8 +686,11 @@ def _apply_candidate(learner, candidate_id: str) -> int:
         save_catalog(catalog)
         return 1
 
-    # 4) durable, auditable commit
-    _git_commit(f"learn apply {candidate_id}: add keyword '{kw}' to '{wf_id}'")
+    # 4) durable, auditable commit (torture-16 F9: on failure the catalog
+    # change stays on disk, the candidate is NOT marked applied, and the
+    # operator gets one loud line — never a raw traceback mid-mutation).
+    if not _git_commit(f"learn apply {candidate_id}: add keyword '{kw}' to '{wf_id}'"):
+        return 1
     learner.cands.update_status(candidate_id, "applied")
     print(f"applied {candidate_id}: keyword '{kw}' -> {wf_id}; "
           f"catalog committed (rollback: nine learn revert {candidate_id})")
@@ -697,7 +735,9 @@ def _revert_candidate(learner, candidate_id: str) -> int:
         overrides[wf_id] = bucket
         save_catalog(catalog)
         return 1
-    _git_commit(f"learn revert {candidate_id}: remove keyword '{kw}' from '{wf_id}'")
+    if not _git_commit(f"learn revert {candidate_id}: remove keyword '{kw}' from '{wf_id}'"):
+        # torture-16 F9: same contract as apply — candidate status untouched.
+        return 1
     learner.cands.update_status(candidate_id, "pending")
     print(f"reverted {candidate_id}: keyword '{kw}' removed from {wf_id}")
     return 0
@@ -743,14 +783,35 @@ def _regression_green() -> bool:
                 p.write_bytes(data)
 
 
-def _git_commit(message: str) -> None:
+def _git_commit(message: str) -> bool:
+    """Commit catalog.json; False (with a loud warning) when impossible.
+
+    torture-16 F9: on a non-git deployment (pip/sdist install, tarball,
+    Cloud Run image) `git` raises CalledProcessError; with check=True
+    uncaught, `nine learn apply`/`revert` raw-tracebacked AFTER the catalog
+    was already mutated and BEFORE the candidate status flipped — silent
+    partial mutation. Now the commit failure is LOUD and the caller leaves
+    the candidate's status untouched (never "applied" on a failed commit).
+    """
     import subprocess as _sp
 
     root = Path(__file__).resolve().parent.parent
-    _sp.run(["git", "-C", str(root), "add", "nine/router/catalog.json"], check=True)
-    _sp.run(["git", "-C", str(root), "-c", "user.name=adamnorm4wd",
-             "-c", "user.email=adamnorm4wd@atomicmail.io", "commit", "-m", message],
-            check=True)
+    try:
+        _sp.run(["git", "-C", str(root), "add", "nine/router/catalog.json"],
+                check=True, capture_output=True, text=True)
+        _sp.run(["git", "-C", str(root), "-c", "user.name=adamnorm4wd",
+                 "-c", "user.email=adamnorm4wd@atomicmail.io",
+                 "commit", "-m", message],
+                check=True, capture_output=True, text=True)
+        return True
+    except (OSError, _sp.CalledProcessError) as exc:
+        print(
+            "warning: catalog.json changed on disk but the commit FAILED "
+            f"({type(exc).__name__}: {exc}) — not a git repo or git "
+            "unavailable. Commit the catalog change manually; the candidate "
+            "was NOT marked applied.", file=sys.stderr,
+        )
+        return False
 
 
 def main(argv: list[str] | None = None) -> int:

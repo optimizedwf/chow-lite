@@ -1,43 +1,66 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/optimizedwf/nine/schemas/evidence-verdict.schema.json",
-  "title": "EvidenceVerdict",
-  "description": "Evidence-gated verdict: an exit code is NOT success. SHIP only with passing evidence.",
-  "type": "object",
-  "required": [
-    "verdict",
-    "evidence_refs",
-    "verified_at",
-    "gate_version"
-  ],
-  "properties": {
-    "verdict": {
-      "enum": [
-        "SHIP",
-        "FIX",
-        "BLOCK"
-      ]
-    },
-    "evidence_refs": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "description": "Paths/refs of artifacts that prove the verdict"
-    },
-    "eval_results": {
-      "type": "object",
-      "description": "EVAL.json contents (checks, pass/fail)"
-    },
-    "summary": {
-      "type": "string"
-    },
-    "verified_at": {
-      "type": "string",
-      "format": "date-time"
-    },
-    "gate_version": {
-      "type": "string"
-    }
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/optimizedwf/nine/schemas/evidence-verdict.schema.json",
+ "title": "EvidenceVerdict",
+ "description": "Evidence-gated verdict: an exit code is NOT success. SHIP only with passing evidence.",
+ "type": "object",
+ "required": [
+  "verdict",
+  "evidence_refs",
+  "verified_at"
+ ],
+ "properties": {
+  "verdict": {
+   "enum": [
+    "SHIP",
+    "FIX",
+    "BLOCK",
+    "CANCELLED"
+   ]
+  },
+  "evidence_refs": {
+   "type": "array",
+   "items": {
+    "type": "string"
+   },
+   "description": "Paths/refs of artifacts that prove the verdict"
+  },
+  "eval_results": {
+   "type": "object",
+   "description": "EVAL.json contents (checks, pass/fail)"
+  },
+  "summary": {
+   "type": "string"
+  },
+  "verified_at": {
+   "type": "string",
+   "format": "date-time"
+  },
+  "gate_version": {
+   "type": [
+    "string",
+    "null"
+   ]
   }
+ },
+ "allOf": [
+  {
+   "if": {
+    "properties": {
+     "verdict": {
+      "const": "CANCELLED"
+     }
+    },
+    "required": [
+     "verdict"
+    ]
+   },
+   "then": {},
+   "else": {
+    "required": [
+     "gate_version"
+    ]
+   }
+  }
+ ]
 }

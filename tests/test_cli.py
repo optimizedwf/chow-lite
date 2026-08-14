@@ -178,7 +178,10 @@ def test_cli_learn_apply_revert_gated_by_regression(tmp_path, monkeypatch):
 
     monkeypatch.setattr(cli, "_regression_green", _fake_green)
     commits = []
-    monkeypatch.setattr(cli, "_git_commit", commits.append)
+    # T16-F9: _git_commit now returns bool (False = commit failed, candidate
+    # NOT marked applied) — the fake must be truthy or apply() bails.
+    monkeypatch.setattr(cli, "_git_commit",
+                        lambda msg: commits.append(msg) or True)
 
     from nine.registry import load_catalog
     # apply: catalog gains the keyword; candidate applied

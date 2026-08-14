@@ -8,10 +8,12 @@ SchemaValidationError instead of silently shipping a malformed record.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
 from pathlib import Path
 
 import jsonschema
+from jsonschema import FormatChecker
 from referencing import Registry, Resource
 
 _SCHEMA_DIR = Path(__file__).resolve().parent.parent / "schemas"
@@ -42,11 +44,48 @@ def _registry() -> Registry:
 _REGISTRY = _registry()
 
 
+def _format_checker() -> FormatChecker:
+    """FormatChecker with `date-time` explicitly registered.
+
+    torture-16 F2: bare `FormatChecker()` does NOT include date-time in
+    jsonschema 4.x (default checkers are date/time/email/ipv4/ipv6/regex/
+    uuid only) — passing it in made `format: date-time` a dead constraint
+    exactly like passing nothing. Register date-time (RFC 3339 subset via
+    datetime.fromisoformat, plus a trailing-Z normalization) so garbage
+    timestamps fail validate() at every boundary.
+    """
+    fc = FormatChecker()
+
+    def _check_date_time(value: str) -> bool:
+        if not isinstance(value, str):
+            return True  # type mismatch handled by the schema itself
+        try:
+            _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return True
+
+    fc.checkers["date-time"] = (  # type: ignore[assignment]
+        _check_date_time,
+        ("date-time",),
+    )
+    return fc
+
+
+_FORMAT_CHECKER = _format_checker()
+
+
 def validate(name: str, instance: dict) -> None:
     """Raise SchemaValidationError if instance violates the named schema."""
     schema = _load(name)
     try:
-        jsonschema.Draft202012Validator(schema, registry=_REGISTRY).validate(instance)
+        # torture-16 F2: Draft202012Validator without a format checker made
+        # `format: date-time` a DEAD constraint — garbage timestamps passed
+        # validate() for every schema. _FORMAT_CHECKER enforces the declared
+        # formats (date-time, etc.) at every boundary.
+        jsonschema.Draft202012Validator(
+            schema, registry=_REGISTRY, format_checker=_FORMAT_CHECKER
+        ).validate(instance)
     except jsonschema.ValidationError as exc:
         raise SchemaValidationError(
             f"{name} schema violation: {exc.message} (path: {list(exc.path)})"

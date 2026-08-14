@@ -9,6 +9,8 @@ import os
 import signal
 import subprocess
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -74,17 +76,53 @@ def test_t13_f2_runtime_records_bash_node_pid(tmp_path):
     .nine-node-pids (never a manifest entry) so an external killer (bench
     timeout) can clean up after the CLI dies."""
     wf = Workflow(id="pids")
+    # long-running node: the pid line must EXIST while the node is alive
+    # (an external killer's only window), then be PRUNED on normal
+    # completion (T15-F9: stale pids must not be mis-attributed to a
+    # recycled process later in the run).
     wf.add_node(Node(id="n", kind="bash",
-                     command="echo hello > out.txt && echo $PPID > /dev/null"))
+                     command="echo hello > out.txt && sleep 3"))
 
     def _any(_ctx, workdir) -> tuple[bool, str]:
         return True, "always"
-    res, job, job_dir = _run_workflow(tmp_path, wf, {"any": _any})
-    assert res["verdict"]["verdict"] == "SHIP"
+    gate = _gate({"any": _any})
+    ledger = JSONLLedger(tmp_path / "ledger.jsonl")
+    ex = WorkflowExecutor(ledger, gate, workdir=tmp_path / "work")
+    job = ledger.submit(wf.id, {"task": "t"})
+    job_dir = tmp_path / "work" / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "task.txt").write_text("t\n", encoding="utf-8")
     pid_file = job_dir / ".nine-node-pids"
-    assert pid_file.exists()
-    pid = pid_file.read_text().strip()
+
+    res_holder: dict = {}
+    def _run():
+        res_holder["res"] = ex.execute(wf, job, {"task": "t"},
+                                       fix_loop=True)
+    th = threading.Thread(target=_run)
+    th.start()
+    # wait for the node to spin up and record its pid
+    deadline = time.monotonic() + 15
+    line = ""
+    while time.monotonic() < deadline:
+        if pid_file.exists() and pid_file.read_text().strip():
+            line = pid_file.read_text().strip()
+            break
+        time.sleep(0.05)
+    th.join(timeout=30)
+    assert not th.is_alive(), "workflow did not finish in time"
+    assert "res" in res_holder
+    res = res_holder["res"]
+    assert res["verdict"]["verdict"] == "SHIP"
+    # T15-F9: each line is "pid spawn_epoch" (the runtime records the
+    # spawn wall-clock so an external killer can verify pid identity
+    # before SIGKILLing — a recycled pid must never be killed).
+    assert line, "pid line never appeared while the node was running"
+    pid, epoch = line.split()
     assert pid.isdigit() and int(pid) > 1
+    assert epoch.isdigit() and int(epoch) > 1_000_000_000
+    # T15-F9: the runtime prunes the line on NORMAL completion — no stale
+    # pid survives the run to be mis-attributed to a recycled process.
+    assert not pid_file.read_text().strip(),         "pid line should be pruned after normal node completion"
     names = [a["name"] for a in job.artifacts]
     assert ".nine-node-pids" not in names
     assert "out.txt" in names

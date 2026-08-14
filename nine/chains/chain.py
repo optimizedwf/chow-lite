@@ -328,16 +328,31 @@ class ChainExecutor:
         # Now: redact() every summary and use the ARTIFACT's own content head
         # (falling back to the plan handoff only for the handoff artifact
         # itself / when the artifact file is gone).
-        def _artifact_summary(name: str, size: int) -> str:
-            src = job_dir / name
-            if src.exists() and not src.is_symlink():
-                try:
-                    head = src.read_text(encoding="utf-8",
-                                         errors="replace")[:400]
-                except OSError:
-                    head = ""
-                if head.strip():
-                    return redact(head)
+        def _artifact_summary(art: dict) -> str:
+            # torture-15 F7: resolve from the REGISTERED artifact path FIRST
+            # — an outside-job-dir artifact ("../<name>") was previously
+            # summarized from HANDOFF.md (or job_dir/<name>, which doesn't
+            # exist), misattributing the plan handoff as ITS content. The
+            # manifest's path IS the artifact's own file; read it (redacted
+            # head) whenever it exists and is a regular file. job_dir/<name>
+            # is the next candidate; HANDOFF.md is the LAST resort, used
+            # only when the artifact file is genuinely gone.
+            candidates = [art.get("path")]
+            if art.get("path"):
+                candidates.append(str(job_dir / art["path"]))
+            candidates.append(str(job_dir / art.get("name", "")))
+            for cand in candidates:
+                if not cand:
+                    continue
+                src = Path(cand)
+                if src.exists() and not src.is_symlink():
+                    try:
+                        head = src.read_text(encoding="utf-8",
+                                             errors="replace")[:400]
+                    except OSError:
+                        head = ""
+                    if head.strip():
+                        return redact(head)
             handoff = job_dir / "HANDOFF.md"
             if handoff.exists() and not handoff.is_symlink():
                 try:
@@ -347,7 +362,7 @@ class ChainExecutor:
                     head = ""
                 if head.strip():
                     return redact(head)
-            return redact(name)
+            return redact(str(art.get("name", "")))
         task_redacted = redact(str(inputs.get("task", "")))[:200]
         for art in self.ledger.get(hop_job.job_id).artifacts:
             self.memory.save_artifact_summary(
@@ -359,7 +374,7 @@ class ChainExecutor:
                 kind=art.get("kind", "document"),
                 sha256=art.get("sha256", ""),
                 size=art.get("size", 0),
-                summary=_artifact_summary(art["name"], art.get("size", 0)),
+                summary=_artifact_summary(art),
                 task_redacted=task_redacted,
                 verdict=verdict,
             )
