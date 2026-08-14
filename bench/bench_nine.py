@@ -33,6 +33,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+import math
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES_DIR = REPO / "bench" / "fixtures"
@@ -181,6 +182,19 @@ def _constant_snapshots(tree: ast.Module,
                 consts.pop(node.target.id, None)
             else:
                 consts[node.target.id] = updated
+        elif isinstance(node, ast.Assign) and not isinstance(node.value, ast.Constant):
+            # T19-F5 (slice 37): a REASSIGNMENT to a non-literal expression
+            # (EXPECTED = add(1, 2)) must drop the stale literal — previously
+            # it matched no branch and the old value was snapshotted into the
+            # next test(), asserting a contract that never existed (false red
+            # on correct code / false green on broken code). Dropping leaves
+            # the name dangling so _InlineDangling raises loudly instead.
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    consts.pop(t.id, None)
+        elif (isinstance(node, ast.AugAssign)
+              and not isinstance(node.value, ast.Constant)):
+            consts.pop(node.target.id, None)
         elif isinstance(node, ast.Delete):
             for t in node.targets:
                 if isinstance(t, ast.Name):
@@ -485,6 +499,16 @@ def _kill_node_groups(workdir: Path) -> int:
                 pid = int(parts[0])
                 try:
                     start = float(parts[1]) if len(parts) > 1 else None
+                    # T19-F4 (slice 37): float("nan") does NOT raise — a
+                    # node-controlled pid file writing "nan" sailed past the
+                    # ValueError guard, made abs(actual - start) always-False
+                    # and the identity gate pass, so an arbitrary session
+                    # leader (recycled or innocent) got SIGTERM/SIGKILL.
+                    # Non-finite epochs are unverifiable: skip the line, the
+                    # same conservative path as a garbage field (torture-17
+                    # F3/F4).
+                    if start is not None and not math.isfinite(start):
+                        continue
                 except ValueError:
                     # torture-17 F4: a garbage second field (torn write,
                     # node-controlled pid file) must skip the LINE, not

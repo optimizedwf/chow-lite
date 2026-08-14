@@ -31,6 +31,12 @@ class FirestoreLedger:
         else:
             self.db = firestore.Client()
         self.collection = collection
+        # T19-F6 (slice 37): the cli.py recover path touches ledger._jobs
+        # (torture-10 F1 cache sync) and ledger.refresh(); JSONLLedger has
+        # both, FirestoreLedger had neither -> AttributeError on the
+        # documented `nine recover --force` path. Keep the same in-memory
+        # mirror (populated by get/refresh) so the backend swap is real.
+        self._jobs: dict[str, Job] = {}
 
     def _ref(self, job_id: str):
         return self.db.collection(self.collection).document(job_id)
@@ -62,7 +68,13 @@ class FirestoreLedger:
         rec: dict[str, Any] = doc.to_dict() or {}
         job = Job(workflow_id=rec["workflow_id"], job_id=rec["job_id"])
         job.__dict__.update({k: v for k, v in rec.items() if k != "workflow_id"})
+        self._jobs[job_id] = job  # mirror for the cli.py cache-sync contract
         return job
+
+    def refresh(self, job_id: str) -> Job:
+        """Firestore reads are always durable — same contract as
+        JSONLLedger.refresh (re-read durable state; cache NOT rebuilt)."""
+        return self.get(job_id)
 
     def discover(self, status: str | None = None,
                  workflow_id: str | None = None) -> list[Job]:
@@ -105,10 +117,21 @@ class FirestoreLedger:
         return self.transition(job_id, "cancelled")
 
     def recover(self, job_id: str) -> Job:
+        # T19-F6 (slice 37): this was a SILENT no-op for submitted/shipped
+        # jobs — it returned the job unchanged, so the cli.py recover path
+        # proceeded to WIPE the verified job dir and re-execute. Mirror the
+        # JSONLLedger contract: any status other than blocked/failed raises
+        # LedgerError; attempts are reset so the re-run gets a full budget.
         job = self.get(job_id)
-        if job.status in ("blocked", "failed"):
-            job.transition("recovered")
-            self._ref(job_id).update({"status": job.status, "updated_at": job.updated_at})
+        if job.status not in ("blocked", "failed"):
+            raise LedgerError(
+                f"job {job_id} is {job.status}, only blocked/failed can be recovered"
+            )
+        job.transition("recovered")
+        job.attempts = 0
+        self._jobs[job_id] = job
+        self._ref(job_id).update({"status": job.status, "updated_at": job.updated_at,
+                                  "attempts": job.attempts})
         return job
 
     def stats(self) -> dict[str, Any]:

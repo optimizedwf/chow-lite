@@ -651,7 +651,18 @@ class WorkflowExecutor:
                                 # and silently REPLACED each other — include
                                 # the immediate parent segment so the outside
                                 # namespace is unique per (parent, basename).
-                                rel = "../" + p.parent.name + "/" + p.name
+                                # T19-F2 (slice 37): parent NAME only still
+                                # collides when two outside roots share an
+                                # immediate parent name (/x/a/report.md vs
+                                # /y/a/report.md both -> "../a/report.md", one
+                                # manifest entry silently REPLACED, surviving
+                                # name resolving to NEITHER file). Namespace
+                                # on parent name + 8-hex digest of the resolved
+                                # parent so distinct roots never collide.
+                                parent_digest = self._hash(
+                                    str(p.parent.resolve()).encode("utf-8"))[:8]
+                                rel = ("../" + p.parent.name + "-" +
+                                       parent_digest + "/" + p.name)
                             # torture-15 F3: the explicit branch must apply
                             # the SAME byproduct exclusion as the recursive
                             # inventory — a tool naming test_output.log /
@@ -727,8 +738,13 @@ class WorkflowExecutor:
                             # name, so certifying the link certifies produced
                             # evidence. Resolve and check the target's rel.
                             try:
+                                # T19-F1 (slice 37): resolve BOTH sides — on
+                                # macOS /var -> /private/var and /tmp ->
+                                # /private/tmp are symlinked prefixes; an
+                                # unresolve()d job_dir made the benign blessed
+                                # pattern a permanent false BLOCK in temp dirs.
                                 target_rel = p_expected.resolve().relative_to(
-                                    job_dir).as_posix()
+                                    job_dir.resolve()).as_posix()
                             except (ValueError, OSError):
                                 target_rel = None
                             if target_rel is not None and target_rel in registered:
@@ -816,14 +832,33 @@ class WorkflowExecutor:
                 # named by a check's .expected and compare with the manifest
                 # sha256; mismatch = the manifest lies -> BLOCK.
                 refs_by_name = {a["name"]: a for a in artifacts}
+                resolved_dir = job_dir.resolve()
                 for _name, fn in self.gate.checks.items():
                     for expected_name in (getattr(fn, "expected", None) or []):
-                        ref = refs_by_name.get(expected_name)
-                        if ref is None:
+                        # T19-F1 (slice 37): a check whose .expected names a
+                        # SYMLINK (the blessed latest.md -> REPORT.md pattern)
+                        # used to skip the re-hash entirely — symlinks are
+                        # never registered, so ref was None and the TARGET the
+                        # gate certifies was never content-checked. A late
+                        # writer swapping the target between registration and
+                        # the gate read shipped a manifest whose sha256 never
+                        # matched disk. Re-hash the RESOLVED target instead.
+                        p_expected = resolved_dir / expected_name
+                        if not p_expected.exists():
+                            continue  # the check already failed
+                        if p_expected.is_symlink():
+                            try:
+                                target_rel = p_expected.resolve().relative_to(
+                                    resolved_dir).as_posix()
+                            except (ValueError, OSError):
+                                continue  # unresolvable link: audit above BLOCKs
+                            ref = refs_by_name.get(target_rel)
+                            mp = p_expected.resolve()
+                        else:
+                            ref = refs_by_name.get(expected_name)
+                            mp = resolved_dir / expected_name
+                        if ref is None or not mp.is_file() or mp.is_symlink():
                             continue  # run input / dir / not registered
-                        mp = job_dir / expected_name
-                        if not mp.is_file() or mp.is_symlink():
-                            continue  # handled by the per-check audit above
                         try:
                             if self._hash(mp.read_bytes()) != ref["sha256"]:
                                 stale.append(

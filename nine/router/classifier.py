@@ -45,49 +45,58 @@ class RouteDecision:
         return json.dumps(self.to_dict(), indent=2)
 
 
+_KEY = (
+    r"(?:password|passwd|pwd|secret|token|api[ _-]?key|"
+    r"private[ _-]?key|public[ _-]?key|consumer[ _-]?key|"
+    r"access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|"
+    r"privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|"
+    r"aws_secret_access_key|aws_access_key_id)"
+)
+
+
 def redact(text: str) -> str:
     """Basic lexical redaction for credential-shaped strings.
 
     NOTE: this is not a security boundary — it reduces accidental secret
     leakage in logs (matching the design of the internal nine router).
     """
+    # T19-F3 (slice 37): ONE shared key-name alternation (_KEY) covering the
+    # underscore, hyphen, space and camelCase spellings (private_key,
+    # private-key, private key, privateKey, ...). Previously only the
+    # underscore forms matched, so --private-key=hunter2, "clientKey": ...,
+    # ssh-key xyz and api_key%%3Dsupersecret reached the durable ledger raw.
     patterns: list[tuple[str, str, re.RegexFlag]] = [
-        # comparison chains (==, !=, ~=) FIRST so the plain [=:] pattern does
-        # not steal the leading '=' of '==' and leak the secret tail.
-        # torture-16 F4: consume the WHOLE chained comparison — a
-        # `password == hunter2 == hunter3` must not leak the tail.
-        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s*[=!~]=\s*\S+(?:\s*[=!~]=\s*\S+)*", "\\1=***", re.DOTALL | re.IGNORECASE),
-        # quoted values BEFORE the plain [=:] pattern so a space-containing
-        # value is consumed whole — torture-16 F4: `"token": "sk-123 abc"`
-        # and `api_key = "sk-123 abc def"` leaked everything after the first
-        # space (\S+ stopped at it).
-        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|ssh_key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
-        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s*[=:]\s*[\"'][^\"']*[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
+        # comparison chains (==, !=, ~=) FIRST so the plain [=:] pattern does not steal the leading '=' of '==' and leak the secret tail. torture-16 F4: consume the WHOLE chained comparison — `password == hunter2 == hunter3` must not leak the tail.
+        (r"((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))\s*[=!~]=\s*\S+(?:\s*[=!~]=\s*\S+)*", '\\1=***', re.DOTALL | re.IGNORECASE),
+        # quoted values BEFORE the plain [=:] pattern so a space-containing value is consumed whole — torture-16 F4: `"token": "sk-123 abc"` and `api_key = "sk-123 abc def"` leaked everything after the first space.
+        (r"[\"\']((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))[\"\']\s*[:=]\s*[\"\'][^\"\']*[\"\']", '\\1=***', re.DOTALL | re.IGNORECASE),
+        (r"((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))\s*[=:]\s*[\"\'][^\"\']*[\"\']", '\\1=***', re.DOTALL | re.IGNORECASE),
         # plain key=value / key: value
-        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s*[=:]\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
-        (r"(password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|secret_key|ssh_key)\s+(?:is|was|:=|:|=)\s*\S+", "\\1=***", re.DOTALL | re.IGNORECASE),
+        (r"((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))\s*[=:]\s*\S+", '\\1=***', re.DOTALL | re.IGNORECASE),
+        (r"((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))\s+(?:is|was|:=|:|=)\s*\S+", '\\1=***', re.DOTALL | re.IGNORECASE),
+        # T19-F3 (slice 37): bare space form — `ssh-key xyz` (key name + value, no connector) previously reached the ledger raw. Over-redaction is acceptable (best-effort boundary).
+        (r"((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))\s+\S+", '\\1=***', re.DOTALL | re.IGNORECASE),
         # torture-6 F4: JSON-quoted credentials ("api_key":"sk-123", "token": "abc")
-        (r"[\"'](password|passwd|pwd|secret|token|api[_-]?key|private_key|public_key|consumer_key|access_key|client_key|ssh_key|aws_secret_access_key|aws_access_key_id)[\"']\s*[:=]\s*[\"']\S+[\"']", "\\1=***", re.DOTALL | re.IGNORECASE),
-        # AWS keys: AKIA... and aws_secret_access_key = value
-        (r"AKIA[0-9A-Z]{16}", "AKIA***", re.DOTALL | re.IGNORECASE),
-        (r"aws_secret_access_key\s*[=:]\s*\S+", "aws_secret_access_key=***", re.DOTALL | re.IGNORECASE),
-        (r"aws_access_key_id\s*[=:]\s*\S+", "aws_access_key_id=***", re.DOTALL | re.IGNORECASE),
+        (r"[\"\']((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))[\"\']\s*[:=]\s*[\"\']\S+[\"\']", '\\1=***', re.DOTALL | re.IGNORECASE),
+        # AWS keys: AKIA...
+        (r"AKIA[0-9A-Z]{16}", 'AKIA***', re.DOTALL | re.IGNORECASE),
+        (r"aws_secret_access_key\s*[=:]\s*\S+", 'aws_secret_access_key=***', re.DOTALL | re.IGNORECASE),
+        (r"aws_access_key_id\s*[=:]\s*\S+", 'aws_access_key_id=***', re.DOTALL | re.IGNORECASE),
         # Slack tokens: xoxb-/xoxp-/xapp-/xoxs-/xoxr-...
-        (r"xox[baprs]-[0-9A-Za-z-]{10,}", "xox***", re.DOTALL | re.IGNORECASE),
-        (r"Bearer\s+[A-Za-z0-9._~+/-]+=*", "Bearer ***", re.DOTALL | re.IGNORECASE),
-        # torture-15 F6: HTTP Basic auth header — Authorization: Basic <b64>
-        (r"Authorization\s*:\s*Basic\s+[A-Za-z0-9+/=]{8,}", "Authorization: Basic ***", re.DOTALL | re.IGNORECASE),
-        # torture-15 F6: URI userinfo (mongodb://user:pass@host, https://u:p@h)
-        (r"([a-z][a-z0-9+.-]*://)[^/@\s]+@", "\\1***@", re.DOTALL | re.IGNORECASE),
-        # torture-15 F6: CLI-style `--password hunter2` / `--token xyz`
-        (r"(--(?:password|passwd|pwd|secret|token|api[_-]?key|(?:private|public|consumer|access|secret|client|ssh)[_-]key))\s+\S+", "\\1 ***", re.DOTALL | re.IGNORECASE),
-        (r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", "***PRIVATE KEY***", re.DOTALL | re.IGNORECASE),
-        # torture-16 F4: `\b` + explicit non-lowercase guard so innocent
-        # words (skillfulness, skateboarding, pkill...) pass through; AIza
-        # keys are always followed by letters (AIzaSy...) so they keep the
-        # unguarded branch. Case-SENSITIVE (no IGNORECASE) so the guard is
-        # meaningful — real keys (sk-ABC..., pk_live..., ghp_...) still match.
-        (r"\b((?:sk|pk|gh[po])(?![a-z])|AIza)[A-Za-z0-9_\-]{10,}", "\\1***", re.DOTALL),
+        (r"xox[baprs]-[0-9A-Za-z-]{10,}", 'xox***', re.DOTALL | re.IGNORECASE),
+        (r"Bearer\s+[A-Za-z0-9._~+/-]+=*", 'Bearer ***', re.DOTALL | re.IGNORECASE),
+        # torture-15 F6: HTTP Basic auth header
+        (r"Authorization\s*:\s*Basic\s+[A-Za-z0-9+/=]{8,}", 'Authorization: Basic ***', re.DOTALL | re.IGNORECASE),
+        # torture-15 F6: URI userinfo
+        (r"([a-z][a-z0-9+.-]*://)[^/@\s]+@", '\\1***@', re.DOTALL | re.IGNORECASE),
+        # torture-15 F6 + T19-F3: CLI-style `--password hunter2` AND the equals form `--private-key=hunter2`
+        (r"(--(?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))\s*[= ]\s*\S+", '\\1 ***', re.DOTALL | re.IGNORECASE),
+        # T19-F3: urlencoded separator api_key%3Dsupersecret
+        (r"((?:password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|public[ _-]?key|consumer[ _-]?key|access[ _-]?key|client[ _-]?key|secret[ _-]?key|ssh[ _-]?key|privateKey|publicKey|consumerKey|accessKey|clientKey|secretKey|sshKey|aws_secret_access_key|aws_access_key_id))%3[Dd]\S+", '\\1=***', re.DOTALL | re.IGNORECASE),
+        (r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", '***PRIVATE KEY***', re.DOTALL | re.IGNORECASE),
+        # torture-16 F4 + T20-F6: short tokens (sk-123, pk_live, ghp_...) redacted with a non-lowercase guard so skillfulness/skateboarding pass; case-sensitive.
+        (r"\b((?:sk|pk|gh[po]))(?![a-z])[A-Za-z0-9_\-]{4,}", '\\1***', re.DOTALL),
+        (r"\bAIza[A-Za-z0-9_\-]{3,}", 'AIza***', re.DOTALL),
     ]
     out = text
     # torture T3-F8: case-insensitive — API_KEY=, PASSWORD=, TOKEN: all

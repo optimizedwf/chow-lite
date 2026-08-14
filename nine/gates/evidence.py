@@ -114,8 +114,6 @@ def file_nonempty_check(name: str, min_chars: int = 10) -> CheckFn:
     read back as non-trivial text does not SHIP.
     """
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
-        # torture-10 F2: provenance metadata for the stale guard.
-        _check.expected = [name]  # type: ignore[attr-defined]  # torture-10 F2 tag  # torture-10 F2 provenance tag
         f = Path(workdir) / name
         if f.is_symlink() or not f.exists():
             return False, f"{name} missing — cannot verify"
@@ -124,6 +122,8 @@ def file_nonempty_check(name: str, min_chars: int = 10) -> CheckFn:
             return False, f"{name} too small ({size}B < {min_chars}B)"
         return True, f"{name} present and non-trivial ({size}B)"
 
+    # T20-F5 (slice 37): factory-time provenance tag (see eval_json_check).
+    _check.expected = [name]  # type: ignore[attr-defined]
     return _check
 
 
@@ -134,8 +134,6 @@ def eval_json_check(expected_checks: list[str] | None = None) -> CheckFn:
         {"checks": [{"name": "...", "passed": true, "message": "..."}, ...]}
     """
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
-        # torture-10 F2: provenance metadata for the stale guard.
-        _check.expected = ["EVAL.json"]  # type: ignore[attr-defined]  # torture-10 F2 tag  # torture-10 F2 provenance tag
         ev = load_eval_json(workdir)
         if ev is None:
             return False, "EVAL.json missing — cannot verify"
@@ -159,6 +157,12 @@ def eval_json_check(expected_checks: list[str] | None = None) -> CheckFn:
             return False, f"{len(failed)} check(s) failed: {labels}"
         return True, f"{len(checks)} checks passed"
 
+    # T20-F5 (slice 37): provenance tagged at FACTORY time (not lazily
+    # inside the closure) so register_check's loud warning only fires for
+    # checks that are genuinely untagged — the stale guard runs AFTER
+    # evaluate(), so a lazy tag always existed by then and the warning was
+    # false on every run.
+    _check.expected = ["EVAL.json"]  # type: ignore[attr-defined]
     return _check
 
 

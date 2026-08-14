@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
+import re as _re
 from pathlib import Path
 
 import jsonschema
@@ -72,7 +73,22 @@ def _format_checker() -> FormatChecker:
             dt = _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return False
-        return dt.tzinfo is not None
+        if dt.tzinfo is None:
+            return False
+        # T19-F7 (slice 37): fromisoformat accepts hour-only offsets (+00,
+        # -01) and colon-less offsets (+0530) — the docstring claims an
+        # "RFC 3339 subset", and RFC 3339 time-offset is Z or +/-HH:MM only.
+        # Reject the non-canonical shapes so hand-edited records or plugin
+        # verdicts with a non-RFC offset fail the boundary loudly instead of
+        # entering durable stores in a shape comparisons/analytics don't
+        # expect.
+        m = _re.search(r"[+-]\d\d(?::?\d\d)?$", value)
+        if m:
+            off = m.group(0)
+            if len(off) != 6:
+                return False  # +00 / -01 (len 3) or +0530 (len 5): not
+                              # RFC 3339 (Z or +/-HH:MM only)
+        return True
 
     fc.checkers["date-time"] = (  # type: ignore[assignment]
         _check_date_time,

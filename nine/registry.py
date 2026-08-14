@@ -29,6 +29,7 @@ from nine.chains.flagship import (
     review_hop,
     teach_hop,
 )
+from nine.gates.evidence import EvidenceGate
 from nine.runtime.responder import respond_gate, respond_workflow
 from nine.runtime.workflows import Workflow
 from nine.workflows.analyze_wf import analyze_hop
@@ -137,6 +138,24 @@ _HOPS: dict[str, Callable] = {
     "research-quick": research_quick_hop,
     "refactor": refactor_hop,
     "teach": teach_hop,
+    # T20-F1 (slice 37): the router can select these 11 lanes, but they were
+    # missing from _HOPS, so workflow_gate() returned None -> the CLI fell
+    # back to the generic eval-json/exit-codes gate, which lanes that never
+    # write EVAL.json (analyze/compare/draft/draft-email/extract/ideate/
+    # summarize-standalone) can NEVER satisfy -> those jobs FIX-looped 2
+    # extra full DAG runs and then BLOCKed. Every id in WORKFLOWS must have
+    # a hop gate so submit/recover certify the lane's OWN artifacts.
+    "transform": transform_hop,
+    "pipeline": pipeline_hop,
+    "analyze": analyze_hop,
+    "compare": compare_hop,
+    "compose": compose_hop,
+    "draft": draft_hop,
+    "draft-email": draft_email_hop,
+    "extract": extract_hop,
+    "ideate": ideate_hop,
+    "research-deep": research_deep_hop,
+    "summarize-standalone": summarize_standalone_hop,
 }
 
 
@@ -161,6 +180,35 @@ def workflow_gate(workflow_id: str):
     for name, check in factory().gate_checks.items():
         gate.register_check(name, check)
     return gate
+
+
+def default_gate() -> EvidenceGate:
+    """Generic fallback gate (eval-json + exit-codes only).
+
+    Only correct for lanes whose nodes write EVAL.json from their ACTUAL
+    run; hop gates (workflow_gate) certify per-lane artifacts. This exists
+    so `resolve_gate` never returns None and every submit/recover/API path
+    has a deterministic verdict.
+    """
+    from nine.gates.evidence import EvidenceGate, eval_json_check, exit_codes_check
+
+    gate = EvidenceGate()
+    gate.register_check("eval-json", eval_json_check())
+    gate.register_check("exit-codes", exit_codes_check())
+    return gate
+
+
+def resolve_gate(workflow_id: str) -> EvidenceGate:
+    """Per-hop gate for the workflow, falling back to the generic gate.
+
+    THE single dispatch both the CLI (`nine submit`/`nine recover`) and the
+    HTTP API use (T20-F2, slice 37): one expression, one verdict per
+    evidence set. Prior to slice 37 the CLI and deploy/server.py each had
+    their own `workflow_gate(...) or <local generic>` — a drift risk the
+    torture-20 worker demonstrated by reading the server's dead
+    `gate = build_gate()` assignment as the live verdict path.
+    """
+    return workflow_gate(workflow_id) or default_gate()
 
 def _load_plugin_workflows() -> dict[str, Callable[[], Workflow]]:
     """Compose-registered plugin workflows (nine/chains/plugins/).

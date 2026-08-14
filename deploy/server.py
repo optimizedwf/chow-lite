@@ -23,13 +23,13 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from nine.chains.chain import ChainError
 from nine.gates.evidence import (
     EvidenceGate,
     eval_json_check,
     exit_codes_check,
 )
 from nine.ledger.firestore_ledger import FirestoreLedger
-from nine.chains.chain import ChainError
 from nine.ledger.ledger import LedgerError
 from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
@@ -423,7 +423,6 @@ def submit(payload: SubmitRequest):
 
     # dispatch through the shared registry: the demo lane and the flagship
     # hops run their REAL multi-hop chains / workflows, not a canned echo.
-    gate = build_gate()
     if decision.workflow_id in CHAINS:
         from nine.chains.chain import ChainExecutor
         chain = CHAINS[decision.workflow_id]()
@@ -441,7 +440,19 @@ def submit(payload: SubmitRequest):
                 f"cannot prepare chain job dir: {exc}") from exc
         cex = ChainExecutor(ledger, workdir=WORKDIR, learner=learner,
                             memory=memory)
-        res = cex.execute(chain, job, {"task": task}, decision=decision)
+        try:
+            res = cex.execute(chain, job, {"task": task}, decision=decision)
+        except ChainError:
+            # T20-F3 (slice 37): the server, like the CLI, records a FAILED
+            # route event when a chain hop fails loud (the global handler
+            # turns it into a clean 502, but the LEARN loop must still see
+            # the failure — README: every submit path appends a route event
+            # and the verdict).
+            _record_route_event(
+                learner, job, decision,
+                {"verdict": "FAILED", "eval_results": {}},
+            )
+            raise
         return {
             "job_id": job.job_id,
             "status": job.status,
@@ -460,25 +471,39 @@ def submit(payload: SubmitRequest):
             "decision": decision.to_dict(),
         }
 
+    # T20-F3 (slice 37) fix: WorkflowError must be bound in BOTH branches —
+    # the FAILED-event handler below catches it on the NORMAL path too, and
+    # a function-local import inside the else-branch alone left `except
+    # WorkflowError` reading an unbound local (UnboundLocalError) on every
+    # legit submit.
+    from nine.runtime.workflows import WorkflowError
+
     if decision.workflow_id in WORKFLOWS:
         wf = WORKFLOWS[decision.workflow_id]()
     else:
         # unregistered workflow_id: fail loud. No collect node, no
         # fabricated EVAL.json — the router must only emit registered ids.
-        from nine.runtime.workflows import WorkflowError
-
         raise WorkflowError(
             f"unregistered workflow id '{decision.workflow_id}' — no collect "
             "fallback; nine is model-driven (router must only emit "
             "registered ids)"
         )
 
-    from nine.registry import workflow_gate
+    from nine.registry import resolve_gate
 
-    gate = workflow_gate(decision.workflow_id) or build_gate()
+    gate = resolve_gate(decision.workflow_id)
     ex = WorkflowExecutor(ledger, gate, workdir=WORKDIR)
     try:
         result = ex.execute(wf, job, {"task": task})
+    except WorkflowError:
+        # T20-F3 (slice 37): failed-loud workflow run -> FAILED route event
+        # (re-raise so the handler still returns the clean 502; the event is
+        # recorded BEFORE the response so a client retry cannot duplicate).
+        _record_route_event(
+            learner, job, decision,
+            {"verdict": "FAILED", "eval_results": {}},
+        )
+        raise
     except OSError as exc:
         # torture-18 F5: the executor's own job_dir.mkdir is unwrapped —
         # a WORKDIR/work-as-file data dir reached the client as HTTP 500.

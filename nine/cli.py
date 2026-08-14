@@ -250,7 +250,7 @@ def _execute_job(ledger, job, task: str, args) -> int:
     # workflow_id (research != review != build). Every id the router can
     # select has a real, model-gated workflow — there is NO collect node and
     # NO fabricated-output fallback for unregistered ids (fail loud instead).
-    from nine.registry import CHAINS, WORKFLOWS, workflow_gate
+    from nine.registry import CHAINS, WORKFLOWS, resolve_gate
 
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     try:
@@ -277,6 +277,14 @@ def _execute_job(ledger, job, task: str, args) -> int:
             # not). Fail loud with the same ONE clean line.
             print(f"[error] job {job.job_id} failed loud: {exc}",
                   file=sys.stderr)
+            # T20-F3 (slice 37): a failed-loud run IS a route observation —
+            # the LEARN loop must see failures, not just SHIPs. Record a
+            # FAILED verdict event before returning (README: every submit
+            # path appends a route event and the verdict).
+            _record_route_event(
+                learner, job, decision,
+                {"verdict": "FAILED", "eval_results": {}},
+            )
             return 1
         print(f"chain={chain.id} job={job.job_id} final={res['final']}")
         return 0 if res["final"] == "SHIPPED" else 2
@@ -290,7 +298,7 @@ def _execute_job(ledger, job, task: str, args) -> int:
             "registered ids)"
         )
 
-    gate = workflow_gate(job.workflow_id) or build_default_gate()
+    gate = resolve_gate(job.workflow_id)
     executor = WorkflowExecutor(ledger, gate, workdir=getattr(args, "workdir", "work"))
     try:
         result = executor.execute(wf, job, {"task": task})
@@ -298,6 +306,13 @@ def _execute_job(ledger, job, task: str, args) -> int:
         # Model-or-fail: no offline fallback. Fail loud with a clean error
         # (job already marked failed in the ledger), never a canned answer.
         print(f"[error] job {job.job_id} failed loud: {exc}", file=sys.stderr)
+        # T20-F3 (slice 37): failed-loud runs record a FAILED route event
+        # so the learn loop sees the failure (README contract: every submit
+        # path appends a route event and the verdict).
+        _record_route_event(
+            learner, job, decision,
+            {"verdict": "FAILED", "eval_results": {}},
+        )
         return 1
 
     # LEARN: one route event per completed workflow run
@@ -401,6 +416,20 @@ def cmd_status(args) -> int:
 def cmd_discover(args) -> int:
     # torture-12 F8: an unusable --ledger path must be ONE clean line, not
     # a raw traceback (same contract as cmd_status/artifacts/cancel).
+    # T20-F6 (slice 37): an unknown --status used to silently print
+    # "0 job(s)" and exit 0 — the operator could not tell a typo from an
+    # empty ledger. Validate the enum up front.
+    if args.status is not None:
+        from nine.ledger.ledger import VALID_STATUSES
+
+        if args.status not in VALID_STATUSES:
+            valid = ", ".join(sorted(VALID_STATUSES))
+            print(
+                f"error: unknown status {args.status!r} "
+                f"(valid: {valid})",
+                file=sys.stderr,
+            )
+            return 1
     try:
         jobs = _ledger(args).discover(status=args.status)
     except LedgerError as e:
@@ -607,10 +636,19 @@ def cmd_learn(args) -> int:
             _print_candidate(c)
         return 0
 
-    if action == "apply":
-        return _apply_candidate(learner, args.candidate_id)
-
-    if action == "revert":
+    if action in ("apply", "revert"):
+        if not args.candidate_id:
+            # T20-F6 (slice 37): `nine learn apply` with no id printed
+            # "no candidate None" — a confused operator sees a fake
+            # candidate id instead of the usage contract.
+            print(
+                f"error: 'nine learn {action}' requires a candidate_id "
+                "(see `nine learn candidates`)",
+                file=sys.stderr,
+            )
+            return 2
+        if action == "apply":
+            return _apply_candidate(learner, args.candidate_id)
         return _revert_candidate(learner, args.candidate_id)
 
     print(f"unknown learn action: {action}")

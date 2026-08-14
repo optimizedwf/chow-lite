@@ -212,10 +212,15 @@ def test_t15_f5_outside_artifact_namespaced_no_collision(tmp_path):
     res, job, job_dir = _run_workflow(tmp_path, wf, checks)
     assert res["verdict"]["verdict"] == "SHIP", res
     names = [a["name"] for a in job.artifacts]
-    # torture-17 F8: outside-job-dir artifacts namespace as
-    # "../<parent>/<name>" (parent dir disambiguates; same-named inside
-    # files cannot collide)
-    assert "../" + outside.parent.name + "/" + outside.name in names, names
+    # torture-17 F8 + T19-F2 (slice 37): outside-job-dir artifacts
+    # namespace as "../<parent>-<8-hex digest>/<name>" — the parent digest
+    # keeps same-NAMED parents from different roots collision-free; the
+    # essential property is that the outside file is registered under a
+    # distinct name while the inside file keeps its bare name.
+    outside_names = [n for n in names
+                     if n.startswith("../" + outside.parent.name + "-")
+                     and n.endswith("/" + outside.name)]
+    assert len(outside_names) == 1, names
     assert "outside.txt" in names, names  # inside file still present
     inside = [a for a in job.artifacts if a["name"] == "outside.txt"][0]
     assert inside["size"] == len("inside content\n")
@@ -273,9 +278,14 @@ def test_t15_f7_outside_artifact_summary_from_own_content(tmp_path):
 
     recs = [json.loads(line) for line in
             (tmp_path / "memory.jsonl").read_text().splitlines() if line.strip()]
+    # T19-F2 (slice 37): the artifact name is now
+    # "../<parent>-<8-hex digest>/<name>" — match on the digest-suffixed
+    # prefix so the memory summary is still keyed to the outside file.
     outside_recs = [r for r in recs
-                    if r.get("artifact_name")
-                    == "../" + outside.parent.name + "/" + outside.name]
+                    if r.get("artifact_name", "").startswith(
+                        "../" + outside.parent.name + "-")
+                    and r.get("artifact_name", "").endswith(
+                        "/" + outside.name)]
     assert outside_recs, [r.get("artifact_name") for r in recs]
     for r in outside_recs:
         assert "OUTSIDE OWN CONTENT" in r["summary"], r

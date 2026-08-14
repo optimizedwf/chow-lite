@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-14T19:13:14.334931+00:00",
- "cycles_run": 18,
+ "last_cycle": "2026-08-14T19:50:20.241800+00:00",
+ "cycles_run": 19,
  "last_bench": {
   "run_id": "oai-r1",
   "backend": "openai",
@@ -32,9 +32,9 @@
    45
   ]
  },
- "next_target": "Canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-010); DS4 oai-r1 (9/9 SHIP 84/84) interim. Slice 36 (HARDEN): fixture 010 built, T17/T18 LEDGER backfill, round-10 torture spawned (torture-19/20). Fixture specs 011-015 deferred.",
+ "next_target": "Canonical GEMINI BENCH after cooldown 2026-08-14T23:49 AND est_quota_left>=30 (fixtures 001-010); DS4 oai-r1 (9/9 SHIP 84/84) interim. Slice 37 (HARDEN): round-10 harvest SHIPPED \u2014 T19 (7) + T20 (6) all FIXED, 12 new hermetic tests, 459/464 suite. Fixture specs 011-015 deferred.",
  "last_error": null,
- "last_harvest": "2026-08-14T19:13:14.334931+00:00",
+ "last_harvest": "2026-08-14T19:50:20.241800+00:00",
  "last_spawn": {
   "round": 10,
   "attempt": 1,

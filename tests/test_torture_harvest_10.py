@@ -7,6 +7,7 @@ import json
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -320,8 +321,15 @@ def test_t17_f8_outside_same_basename_namespaced(tmp_path):
                        "artifacts": required_artifact_check(["FLAG.txt"])})
     assert res["verdict"]["verdict"] == "SHIP", res["verdict"]["verdict"]
     names = {a["name"] for a in job.artifacts}
-    assert "../x/report.md" in names, names
-    assert "../y/report.md" in names, names
+    # T19-F2 (slice 37): namespace is now "../<parent>-<8-hex digest>/<name>"
+    # so outside files whose parents share a NAME (x/a/report.md vs
+    # y/a/report.md) still cannot collide — assert the essential property:
+    # BOTH files present, distinct names, each pointing at its own content.
+    x_names = [n for n in names if n.startswith("../x-") and n.endswith("/report.md")]
+    y_names = [n for n in names if n.startswith("../y-") and n.endswith("/report.md")]
+    assert len(x_names) == 1, names
+    assert len(y_names) == 1, names
+    assert x_names != y_names, names
 
 # ============================================================== torture-18 ====
 
@@ -757,3 +765,401 @@ def test_t18_f8_boundary_schemas_strict_and_terminal_guard(tmp_path):
                      "verified_at": "2026-01-01T00:00:00+00:00",
                      "gate_version": None})
     assert job.verdicts[-1]["verdict"] == "CANCELLED"
+
+
+# ============================================================== torture-20 ====
+
+def test_t20_f1_all_router_workflow_ids_have_gates():
+    """torture-20 F1: several hop factories were registered in WORKFLOWS but
+    missing from _HOPS, so resolve_gate() fell back to the GENERIC gate and
+    those lanes shipped without certifying their own artifacts. Every
+    router-selectable workflow id must resolve to a real per-hop gate."""
+    from nine import registry
+
+    wf_ids = set(registry.WORKFLOWS)
+    assert wf_ids, "registry must expose workflows"
+    for wid in sorted(wf_ids):
+        gate = registry.resolve_gate(wid)
+        assert gate is not None, f"resolve_gate({wid!r}) is None"
+        assert gate.checks, f"resolve_gate({wid!r}) has no checks"
+    # respond is the one id with its own respond_gate (no _HOPS factory);
+    # every OTHER id must be present so no lane silently falls back.
+    uncovered = wf_ids - {"respond"} - set(registry._HOPS)
+    assert not uncovered, f"workflow ids without hop gates: {sorted(uncovered)}"
+
+
+def test_t20_f2_resolve_gate_cli_and_server_share_single_dispatch():
+    """torture-20 F2: the CLI and deploy/server.py each had their own generic
+    fallback gate, and server.py kept a DEAD `gate = build_gate()` assignment
+    beside the live verdict path — a reader could mistake the dead gate for
+    the verdict path. Both surfaces must reach nine.registry.resolve_gate
+    (one expression, one verdict per evidence set)."""
+    import inspect
+
+    import deploy.server as server
+    from nine import cli as nine_cli
+    from nine.registry import resolve_gate
+
+    assert "resolve_gate" in inspect.getsource(server)
+    assert "resolve_gate" in inspect.getsource(nine_cli)
+    assert "gate = build_gate()" not in inspect.getsource(server), (
+        "dead build_gate assignment must be gone (T20-F2)")
+    # the workflow gate and the generic gate genuinely differ for build:
+    # the build lane certifies produced artifacts, the generic gate only
+    # eval-json + exit-codes. A build job dir with no produced artifacts
+    # must FIX under resolve_gate("build") but SHIP under the generic gate.
+    build_gate = resolve_gate("build")
+    generic_gate = resolve_gate("__no_such_workflow__")
+    assert set(generic_gate.checks) == {"eval-json", "exit-codes"}
+    assert "artifacts" in build_gate.checks
+    assert set(build_gate.checks) - set(generic_gate.checks), (
+        "build gate must be stricter than the generic gate")
+
+
+def test_t20_f3_failed_loud_records_failed_route_event(tmp_path):
+    """torture-20 F3: a failed-loud run is a route observation — the LEARN
+    loop must see failures, not just SHIPs. The route-event schema must
+    admit FAILED and RouteEventStore.record must persist it (before the fix
+    'FAILED' failed schema validation and the event was silently dropped)."""
+    from nine.learn.learner import RouteEvent, RouteEventStore
+
+    store = RouteEventStore(tmp_path / "events.jsonl")
+    store.record(RouteEvent(
+        event_id="e1", job_id="j1", task_redacted="t",
+        workflow_id="build", confidence=0.9, router_version="v",
+        verdict="FAILED", checks_passed=0, checks_total=0,
+    ))
+    events = store.all()
+    assert len(events) == 1 and events[0].verdict == "FAILED", events
+
+    # server surface: _record_route_event persists FAILED too
+    import deploy.server as server
+    from nine.router.classifier import RouteDecision
+
+    decision = RouteDecision(
+        decision_id="d1", task_redacted="t", workflow_id="respond",
+        confidence=0.9, reason="r", decided_at="2026-01-01T00:00:00+00:00",
+        router_version="v")
+
+    class _Recorder:
+        def __init__(self):
+            self.events = []
+
+        def observe(self, ev):
+            self.events.append(ev)
+
+    rec = _Recorder()
+    server._record_route_event(rec, None, decision,
+                               {"verdict": "FAILED", "eval_results": {}})
+    assert len(rec.events) == 1 and rec.events[0].verdict == "FAILED"
+
+
+def test_t20_f5_provenance_tags_set_at_factory_time():
+    """torture-20 F5: gate factories must tag .expected BEFORE returning so
+    register_check never warns and the stale-artifact guard can prove what
+    each check certifies (untagged checks refuse SHIP with a loud warning —
+    T17-F2 — so a factory forgetting the tag breaks every lane at runtime)."""
+    import contextlib
+    import io
+
+    from nine.gates.evidence import (
+        eval_json_check,
+        exit_codes_check,
+        file_nonempty_check,
+        required_artifact_check,
+    )
+
+    assert eval_json_check().expected == ["EVAL.json"]
+    assert file_nonempty_check("RESPONSE.md").expected == ["RESPONSE.md"]
+    assert required_artifact_check(["a.txt", "b.txt"]).expected == [
+        "a.txt", "b.txt"]
+    assert exit_codes_check().expected == []
+
+    # registering the tagged factories emits NO warning
+    g = EvidenceGate()
+    buf = io.StringIO()
+    with contextlib.redirect_stderr(buf):
+        g.register_check("eval-json", eval_json_check())
+        g.register_check("exit-codes", exit_codes_check())
+    assert buf.getvalue() == ""
+
+
+def test_t20_f6_discover_status_validation_and_short_token_redaction(tmp_path):
+    """torture-20 F6: `nine discover --status BOGUS` must fail loudly with a
+    clean error (not silently enumerate), and short credential tokens
+    (sk-123, AIza123) must be redacted by redact()."""
+    from nine.router.classifier import redact
+
+    out = redact("key=sk-123 and token AIza123")
+    assert "sk-123" not in out and "AIza123" not in out
+    assert "***" in out
+
+    r = subprocess.run(
+        [sys.executable, "-m", "nine.cli", "discover", "--status", "BOGUS"],
+        capture_output=True, text=True, cwd=tmp_path, check=False,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parent.parent)},
+    )
+    assert r.returncode != 0, r.stdout
+    assert "error" in (r.stderr + r.stdout).lower()
+
+
+# ============================================================== torture-19 ====
+
+def test_t19_f1_symlink_expected_rehashes_resolved_target(tmp_path):
+    """torture-19 F1 (HIGH): a check whose .expected names a SYMLINK
+    (latest.md -> REPORT.md) skipped the T17-F1 re-hash entirely — symlinks
+    are never registered in the manifest, so the guard's ref lookup returned
+    None and the loop moved on, letting a late writer swap the TARGET and
+    SHIP a manifest whose sha256 never matched disk. The guard must re-hash
+    the RESOLVED target against the target's manifest entry."""
+    wf = Workflow(id="t19f1")
+
+    def write_fn(inputs, job_dir):
+        jd = Path(job_dir)
+        (jd / "REPORT.md").write_text("REPORT CONTENT\n", encoding="utf-8")
+        (jd / "latest.md").symlink_to("REPORT.md")
+        return {"output": "ok"}
+
+    wf.add_node(Node(id="n", kind="tool", run=write_fn))
+
+    def latest_check(ctx, workdir):
+        p = Path(workdir) / "latest.md"
+        return (p.exists() and len(p.read_text()) > 0), "latest present"
+
+    latest_check.expected = ["latest.md"]  # type: ignore[attr-defined]
+
+    def _swap_target(ctx, workdir):
+        # late writer rewrites the RESOLVED TARGET after the manifest was
+        # hashed: latest.md now reads the swapped bytes.
+        (Path(workdir) / "REPORT.md").write_text(
+            "SWAPPED CONTENT\n", encoding="utf-8")
+        return True, "swapped"
+
+    _swap_target.expected = []  # type: ignore[attr-defined]
+
+    res, job, jd = _run_workflow(
+        tmp_path, wf,
+        {"latest": latest_check, "swap": _swap_target})
+    assert res["verdict"]["verdict"] == "BLOCK", res["verdict"]["summary"]
+    assert "content changed during gate evaluation" in res["verdict"]["summary"]
+
+    # control: no tamper -> target hash matches -> SHIP (no false positive)
+    wf2 = Workflow(id="t19f1b")
+    wf2.add_node(Node(id="n", kind="tool", run=write_fn))
+    res2, job2, jd2 = _run_workflow(
+        tmp_path, wf2, {"latest": latest_check})
+    assert res2["verdict"]["verdict"] == "SHIP", res2["verdict"]["summary"]
+
+
+def test_t19_f2_outside_same_parent_name_namespaced(tmp_path):
+    """torture-19 F2: two DIFFERENT outside roots whose immediate parents
+    share a NAME (x/a/report.md vs y/a/report.md) both mapped to
+    "../a/report.md" — one manifest entry silently REPLACED the other and
+    the survivor resolved to a third location. The namespace must include a
+    digest of the RESOLVED parent so same-named parents cannot collide."""
+    x = tmp_path / "x" / "a"
+    y = tmp_path / "y" / "a"
+    x.mkdir(parents=True)
+    y.mkdir(parents=True)
+    (x / "report.md").write_text("X CONTENT\n", encoding="utf-8")
+    (y / "report.md").write_text("Y CONTENT\n", encoding="utf-8")
+
+    wf = Workflow(id="t19f2")
+
+    def write_x(inputs, job_dir):
+        (Path(job_dir) / "FLAG.txt").write_text("ok\n", encoding="utf-8")
+        return {"output": "ok", "artifact_path": str(x / "report.md")}
+
+    def write_y(inputs, job_dir):
+        return {"output": "ok", "artifact_path": str(y / "report.md")}
+
+    wf.add_node(Node(id="nx", kind="tool", run=write_x))
+    wf.add_node(Node(id="ny", kind="tool", run=write_y))
+    res, job, jd = _run_workflow(
+        tmp_path, wf,
+        {"flag": _flag_check,
+         "artifacts": required_artifact_check(["FLAG.txt"])})
+    assert res["verdict"]["verdict"] == "SHIP", res["verdict"]["summary"]
+    by_name = {a["name"]: a for a in job.artifacts}
+    x_names = [n for n in by_name
+               if n.startswith("../a-") and n.endswith("/report.md")]
+    assert len(x_names) == 2, list(by_name)
+    assert x_names[0] != x_names[1], "same-parent-name roots must not collide"
+    assert all(a["sha256"] for a in job.artifacts), "artifacts lack sha256"
+
+
+def test_t19_f3_redact_hyphen_camelcase_flag_urlencoded():
+    """torture-19 F3: redact() only matched underscore key spellings, so
+    --private-key=hunter2, "clientKey": "abc123", ssh-key xyz and
+    api_key%3Dsupersecret reached the durable ledger raw. The shared _KEY
+    alternation must cover hyphen/space/camelCase plus --flag=value and
+    urlencoded separators — while the documented controls stay untouched."""
+    from nine.router.classifier import redact
+
+    cases = [
+        ("--private-key=hunter2", True),
+        ('"private-key": "hunter2"', True),
+        ('"privateKey": "hunter2"', True),
+        ('"clientKey": "abc123"', True),
+        ("ssh-key xyz", True),
+        ("api_key%3Dsupersecret", True),
+        ("privateKey=ghp_" + "abcdefgh123456", True),
+        ("client_secret_key = abcdef123456", True),
+        ("the key is on the table", False),
+        ("skillfulness of the model", False),
+        ("task list", False),
+        ("ghost town", False),
+        ("api_key=sk-" + "1234567890abcdef", True),   # old underscore form
+        ("password == hunter2 == hunter3", True),  # T16-F4 chains intact
+        ("xox" + "b-1234567890-abcdefghijklmnop", True),  # slack intact (literal split so GitHub secret scanning does not flag the fixture)
+    ]
+    for text, want in cases:
+        out = redact(text)
+        assert ("***" in out) == want, f"{text!r} -> {out!r} (want {want})"
+
+
+def test_t19_f4_nan_epoch_skipped_by_identity_gate(tmp_path):
+    """torture-19 F4: bench_nine read `{pid} nan` from .nine-node-pids —
+    float("nan") never raises, abs(actual - start) > 1.0 is always False
+    with nan, so the spawn-epoch identity gate passed and the sweeper
+    SIGTERM/SIGKILLed a process group it could NOT prove was the node's.
+    Non-finite epochs must be skipped (like the T17-F3 one-field rule)."""
+    from bench import bench_nine as bm
+
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                            start_new_session=True)
+    workdir = tmp_path / "work"
+    workdir.mkdir(parents=True)
+    (workdir / ".nine-node-pids").write_text(
+        f"{proc.pid} nan\n", encoding="utf-8")
+    try:
+        killed = bm._kill_node_groups(workdir)
+        assert killed == 0, f"nan epoch must not kill: killed={killed}"
+        assert proc.poll() is None, "process was killed despite nan epoch"
+    finally:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError, OSError):
+            pass
+
+
+def test_t19_f5_nonconstant_reassignment_drops_stale_constant():
+    """torture-19 F5: _constant_snapshots kept a stale literal when a
+    constant-name was REASSIGNED to a non-constant expression
+    (EXPECTED = 5; EXPECTED = add(1,2)) — the fixture inlined `== 5` and
+    went false red/green against the real value. Reassignment to a
+    non-literal must drop the snapshot (mirroring the Delete branch), and
+    the dangling name must raise loudly instead of silently inlining."""
+    from bench.bench_nine import convert_to_pytest
+
+    # EXPECTED is a literal at first, then REASSIGNED to a call: the stale
+    # literal must NOT be inlined (fixture would assert == 5 forever); the
+    # name drops out of the snapshot and conversion fails LOUDLY (dangling)
+    # instead of emitting a false red/green suite.
+    runner = (
+        "from implementation import add\n"
+        "EXPECTED = 5\n"
+        "EXPECTED = add(1, 2)\n"
+        'test("x", lambda: add(1, 2), EXPECTED)\n'
+    )
+    with pytest.raises(RuntimeError, match="not importable"):
+        convert_to_pytest(runner)
+
+    # control 1: a plain literal constant still inlines (== 5)
+    src_ok = (
+        "from implementation import add\n"
+        "EXPECTED = 5\n"
+        'test("x", lambda: add(1, 2), EXPECTED)\n'
+    )
+    out_ok = convert_to_pytest(src_ok)
+    assert "== 5" in out_ok, out_ok
+
+    # control 2: reassignment to ANOTHER literal snapshots the new value
+    src_re = (
+        "from implementation import add\n"
+        "EXPECTED = 5\n"
+        "EXPECTED = 6\n"
+        'test("x", lambda: add(1, 2), EXPECTED)\n'
+    )
+    out_re = convert_to_pytest(src_re)
+    assert "== 6" in out_re and "== 5" not in out_re, out_re
+
+
+def test_t19_f6_firestore_recover_refresh_contract():
+    """torture-19 F6: FirestoreLedger.recover silently no-op'd on a
+    `submitted` job (JSONLLedger raises LedgerError), and the class had no
+    refresh() nor _jobs cache — so `nine recover --force` hit
+    cli.py's ledger._jobs[...] AttributeError in production. The API must
+    mirror JSONLLedger: refresh() = durable read, get() populates the
+    cache, recover() raises unless blocked/failed and resets attempts."""
+    from nine.ledger.firestore_ledger import FirestoreLedger
+    from nine.ledger.ledger import LedgerError
+
+    store = {}
+    rec = {"workflow_id": "build", "job_id": "j1", "status": "submitted",
+           "created_at": "2026-08-13T12:00:00Z",
+           "updated_at": "2026-08-13T12:00:00Z", "attempts": 1,
+           "artifacts": []}
+    store["j1"] = dict(rec)
+
+    class FakeDoc:
+        def __init__(self, rec):
+            self.rec = rec
+            self.exists = rec is not None
+
+        def to_dict(self):
+            return self.rec
+
+    class FakeRef:
+        def __init__(self, jid):
+            self.jid = jid
+
+        def get(self):
+            return FakeDoc(store.get(self.jid))
+
+        def update(self, fields):
+            store[self.jid].update(fields)
+
+    fl = object.__new__(FirestoreLedger)
+    fl._jobs = {}
+    fl._ref = FakeRef  # type: ignore[attr-defined]
+
+    # refresh() is a durable read (status submitted as stored)
+    j = fl.refresh("j1")
+    assert j.status == "submitted" and j.job_id == "j1"
+    assert fl._jobs.get("j1") is j, "refresh() must populate the _jobs cache"
+
+    # recover() of a submitted job RAISES (was a silent no-op)
+    with pytest.raises(LedgerError):
+        fl.recover("j1")
+
+    # recover() of a blocked job transitions + resets attempts, durably
+    store["j1"]["status"] = "blocked"
+    store["j1"]["attempts"] = 3
+    j = fl.recover("j1")
+    assert j.status == "recovered" and j.attempts == 0
+    assert store["j1"]["status"] == "recovered"
+    assert store["j1"]["attempts"] == 0
+
+
+def test_t19_f7_date_time_rejects_non_rfc3339_offsets():
+    """torture-19 F7 (LOW): _check_date_time accepted non-RFC-3339 offsets
+    (+00, +0530 — RFC 3339 requires ±HH:MM). Ship a timestamp with a
+    colon-less offset and the schema must reject it; well-formed Z /
+    ±HH:MM / fractional offsets must still pass."""
+    from nine import schema_validation as sv
+
+    check = sv._FORMAT_CHECKER.checkers["date-time"][0]
+
+    for bad in ("2026-01-01T00:00:00+00",
+                "2026-01-01T00:00:00-00",
+                "2026-01-01T00:00:00+01",
+                "2026-01-01T00:00:00+0530",
+                "2026-01-01T00:00:00-0530"):
+        assert not check(bad), f"{bad!r} must be rejected"
+
+    for good in ("2026-01-01T00:00:00Z",
+                 "2026-01-01T00:00:00+00:00",
+                 "2026-01-01T00:00:00-05:30",
+                 "2026-01-01T00:00:00.123+00:00"):
+        assert check(good), f"{good!r} must be accepted"
