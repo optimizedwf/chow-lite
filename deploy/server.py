@@ -14,6 +14,7 @@ Endpoints:
 from __future__ import annotations
 
 import os
+import sys
 from collections import defaultdict, deque
 from pathlib import Path
 from time import monotonic
@@ -30,7 +31,7 @@ from nine.gates.evidence import (
     exit_codes_check,
 )
 from nine.ledger.firestore_ledger import FirestoreLedger
-from nine.ledger.ledger import LedgerError
+from nine.ledger.ledger import VALID_STATUSES, LedgerError
 from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
@@ -414,6 +415,21 @@ def submit(payload: SubmitRequest):
     is_chain = decision.workflow_id in CHAINS
     learner = get_learner()
     memory = get_memory() if is_chain else None
+    # torture-22 finding 2 (server): NINE_NODE_TIMEOUT_S=0/-N must fail
+    # BEFORE ledger.submit — the Node ValueError inside WORKFLOWS[id]()
+    # fired AFTER the job was durably committed and surfaced as HTTP 500
+    # with a permanent 'submitted' zombie. Fail fast, no state change.
+    _raw_t = os.environ.get("NINE_NODE_TIMEOUT_S")
+    if _raw_t:
+        try:
+            if int(_raw_t) < 1:
+                raise HTTPException(
+                    400,
+                    "NINE_NODE_TIMEOUT_S must be >= 1 or unset "
+                    "(0 does NOT mean 'no timeout')",
+                )
+        except ValueError:
+            pass  # malformed -> keep node default (Node.__post_init__ parity)
     # EVERY prompt is a workflow: no direct-answer escape hatch. A task that
     # matches no specialist lane routes to `respond`, which still runs a job,
     # produces RESPONSE.md, and is verified before anything returns.
@@ -536,24 +552,39 @@ def _record_route_event(learner, job, decision, verdict: dict) -> None:
     if verdict.get("verdict") == "CANCELLED":
         return
     eval_results = verdict.get("eval_results") or {}
-    learner.observe(
-        RouteEvent(
-            event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
-            job_id=job.job_id if job else "",
-            task_redacted=decision.task_redacted[:200],
-            workflow_id=decision.workflow_id,
-            confidence=float(decision.confidence),
-            router_version=decision.router_version,
-            verdict=verdict.get("verdict", "BLOCK"),
-            checks_passed=sum(1 for r in eval_results.values() if r.get("passed")),
-            checks_total=len(eval_results),
-            fix_directive="",
+    try:
+        learner.observe(
+            RouteEvent(
+                event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
+                job_id=job.job_id if job else "",
+                task_redacted=decision.task_redacted[:200],
+                workflow_id=decision.workflow_id,
+                confidence=float(decision.confidence),
+                router_version=decision.router_version,
+                verdict=verdict.get("verdict", "BLOCK"),
+                checks_passed=sum(1 for r in eval_results.values() if r.get("passed")),
+                checks_total=len(eval_results),
+                fix_directive="",
+            )
         )
-    )
+    except OSError as exc:
+        # torture-21 F1 (torture-22 finding 1): LEARN is a best-effort
+        # side effect AFTER the verdict is durable — a broken events store
+        # must not 500 an already-shipped job (the client's retry would
+        # duplicate the run).
+        print(f"WARNING: route-event write skipped ({exc}); "
+              "job verdict already durable", file=sys.stderr)
 
 
 @app.get("/v1/jobs")
 def jobs(status: str | None = None):
+    # torture-21 F5: CLI got enum validation in t20 F6 — a status typo over
+    # the API must 422, not silently return an empty ledger (indistinguishable
+    # from a genuinely empty store for automation/monitoring).
+    if status is not None and status not in VALID_STATUSES:
+        valid = ", ".join(sorted(VALID_STATUSES))
+        raise HTTPException(
+            422, f"unknown status {status!r} (valid: {valid})")
     return {"jobs": [j.to_dict() for j in get_ledger().discover(status=status)]}
 
 

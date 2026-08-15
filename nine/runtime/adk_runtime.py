@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -117,6 +118,14 @@ class ADKAgentNode:
         try:
             _max_calls = int(os.environ.get("NINE_MAX_LLM_CALLS", "24"))
         except ValueError:
+            _max_calls = 24
+        if _max_calls < 1:
+            # torture-21 F4: 0/negative silently DISABLES the budget in ADK
+            # ("no enforcement ... never ending communication between the
+            # model and the agent") - the exact runaway the cap exists to
+            # prevent. Range-validate like the node-timeout override.
+            print("WARNING: NINE_MAX_LLM_CALLS must be >= 1 "
+                  f"(got {_max_calls}); using 24", file=sys.stderr)
             _max_calls = 24
         for attempt in range(3):
             try:

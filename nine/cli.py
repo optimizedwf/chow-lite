@@ -33,7 +33,7 @@ from nine.gates.evidence import (
     eval_json_check,
     exit_codes_check,
 )
-from nine.ledger.ledger import JSONLLedger, LedgerError
+from nine.ledger.ledger import InvalidTransition, JSONLLedger, LedgerError
 from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
 
@@ -42,6 +42,30 @@ DEFAULT_LEDGER = "jobs/ledger.jsonl"
 
 def _ledger(args) -> JSONLLedger:
     return JSONLLedger(getattr(args, "ledger", DEFAULT_LEDGER))
+
+
+def _validate_node_timeout_env() -> None:
+    """Fail FAST on NINE_NODE_TIMEOUT_S=0/-N — BEFORE the job is durable.
+
+    Node.__post_init__ raises ValueError for timeout < 1, but that fires
+    inside _execute_job / server submit AFTER ledger.submit already wrote
+    the job (torture-22 finding 2): cmd_submit caught the ValueError and
+    left a permanent 'submitted' zombie (recover only re-runs
+    blocked/failed), cmd_chain raw-tracebacked, and the server 500'd with
+    a zombie. Every entry point validates the env before any state change.
+    """
+    raw = os.environ.get("NINE_NODE_TIMEOUT_S")
+    if not raw:
+        return
+    try:
+        val = int(raw)
+    except ValueError:
+        return  # malformed -> keep node default (Node.__post_init__ parity)
+    if val < 1:
+        raise ValueError(
+            f"NINE_NODE_TIMEOUT_S must be >= 1 or unset "
+            f"(got {val!r}); 0 does NOT mean 'no timeout'"
+        )
 
 
 def _routing_model():
@@ -164,7 +188,16 @@ def cmd_chain(args) -> int:
     except LedgerError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    chain = chains[args.chain_id]()
+    try:
+        # torture-22 finding 2: chain hops build Nodes with
+        # NINE_NODE_TIMEOUT_S — a 0/-N value ValueError'd AFTER the job
+        # dir setup (raw traceback, no ledger row). Fail with one clean
+        # line BEFORE any state change.
+        _validate_node_timeout_env()
+        chain = chains[args.chain_id]()
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     try:
         # torture-14 F7: learn/memory store construction on a bad --events/
         # --memory path raw-tracebacked FileExistsError (T12-F8 only wrapped
@@ -314,6 +347,24 @@ def _execute_job(ledger, job, task: str, args) -> int:
             {"verdict": "FAILED", "eval_results": {}},
         )
         return 1
+    except OSError as exc:
+        # torture-21 F3 (torture-22 finding 3; server parity, torture-18
+        # F5): the executor's manifest registration reads artifacts with
+        # read_bytes() — an unreadable artifact (chmod 000) raw-tracebacked
+        # PermissionError and left the job stuck 'running' (a zombie:
+        # recover --force only salvages blocked/failed). One clean line +
+        # a durable failed mark, matching the server's OSError -> clean-502.
+        print(f"[error] job {job.job_id} failed loud: {exc}", file=sys.stderr)
+        try:
+            job.transition("failed")
+            ledger.update(job)
+        except (InvalidTransition, LedgerError, OSError):
+            pass  # best-effort durable mark; the clean line is the contract
+        _record_route_event(
+            learner, job, decision,
+            {"verdict": "FAILED", "eval_results": {}},
+        )
+        return 1
 
     # LEARN: one route event per completed workflow run
     _record_route_event(learner, job, decision, result["verdict"])
@@ -359,6 +410,15 @@ def cmd_submit(args) -> int:
               "registered (removed plugin or stale learned keyword?) — not "
               "submitting.", file=sys.stderr)
         return 1
+    try:
+        # torture-22 finding 2: NINE_NODE_TIMEOUT_S=0/-N must fail BEFORE
+        # ledger.submit — the Node ValueError fires inside _execute_job
+        # (after the job is durable) and left a permanent 'submitted'
+        # zombie (recover only re-runs blocked/failed).
+        _validate_node_timeout_env()
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
     job.attach_route_decision(decision)
     ledger.update(job)
@@ -387,20 +447,29 @@ def _record_route_event(learner, job, decision, verdict: dict) -> None:
     from nine.learn.learner import RouteEvent
 
     eval_results = verdict.get("eval_results") or {}
-    learner.observe(
-        RouteEvent(
-            event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
-            job_id=job.job_id if job else "",
-            task_redacted=decision.task_redacted[:200],
-            workflow_id=decision.workflow_id,
-            confidence=float(decision.confidence),
-            router_version=decision.router_version,
-            verdict=verdict.get("verdict", "BLOCK"),
-            checks_passed=sum(1 for r in eval_results.values() if r.get("passed")),
-            checks_total=len(eval_results),
-            fix_directive="",
+    try:
+        learner.observe(
+            RouteEvent(
+                event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
+                job_id=job.job_id if job else "",
+                task_redacted=decision.task_redacted[:200],
+                workflow_id=decision.workflow_id,
+                confidence=float(decision.confidence),
+                router_version=decision.router_version,
+                verdict=verdict.get("verdict", "BLOCK"),
+                checks_passed=sum(1 for r in eval_results.values() if r.get("passed")),
+                checks_total=len(eval_results),
+                fix_directive="",
+            )
         )
-    )
+    except OSError as exc:
+        # torture-21 F1 (torture-22 finding 1): LEARN is a best-effort
+        # side effect AFTER the verdict is durable — a broken events store
+        # must not turn a shipped/blocked job into a raw traceback (CLI)
+        # or HTTP 500 (server), and a client retry must not duplicate the
+        # already-committed run.
+        print(f"WARNING: route-event write skipped ({exc}); "
+              "job verdict already durable", file=sys.stderr)
 
 
 def cmd_status(args) -> int:
@@ -505,6 +574,15 @@ def cmd_recover(args) -> int:
         print(f"error: cannot recover {args.job_id}: workflow id "
               f"'{job.workflow_id}' is not registered - {hint}.",
               file=sys.stderr)
+        return 1
+    try:
+        # torture-22 finding 2: recover re-runs _execute_job, where the
+        # Node timeout ValueError would fire AFTER the 'recovered'
+        # transition + job-dir wipe (zombie at 'recovered'). Fail before
+        # any state change.
+        _validate_node_timeout_env()
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
         return 1
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     # torture-8 F2: a job_dir that IS a symlink means the workspace was

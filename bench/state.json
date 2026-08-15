@@ -34,9 +34,9 @@
    94
   ]
  },
- "next_target": "Harvest round-11 torture reports (torture-21/22) when they land -> fix best finding with hermetic tests. Canonical GEMINI retry of gem-r1 ERROR fixtures (002/005/006/009/010) still pending: est_quota_left=0 (ledger never refreshed after 2026-08-15T00:00Z daily reset) -> refresh quota + run when est_quota_left>=30. DS4 interim SoT: 10/10 SHIP (oai-r1 9/9 + oai-r2 5/5, unique 94/94). Slice-42 doc-truth shipped (README/SUBMISSION 481/486). KNOWN: flagship workstream mid-edit flagship.py/debug_wf.py; their uncommitted 'from patch import *' prepend breaks t11_f2/f3 in the working tree (HEAD green) - their fix, documented in TRACKER slice-42 row. Fixture specs 011-015 deferred.",
+ "next_target": "ROUND-11 HARVEST SHIPPED (slice 43): torture-21 (6) + torture-22 (3) all fixed, 26 new hermetic tests, 505 passed / 5 skipped (2 known fails = other workstream mid-edit debug_wf.py t11_f2/f3, no-clobber). Canonical GEMINI retry of gem-r1 ERROR fixtures (002/005/006/009/010) still pending: est_quota_left=0 (cooldown 2026-08-15T00:00Z passed but ledger never refreshed) -> refresh quota + run when est_quota_left>=30. DS4 interim SoT: 10/10 SHIP (unique 94/94). Fixture specs 011-015 deferred.",
  "last_error": null,
- "last_harvest": "2026-08-15T01:10:27.308035+00:00",
+ "last_harvest": "2026-08-15T07:38:23.341879+00:00",
  "last_spawn": {
   "round": 11,
   "attempt": 1,

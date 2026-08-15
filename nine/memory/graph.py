@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -89,8 +90,16 @@ class LocalMemoryGraph:
             "verdict": verdict,
             "created_at": _now(),
         }
-        with open(self.path, "a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rec) + "\n")
+        # torture-21 F1 (torture-22 finding 1): memory is a best-effort
+        # side effect AFTER the hop verdict is durable — a broken memory
+        # store must not fail the chain run (raw traceback) nor 500 the
+        # server on an already-shipped job.
+        try:
+            with open(self.path, "a", encoding="utf-8") as fh:
+                fh.write(json.dumps(rec) + "\n")
+        except OSError as exc:
+            print(f"WARNING: memory write skipped ({exc}); "
+                  "hop verdict already durable", file=sys.stderr)
         return memory_id
 
     def search_context(self, query: str, k: int = 5) -> list[dict[str, Any]]:

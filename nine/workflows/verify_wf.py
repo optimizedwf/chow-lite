@@ -311,8 +311,9 @@ def _verdict_prompt_node() -> Node:
 def _verified_json_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     """VERIFIED.json must parse, carry a valid verdict, non-empty claims."""
     p = Path(workdir) / "VERIFIED.json"
-    if not p.exists() or p.is_symlink():
-        return False, "VERIFIED.json missing (symlinks are never evidence)"
+    if not p.exists() or p.is_symlink() or not p.is_file():
+        return False, ("VERIFIED.json missing (symlinks are never evidence; "
+                       "FIFO/device treated as missing - torture-21 F1)")
     try:
         d = json.loads(p.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - malformed disk JSON degrades to a gate FAIL
@@ -348,6 +349,11 @@ def _honesty_check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
     """
     workdir = Path(workdir)
     try:
+        if not (workdir / "CHECKS.json").is_file() or \
+                not (workdir / "VERIFIED.json").is_file():
+            return False, ("honesty gate: CHECKS.json/VERIFIED.json missing or "
+                           "not regular files (FIFO/device treated as missing "
+                           "- torture-21 F1)")
         checks = json.loads((workdir / "CHECKS.json").read_text(encoding="utf-8"))
         verified = json.loads((workdir / "VERIFIED.json").read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001 - unreadable disk evidence degrades to a gate FAIL

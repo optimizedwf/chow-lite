@@ -96,7 +96,12 @@ def load_eval_json(workdir: Path) -> dict[str, Any] | None:
     p = workdir / "EVAL.json"
     # torture-6 F1 (read side): a symlinked EVAL.json certifies OUTSIDE file
     # content as the job's own evidence — symlinks are never evidence.
-    if p.exists() and not p.is_symlink():
+    # torture-21 F1: a FIFO/device/socket at EVAL.json must ALSO be treated
+    # as missing — read_text() on a FIFO blocks until a writer appears (the
+    # gate is the only unbounded read in the pipeline; a task can mkfifo the
+    # path and wedge the job in awaiting_evidence forever). is_file() is the
+    # regular-file guard (follows symlinks, but symlinks are already excluded).
+    if p.exists() and not p.is_symlink() and p.is_file():
         try:
             data = json.loads(p.read_text())
         except json.JSONDecodeError:

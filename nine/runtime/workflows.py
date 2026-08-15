@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import queue
 import random
 import signal
 import subprocess as sp
@@ -29,8 +30,9 @@ from pathlib import Path
 from time import monotonic
 from typing import Any
 
-from nine.gates.evidence import EvidenceGate
+from nine.gates.evidence import GATE_VERSION, EvidenceGate
 from nine.ledger.ledger import Job, JSONLLedger
+from nine.schema_validation import validate
 
 
 class WorkflowError(Exception):
@@ -250,6 +252,54 @@ class WorkflowExecutor:
 
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
+
+    def _gate_timeout_s(self) -> int:
+        """NINE_GATE_TIMEOUT_S env override for the evidence-gate window.
+
+        Default 60s; malformed or <1 values fall back to 60 (same pattern
+        as the node-timeout override, torture-21 F1).
+        """
+        try:
+            timeout_s = int(os.environ.get("NINE_GATE_TIMEOUT_S", "60"))
+        except ValueError:
+            timeout_s = 60
+        return timeout_s if timeout_s >= 1 else 60
+
+    def _run_gate(self, artifact_ctx: dict[str, Any], job_dir: Path) -> dict[str, Any]:
+        """Evaluate the evidence gate under a hard timeout (torture-21 F1).
+
+        Every node in the pipeline is bounded (Node.timeout_seconds /
+        NINE_NODE_TIMEOUT_S) but gate.evaluate() was a plain synchronous
+        call: a FIFO/device/socket at EVAL.json (or a plugin check that
+        blocks) hung the job in awaiting_evidence forever and, on the
+        server, permanently consumed a threadpool worker. The gate now runs
+        in a daemon thread with NINE_GATE_TIMEOUT_S (default 60s); on expiry
+        we return a BLOCK verdict instead of hanging. The abandoned thread
+        is a daemon (process exit is never blocked by it); the FIFO guard in
+        load_eval_json / verify checks prevents the common vector entirely.
+        """
+        timeout_s = self._gate_timeout_s()
+        q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
+
+        def _eval() -> None:
+            q.put(self.gate.evaluate(artifact_ctx, job_dir))
+
+        t = threading.Thread(target=_eval, name="nine-gate-eval", daemon=True)
+        t.start()
+        try:
+            return q.get(timeout=timeout_s)
+        except queue.Empty:
+            record: dict[str, Any] = {
+                "verdict": "BLOCK",
+                "evidence_refs": sorted(artifact_ctx.get("artifact_paths", [])),
+                "eval_results": {},
+                "summary": f"gate timed out after {timeout_s}s "
+                           "(evidence read hung - FIFO/device?)",
+                "verified_at": datetime.now(UTC).isoformat(),
+                "gate_version": GATE_VERSION,
+            }
+            validate("evidence-verdict", record)
+            return record
 
     def _cancelled(self, job: Job) -> bool:
         """Fresh ledger read: did an operator cancel this job?
@@ -695,7 +745,15 @@ class WorkflowExecutor:
                 "artifacts": artifacts,
                 "node_exit_codes": node_exit_codes,
             }
-            verdict = self.gate.evaluate(artifact_ctx, job_dir)
+            verdict = self._run_gate(artifact_ctx, job_dir)
+            # torture-21 F2: an operator cancel arriving DURING the gate
+            # window (gate duration is unbounded) must win — re-poll the
+            # durable status right after the gate so the terminal stamp
+            # below never supersedes the operator's `cancelled` line
+            # (JSONLLedger is append-only last-line-wins).
+            if self._cancelled(job):
+                return self._abort_cancelled(
+                    job, artifacts, attempt, node_outputs, node_meta)
             # torture-7 F1 + torture-10 F2: the gate reads DISK while the
             # manifest is a per-attempt snapshot. On a FIX re-run the same
             # job_dir keeps attempt-1 files, so a gate that passes on a
@@ -903,6 +961,11 @@ class WorkflowExecutor:
                         "gate_version": verdict.get("gate_version", ""),
                     }
 
+            # torture-21 F2 (second window): the stale-guard loop above also
+            # runs after the gate — a cancel landing there must win too.
+            if self._cancelled(job):
+                return self._abort_cancelled(
+                    job, artifacts, attempt, node_outputs, node_meta)
             job.add_verdict(verdict)
 
             if verdict["verdict"] == "SHIP":

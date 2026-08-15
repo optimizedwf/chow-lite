@@ -61,13 +61,31 @@ class FirestoreLedger:
         self._ref(job.job_id).set(job.to_dict())
         return job
 
+    @staticmethod
+    def _job_from_rec(rec: dict[str, Any]) -> Job | None:
+        """Shape guard (torture-21 F6): a doc missing the required identity
+        fields degrades like the JSONL ledger's tolerant loader (clean
+        LedgerError / skip), never a raw KeyError/AttributeError -> HTTP 500.
+        Firestore docs are console-editable and version-driftable, so a
+        partial doc must not take down /v1/jobs/{id} or discover()."""
+        workflow_id = rec.get("workflow_id")
+        job_id = rec.get("job_id")
+        if not isinstance(workflow_id, str) or not workflow_id or \
+                not isinstance(job_id, str) or not job_id:
+            return None
+        job = Job(workflow_id=workflow_id, job_id=job_id)
+        job.__dict__.update(
+            {k: v for k, v in rec.items() if k != "workflow_id"})
+        return job
+
     def get(self, job_id: str) -> Job:
         doc = self._ref(job_id).get()
         if not doc.exists:
             raise LedgerError(f"job not found: {job_id}")
         rec: dict[str, Any] = doc.to_dict() or {}
-        job = Job(workflow_id=rec["workflow_id"], job_id=rec["job_id"])
-        job.__dict__.update({k: v for k, v in rec.items() if k != "workflow_id"})
+        job = self._job_from_rec(rec)
+        if job is None:
+            raise LedgerError(f"job not found: {job_id}")  # JSONL parity: clean 404
         self._jobs[job_id] = job  # mirror for the cli.py cache-sync contract
         return job
 
@@ -86,8 +104,9 @@ class FirestoreLedger:
         jobs = []
         for doc in q.stream():
             rec: dict[str, Any] = doc.to_dict() or {}
-            job = Job(workflow_id=rec["workflow_id"], job_id=rec["job_id"])
-            job.__dict__.update({k: v for k, v in rec.items() if k != "workflow_id"})
+            job = self._job_from_rec(rec)
+            if job is None:
+                continue  # skip malformed docs (JSONL parity: tolerant load)
             jobs.append(job)
         return sorted(jobs, key=lambda j: j.created_at, reverse=True)
 

@@ -88,7 +88,13 @@ def load_catalog() -> dict:
 
 
 def save_catalog(data: dict) -> None:
-    _CATALOG_PATH.write_text(json.dumps(data, indent=2) + "\n")
+    # torture-21 F1 (torture-22 finding 1): catalog persistence is a
+    # best-effort side effect — a read-only/removed catalog path must not
+    # raw-traceback the registry dispatch (which happens on EVERY submit).
+    try:
+        _CATALOG_PATH.write_text(json.dumps(data, indent=2) + "\n")
+    except OSError as exc:
+        print(f"WARNING: catalog save skipped ({exc})", file=sys.stderr)
 
 
 def _wf(hop_factory: Callable) -> Callable[[], Workflow]:

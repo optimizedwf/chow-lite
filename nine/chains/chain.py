@@ -19,6 +19,7 @@ an artifact that cannot be verified does not ship.
 """
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC
@@ -238,23 +239,31 @@ class ChainExecutor:
                 if self.learner is not None:
                     from nine.router.classifier import redact
 
-                    self.learner.observe(
-                        RouteEvent(
-                            event_id=f"ev-{hop_job.job_id[:8]}",
-                            job_id=hop_job.job_id,
-                            task_redacted=redact(str(inputs.get("task", "")))[:200],
-                            workflow_id=wf_id,
-                            confidence=float(decision.confidence),
-                            router_version=decision.router_version,
-                            verdict=verdict,
-                            checks_passed=sum(
-                                1 for r in res["verdict"]["eval_results"].values()
-                                if r.get("passed")
-                            ),
-                            checks_total=len(res["verdict"]["eval_results"]),
-                            fix_directive=inputs.get("fix_directive", ""),
+                    try:
+                        self.learner.observe(
+                            RouteEvent(
+                                event_id=f"ev-{hop_job.job_id[:8]}",
+                                job_id=hop_job.job_id,
+                                task_redacted=redact(str(inputs.get("task", "")))[:200],
+                                workflow_id=wf_id,
+                                confidence=float(decision.confidence),
+                                router_version=decision.router_version,
+                                verdict=verdict,
+                                checks_passed=sum(
+                                    1 for r in res["verdict"]["eval_results"].values()
+                                    if r.get("passed")
+                                ),
+                                checks_total=len(res["verdict"]["eval_results"]),
+                                fix_directive=inputs.get("fix_directive", ""),
+                            )
                         )
-                    )
+                    except OSError as exc:
+                        # torture-21 F1: LEARN is best-effort AFTER the hop
+                        # verdict is durable — a broken events store must
+                        # not fail the chain (raw traceback) nor 500 the
+                        # server on an already-shipped hop.
+                        print(f"WARNING: route-event write skipped ({exc}); "
+                              "hop verdict already durable", file=sys.stderr)
                 if verdict == "SHIP":
                     # torture-12 F2: the FIX directive belongs to THIS hop's
                     # retries - once the hop ships it must NOT bleed into
@@ -293,7 +302,15 @@ class ChainExecutor:
             for art in self.ledger.get(hop_job.job_id).artifacts:
                 job.add_artifact(art)
             if self.memory is not None:
-                self._save_memory(hop_job, chain, hop, job_dir, verdict, inputs)
+                try:
+                    self._save_memory(hop_job, chain, hop, job_dir, verdict,
+                                      inputs)
+                except OSError as exc:
+                    # torture-21 F1: memory is best-effort after the hop
+                    # verdict is durable (see _save_memory's own write
+                    # guard) — belt for store-level failures.
+                    print(f"WARNING: memory write skipped ({exc}); "
+                          "hop verdict already durable", file=sys.stderr)
             chain_inputs["hop_artifacts"] = {
                 a: str(job_dir / a) for a in hop.required_artifacts
                 if (job_dir / a).exists()

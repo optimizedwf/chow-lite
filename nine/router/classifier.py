@@ -97,6 +97,17 @@ def redact(text: str) -> str:
         # torture-16 F4 + T20-F6: short tokens (sk-123, pk_live, ghp_...) redacted with a non-lowercase guard so skillfulness/skateboarding pass; case-sensitive.
         (r"\b((?:sk|pk|gh[po]))(?![a-z])[A-Za-z0-9_\-]{4,}", '\\1***', re.DOTALL),
         (r"\bAIza[A-Za-z0-9_\-]{3,}", 'AIza***', re.DOTALL),
+        # torture-21 F3: modern credential families the gh[po] pattern
+        # cannot reach (github_pat_ fails the (?![a-z]) lookahead; GitLab
+        # PATs, Slack webhook URLs, AWS STS session keys and Linear API
+        # keys had no coverage at all) - all reached the durable
+        # ledger/events/Firestore raw.
+        (r"\bgithub_pat_[A-Za-z0-9_]{10,}", 'github_pat_***', re.DOTALL),
+        (r"\bglpat-[A-Za-z0-9_-]{10,}", 'glpat-***', re.DOTALL),
+        (r"hooks\.slack\.com/services/[A-Z0-9]+/[A-Z0-9]+/[A-Za-z0-9]+",
+         'hooks.slack.com/services/***', re.DOTALL),
+        (r"\bASIA[0-9A-Z]{16}\b", 'ASIA***', re.DOTALL),
+        (r"\blin_api_[A-Za-z0-9]{10,}", 'lin_api_***', re.DOTALL),
     ]
     out = text
     # torture T3-F8: case-insensitive — API_KEY=, PASSWORD=, TOKEN: all

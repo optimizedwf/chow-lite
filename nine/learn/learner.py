@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -74,8 +75,19 @@ class RouteEventStore:
 
     def record(self, event: RouteEvent) -> None:
         validate("route-event", event.to_dict())
-        with self.path.open("a") as f:
-            f.write(json.dumps(event.to_dict()) + "\n")
+        # torture-21 F1 (torture-22 finding 1): the LEARN write-path is a
+        # best-effort SIDE EFFECT — the job verdict is durable in the ledger
+        # BEFORE this runs. A store the filesystem broke (events.jsonl
+        # replaced by a directory mid-run, unwritable path, disk full) must
+        # NOT turn a shipped job into a raw traceback / HTTP 500, and a
+        # client retry must not duplicate the run.
+        try:
+            with self.path.open("a") as f:
+                f.write(json.dumps(event.to_dict()) + "\n")
+        except OSError as exc:
+            print(f"WARNING: route-event write skipped ({exc}); "
+                  "job verdict already durable in the ledger",
+                  file=sys.stderr)
 
     def all(self) -> list[RouteEvent]:
         out = []
@@ -113,8 +125,13 @@ class CandidateStore:
             self.path.touch()
 
     def append(self, cand: ImprovementCandidate) -> None:
-        with self.path.open("a") as f:
-            f.write(json.dumps(cand.to_dict()) + "\n")
+        # torture-21 F1: best-effort write (see RouteEventStore.record).
+        try:
+            with self.path.open("a") as f:
+                f.write(json.dumps(cand.to_dict()) + "\n")
+        except OSError as exc:
+            print(f"WARNING: candidate write skipped ({exc})",
+                  file=sys.stderr)
 
     def all(self) -> list[ImprovementCandidate]:
         out = []
@@ -157,7 +174,14 @@ class CandidateStore:
                 changed = True
         if not changed:
             raise ValueError(f"no candidate {candidate_id}")
-        self.path.write_text("".join(json.dumps(r) + "\n" for r in recs))
+        try:
+            self.path.write_text("".join(json.dumps(r) + "\n" for r in recs))
+        except OSError as exc:
+            # best-effort status transition (torture-21 F1): the in-memory
+            # store is authoritative for this process; the disk failure is
+            # surfaced, not fatal.
+            print(f"WARNING: candidate status update skipped ({exc})",
+                  file=sys.stderr)
 
     def has(self, description: str, evidence: list[str]) -> bool:
         return any(
