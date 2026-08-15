@@ -335,3 +335,51 @@ def test_summarizer_raises_when_tunnel_silent(monkeypatch):
     monkeypatch.setattr(llm_provider, "chat_text", lambda prompt, timeout=90: None)
     with pytest.raises(WorkflowError):
         summarizer._gemini_generate("long doc", None)
+
+
+# ---------------------------------------------------------------------------
+# _coerce_tool_args (slice-40 local-model runtime armor)
+# ---------------------------------------------------------------------------
+def test_coerce_tool_args_unwraps_dict_wrapped_strings():
+    """qwen3-class models sometimes send {"content": "...", "type": "object"}
+    (a nested JSON-schema artifact) where a plain str parameter is declared."""
+    from nine.runtime.llm_provider import _coerce_tool_args
+
+    args = _coerce_tool_args({"prompt": {"content": "write it", "type": "object"}},
+                             "some_tool")
+    assert args == {"prompt": "write it"}
+
+
+def test_coerce_tool_args_prefers_content_text_value_message_order():
+    from nine.runtime.llm_provider import _coerce_tool_args
+
+    assert _coerce_tool_args({"a": {"text": "t", "content": "c"}}) == {"a": "c"}
+    assert _coerce_tool_args({"a": {"value": "v", "text": "t"}}) == {"a": "t"}
+    assert _coerce_tool_args({"a": {"message": "m", "value": "v"}}) == {"a": "v"}
+    assert _coerce_tool_args({"a": {"message": "m"}}) == {"a": "m"}
+
+
+def test_coerce_tool_args_dict_without_known_keys_uses_first_string():
+    from nine.runtime.llm_provider import _coerce_tool_args
+
+    assert _coerce_tool_args({"a": {"x": "first", "y": "second"}}) == {"a": "first"}
+    # no strings at all -> json dumps of the dict
+    out = _coerce_tool_args({"a": {"x": 1, "y": 2}})
+    assert out["a"] == '{"x": 1, "y": 2}'
+
+
+def test_coerce_tool_args_numbers_become_strings_bools_untouched():
+    from nine.runtime.llm_provider import _coerce_tool_args
+
+    assert _coerce_tool_args({"n": 5, "f": 1.5, "b": True, "s": "keep"}) == {
+        "n": "5", "f": "1.5", "b": True, "s": "keep"}
+    # dict-wrapped NON-string values: no string to unwrap -> json.dumps
+    # (only top-level numbers are stringified; nested dicts keep structure)
+    assert _coerce_tool_args({"n": {"content": 7}}) == {"n": '{"content": 7}'}
+
+
+def test_coerce_tool_args_leaves_plain_args_untouched():
+    from nine.runtime.llm_provider import _coerce_tool_args
+
+    args = {"a": "x", "b": [1, 2], "c": None}
+    assert _coerce_tool_args(dict(args)) == args

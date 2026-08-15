@@ -184,3 +184,48 @@ def test_register_adk_agents_registers_catalog():
     }
 
 
+class _CapturingRunner(_FakeRunner):
+    """Record the kwargs of the last runner.run(...) call (run_config!)."""
+
+    def __init__(self, sequence):
+        super().__init__(sequence)
+        self.last_run_kwargs = None
+
+    def run(self, **kwargs):
+        self.last_run_kwargs = kwargs
+        return super().run(**kwargs)
+
+
+def _one_done_event():
+    return _Event(is_final_response=True,
+                  content=_Content(parts=[_Part(text="done")]))
+
+
+def test_run_config_max_llm_calls_default_cap(tmp_path, monkeypatch):
+    """slice-40: a small/local model looping on a tool must not burn the
+    node deadline — every runner.run() carries RunConfig(max_llm_calls=12)
+    by default so the ADK stops the agent after 12 LLM calls."""
+    monkeypatch.delenv("NINE_MAX_LLM_CALLS", raising=False)
+    node = _make_node(_CapturingRunner([[ _one_done_event() ]]))
+    node._empty_backoff_s = 0
+    node({"task": "hi", "job_id": "j1"}, tmp_path)
+    rc = node.runner.last_run_kwargs["run_config"]
+    assert rc.max_llm_calls == 12
+
+
+def test_run_config_max_llm_calls_env_override(tmp_path, monkeypatch):
+    monkeypatch.setenv("NINE_MAX_LLM_CALLS", "7")
+    node = _make_node(_CapturingRunner([[ _one_done_event() ]]))
+    node._empty_backoff_s = 0
+    node({"task": "hi", "job_id": "j1"}, tmp_path)
+    assert node.runner.last_run_kwargs["run_config"].max_llm_calls == 7
+
+
+def test_run_config_max_llm_calls_malformed_env_falls_back(tmp_path, monkeypatch):
+    monkeypatch.setenv("NINE_MAX_LLM_CALLS", "banana")
+    node = _make_node(_CapturingRunner([[ _one_done_event() ]]))
+    node._empty_backoff_s = 0
+    node({"task": "hi", "job_id": "j1"}, tmp_path)
+    assert node.runner.last_run_kwargs["run_config"].max_llm_calls == 12
+
+

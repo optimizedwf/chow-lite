@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-14T19:50:20.241800+00:00",
- "cycles_run": 19,
+ "last_cycle": "2026-08-15T01:10:27.308035+00:00",
+ "cycles_run": 20,
  "last_bench": {
   "run_id": "oai-r2",
   "backend": "openai",
@@ -34,9 +34,9 @@
    94
   ]
  },
- "next_target": "Canonical GEMINI retry of gem-r1 ERROR fixtures (002/005/006/009/010) after quota reset 2026-08-15T00:00Z (est_quota_left>=30) -> target 10/10 on Gemini. DS4 interim SoT: 10/10 SHIP (oai-r1 9/9 + oai-r2 5/5, unique 94/94). Fixture specs 011-015 deferred. ARC: F-002 offline evidence refresh (0562a1b): H-006 REFUTE, H-003/H-005 UP, H-002 PREPPED.",
+ "next_target": "Canonical GEMINI retry of gem-r1 ERROR fixtures (002/005/006/009/010) after quota reset 2026-08-15T00:00Z (est_quota_left>=30) -> target 10/10 on Gemini. DS4 interim SoT: 10/10 SHIP (oai-r1 9/9 + oai-r2 5/5, unique 94/94). Slice 40 (HARDEN): local-model runtime armor (RunConfig max_llm_calls cap default 12 / NINE_MAX_LLM_CALLS; _coerce_tool_args unwraps dict-wrapped string args + top-level number->str for qwen3-class [OI] models; NINE_NODE_TIMEOUT_S env override read at Node construction) - 12 new hermetic tests, 473 passed / 5 skipped. Fixture specs 011-015 deferred. ARC: F-002 offline evidence refresh (0562a1b): H-006 REFUTE, H-003/H-005 UP, H-002 PREPPED.",
  "last_error": null,
- "last_harvest": "2026-08-14T19:50:20.241800+00:00",
+ "last_harvest": "2026-08-15T01:10:27.308035+00:00",
  "last_spawn": {
   "round": 10,
   "attempt": 1,

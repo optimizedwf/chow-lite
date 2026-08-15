@@ -402,10 +402,15 @@ def install_adk_override() -> None:
                     parts.append(types.Part(text=msg["content"]))
                 for tc in msg.get("tool_calls") or []:
                     fn = tc.get("function") or {}
-                    try:
-                        args = _json.loads(fn.get("arguments") or "{}")
-                    except Exception:  # noqa: BLE001 - malformed args -> {}
-                        args = {}
+                    raw_args = fn.get("arguments")
+                    if isinstance(raw_args, dict):
+                        args = raw_args  # some [OI] servers return a dict directly
+                    else:
+                        try:
+                            args = _json.loads(raw_args or "{}")
+                        except Exception:  # noqa: BLE001 - malformed args -> {}
+                            args = {}
+                    _coerce_tool_args(args, fn.get("name"))
                     parts.append(types.Part(function_call=types.FunctionCall(
                         id=tc.get("id"), name=fn.get("name", ""), args=args)))
                 yield LlmResponse(
@@ -453,4 +458,29 @@ def uninstall_adk_override() -> None:
             ["gemini-.*"], "google.adk.models.google_llm", "Gemini")
     except Exception:  # noqa: BLE001 - best-effort test helper
         pass
+
+def _coerce_tool_args(args: dict[str, Any], tool_name: str | None = None) -> dict[str, Any]:
+    """Normalize messy tool-call arguments from smaller/local [OI] models.
+
+    qwen3-class models sometimes wrap string parameters in an object like
+    {"content": "...", "type": "object"} (a nested JSON schema artifact) or
+    emit numbers as strings. Every declared STRING parameter that arrives as
+    a dict is unwrapped: prefer the keys content/text/value, then the first
+    string value, else json.dumps. Callers (ADK FunctionTool) type-check
+    against the tool signature, so this prevents "data must be str, not
+    dict" crashes on real local-model traffic.
+    """
+    for key, val in list(args.items()):
+        if isinstance(val, dict):
+            for prefer in ("content", "text", "value", "message"):
+                if isinstance(val.get(prefer), str):
+                    args[key] = val[prefer]
+                    break
+            else:
+                strs = [v for v in val.values() if isinstance(v, str)]
+                args[key] = strs[0] if strs else _json.dumps(val)
+        elif isinstance(val, (int, float)) and not isinstance(val, bool):
+            args[key] = str(val)
+    return args
+
 

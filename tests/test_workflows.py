@@ -37,6 +37,31 @@ def _run(wf, gate, job, tmp_path, **kw):
     return ex.execute(wf, job, {"task": "t"}, **kw)
 
 
+# ---------------------------------------------------------------- node timeout env override
+def test_node_timeout_env_override_applies(monkeypatch):
+    monkeypatch.setenv("NINE_NODE_TIMEOUT_S", "90")
+    n = Node(id="n", kind="bash", command="true")
+    assert n.timeout_seconds == 90
+
+
+def test_node_timeout_env_malformed_keeps_default(monkeypatch):
+    monkeypatch.setenv("NINE_NODE_TIMEOUT_S", "banana")
+    n = Node(id="n", kind="bash", command="true")
+    assert n.timeout_seconds == 300
+
+
+def test_node_timeout_env_ignored_when_node_is_infinite(monkeypatch):
+    monkeypatch.setenv("NINE_NODE_TIMEOUT_S", "90")
+    n = Node(id="n", kind="bash", command="true", timeout_seconds=None)
+    assert n.timeout_seconds is None
+
+
+def test_node_timeout_env_unset_keeps_node_default(monkeypatch):
+    monkeypatch.delenv("NINE_NODE_TIMEOUT_S", raising=False)
+    n = Node(id="n", kind="bash", command="true")
+    assert n.timeout_seconds == 300
+
+
 # ---------------------------------------------------------------- retries
 
 def test_node_retries_on_exception_then_succeeds(tmp_path):

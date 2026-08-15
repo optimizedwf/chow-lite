@@ -67,6 +67,16 @@ class Node:
         # node fail instantly (bash sp.run(timeout=0) raises TimeoutExpired;
         # callable join(timeout=0) always finds the thread alive). Reject
         # loudly at construction; None = wait forever (documented).
+        # NINE_NODE_TIMEOUT_S: env override for slow local/edge models
+        # (Ollama qwen3-class at ~17 tok/s with multi-turn tool calls can
+        # exceed the 300s default). Read at construction so a run can set
+        # one deadline for every node; never touches the Gemini default.
+        _env_t = os.environ.get("NINE_NODE_TIMEOUT_S")
+        if _env_t and self.timeout_seconds is not None:
+            try:
+                self.timeout_seconds = int(_env_t)
+            except ValueError:
+                pass  # malformed -> keep node default (fail loud at runtime)
         if self.timeout_seconds is not None and self.timeout_seconds < 1:
             raise ValueError(
                 f"node {self.id}: timeout_seconds must be >= 1 or None "

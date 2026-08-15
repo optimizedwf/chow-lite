@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +97,16 @@ class ADKAgentNode:
         events: list[Any] = []
         last_exc: Exception | None = None
         empty_attempts = 0
+        # RunConfig cap: a small/local model can loop on a tool (re-writing
+        # the same file) and burn the node deadline turn after turn. Bound
+        # the LLM calls per agent run — default 12 (research/plan/build
+        # agents normally finish in 1-3 calls); NINE_MAX_LLM_CALLS overrides.
+        from google.adk.agents import RunConfig
+
+        try:
+            _max_calls = int(os.environ.get("NINE_MAX_LLM_CALLS", "12"))
+        except ValueError:
+            _max_calls = 12
         for attempt in range(3):
             try:
                 evs = list(
@@ -106,6 +117,7 @@ class ADKAgentNode:
                             role="user",
                             parts=[types.Part.from_text(text=task)],
                         ),
+                        run_config=RunConfig(max_llm_calls=_max_calls),
                     )
                 )
                 if evs:
