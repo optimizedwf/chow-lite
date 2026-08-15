@@ -128,7 +128,7 @@ that builds new WFs on demand. The compose lane is the differentiator.
 | WF ID | Purpose | Nodes | Gate |
 |-------|-------|-------|------|
 | `security-audit` ← NEW | OWASP audit: deps + secrets + SAST → triage | dep-audit (bash) → secrets-scan (bash) → sast (bash) → triage (prompt) | SECURITY_REPORT.md + FINDINGS.json |
-| `verify` ← NEW | Generic output verification against claims | collect (bash) → claims-extract (bug) → verify-claims (bash/test) → verdict (prompt) | VERIFIED.json |
+| `verify` ✅ | Audit a workspace against a task's claims | collect (bash) → claims (prompt) → check (bash deterministic) → verdict (prompt) | VERIFIED.json + CHECKS.json (honesty gate: no hidden FAILs, exact claim parity, verdict follows evidence) |
 | `eval-hash` ← NEW | Aggregate-eval: run a gate harness → score | collect (bash) → run-gate (bash) → score (prompt) | EVAL-Agent Scorecard |
 
 ## Chain Catalog (Multi-hop pipelines)

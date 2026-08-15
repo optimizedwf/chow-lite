@@ -51,6 +51,7 @@ from nine.workflows.review_multi_wf import review_multi_hop
 from nine.workflows.summarize_standalone_wf import summarize_standalone_hop
 from nine.workflows.test_wf import test_hop
 from nine.workflows.transform_wf import transform_hop
+from nine.workflows.verify_wf import verify_hop
 
 _CATALOG_PATH = Path(__file__).resolve().parent / "router" / "catalog.json"
 
@@ -120,6 +121,7 @@ WORKFLOWS: dict[str, Callable[[], Workflow]] = {
     "summarize-standalone": _wf(summarize_standalone_hop),
     "refactor": _wf(refactor_hop),
     "teach": _wf(teach_hop),
+    "verify": _wf(verify_hop),
     "respond": respond_workflow,
 }
 
@@ -156,6 +158,7 @@ _HOPS: dict[str, Callable] = {
     "ideate": ideate_hop,
     "research-deep": research_deep_hop,
     "summarize-standalone": summarize_standalone_hop,
+    "verify": verify_hop,
 }
 
 
@@ -298,6 +301,10 @@ _BASE_KEYWORDS: dict[str, list[str]] = {
             "create the package"],
     "build-multi": ["multi-file", "multifile", "multi file", "multiple files", "scaffold", "full project", "project scaffold"],
     "review": ["review", "audit", "check the code", "qa"],
+    "verify": ["verify", "verify the docs", "verify this", "verify the claims",
+               "verify the work", "does it hold up", "fact check",
+               "check this claim", "is this true", "audit the claims",
+               "verify my work", "verify the result", "vouch"],
     "review-multi": ["multi review", "comprehensive review", "code review",
                      "security review", "pr review", "review this pr",
                      "review this pull request",
@@ -352,6 +359,7 @@ _BASE_DESCRIPTIONS: dict[str, str] = {
     "pipeline": "Multi-stage ETL (read -> transform -> load -> validate): OUTPUT.json + EVAL.json.",
     "inbox-triage-task-report": "Taskmaster lane: inbox -> triage -> task -> report.",
     "respond": "Direct answer to a general task (RESPONSE.md via Gemini).",
+    "verify": "Audit a workspace against a task's claims: inventory -> claims -> mechanical checks -> honest verdict (VERIFIED.json).",
 }
 
 
