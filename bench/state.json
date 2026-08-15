@@ -2,13 +2,13 @@
  "last_cycle": "2026-08-15T07:16:04.002366+00:00",
  "cycles_run": 21,
  "last_bench": {
-  "run_id": "run-dbg16",
+  "run_id": "run-dbg18",
   "backend": "openai",
   "model": "qwen3:8b",
-  "fixtures": "006",
-  "ship": "1/1",
-  "tests": "12/12",
-  "at": "2026-08-15T14:30:00.000000+00:00"
+  "fixtures": "001-010 (full set)",
+  "ship": "10/10",
+  "tests": "94/94",
+  "at": "2026-08-15T15:00:00.000000+00:00"
  },
  "bench_runs": [
   "r0-slice17-baseline",
@@ -19,11 +19,11 @@
  "est_quota_left": 0,
  "cooldown_until": "2026-08-15T00:00:00+00:00",
  "last_score": {
-  "ship": 5,
+  "ship": 10,
   "total": 10,
   "tests": [
-   42,
-   42
+   94,
+   94
   ]
  },
  "best_score": {
@@ -34,7 +34,7 @@
    94
   ]
  },
- "next_target": "fixture 006 SHIPS on local qwen3:8b (run-dbg16, 26.0s, 12/12): seeded test_solution.py (check.sh->pytest conversion) + instruction cap 700->1400 (NINE_INSTRUCTION_LIMIT/NINE_TASK_CAP) + diagnose logic-bug-not-syntax framing + patch json.dumps-whole-object mandate. Next: re-run 008, then restricted full-set local bench, then Gemini canonical bench.",
+ "next_target": "LOCAL FULL SET COMPLETE: 10/10 fixtures SHIP on qwen3:8b (94/94 tests, all <30s). Next: (1) Gemini canonical bench rerun of slice-38 ERRORs with slice-39 armor (quota cooldown ended 2026-08-15T00:00Z); (2) Devpost filing (3 Adam-only steps).",
  "last_error": null,
  "last_harvest": "2026-08-15T07:38:23.341879+00:00",
  "last_spawn": {
