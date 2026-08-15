@@ -2,13 +2,13 @@
  "last_cycle": "2026-08-15T07:16:04.002366+00:00",
  "cycles_run": 21,
  "last_bench": {
-  "run_id": "run-dbg9",
+  "run_id": "run-dbg16",
   "backend": "openai",
   "model": "qwen3:8b",
-  "fixtures": "003",
+  "fixtures": "006",
   "ship": "1/1",
-  "tests": "10/10",
-  "at": "2026-08-15T09:10:00.000000+00:00"
+  "tests": "12/12",
+  "at": "2026-08-15T14:30:00.000000+00:00"
  },
  "bench_runs": [
   "r0-slice17-baseline",
@@ -34,7 +34,7 @@
    94
   ]
  },
- "next_target": "fixture 003 SHIPS on local qwen3:8b (run-dbg9, 302.8s): root-caused ollama /v1 options.think inversion + ADK instruction brace interpolation crash; /api/chat + top-level think:false + brace-neutralize fix; 507 tests pass. Next: re-run 005/006/008, then Gemini canonical bench.",
+ "next_target": "fixture 006 SHIPS on local qwen3:8b (run-dbg16, 26.0s, 12/12): seeded test_solution.py (check.sh->pytest conversion) + instruction cap 700->1400 (NINE_INSTRUCTION_LIMIT/NINE_TASK_CAP) + diagnose logic-bug-not-syntax framing + patch json.dumps-whole-object mandate. Next: re-run 008, then restricted full-set local bench, then Gemini canonical bench.",
  "last_error": null,
  "last_harvest": "2026-08-15T07:38:23.341879+00:00",
  "last_spawn": {

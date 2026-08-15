@@ -280,6 +280,17 @@ def install_adk_override() -> None:
             ):
                 continue
             hint = p.annotation
+            # from __future__ import annotations (debug_wf.py, flagship.py)
+            # turns every annotation into a STRING ("str" not str) — the
+            # identity checks below would all miss and every parameter
+            # would degrade to {"type": "object"}, which qwen3:8b reads as
+            # "accept anything" and fumbles tool calls nondeterministically
+            # (slice-44: diagnose node sometimes wrote ROOT_CAUSE.md,
+            # sometimes replied text-only -> "empty stream"). Normalize
+            # string hints to their type first.
+            if isinstance(hint, str):
+                hint = {"str": str, "int": int, "float": float,
+                        "bool": bool}.get(hint.strip(), object)
             if hint is _i.Parameter.empty:
                 props[name] = {"type": "string"}
             elif hint is str:
@@ -357,15 +368,36 @@ def install_adk_override() -> None:
                         "id": fc.id or f"call_{len(tool_calls)}",
                         "type": "function",
                         "function": {"name": fc.name,
-                                     "arguments": _json.dumps(fc.args or {})},
+                                     # ollama /api/chat wants arguments as a
+                                     # DICT; the [OI] /v1 shim wants a JSON
+                                     # STRING. A string round-trip double-escapes
+                                     # backslash-heavy content (markdown like
+                                     # `\"true\"`) and ollama's /api/chat JSON
+                                     # lexer 400s with "Value looks like
+                                     # object, but can't find closing '}'"
+                                     # (slice-44: nondeterministic empty
+                                     # stream after the first tool round).
+                                     "arguments": (fc.args or {}) if _is_local_ollama()
+                                                  else _json.dumps(fc.args or {})},
                     })
                 elif part.function_response:
                     fr = part.function_response
+                    resp = fr.response or {}
+                    # ollama /api/chat accepts a plain string tool result;
+                    # the {"result": ...} JSON envelope is an [OI]/Gemini
+                    # convention that double-escapes braces/backslashes in
+                    # the tool's own text and can 400 the next turn. Send
+                    # the raw string to local ollama, keep the envelope for
+                    # the [OI] tunnel.
+                    if _is_local_ollama():
+                        content = resp if isinstance(resp, str) else _json.dumps(resp)
+                    else:
+                        content = _json.dumps(resp)
                     tool_msgs.append({
                         "role": "tool",
                         "tool_call_id": fr.id or "call_0",
                         "name": fr.name,
-                        "content": _json.dumps(fr.response or {}),
+                        "content": content,
                     })
             if tool_msgs and not tool_calls and not text_parts:
                 # pure tool-result content (role user OR tool): tool msgs only

@@ -25,6 +25,14 @@ def contained_write(job_dir: Path, rel_path: str, content: str) -> str:
     """
     job_dir = Path(job_dir)
     base = job_dir.resolve()
+    # ADK models routinely emit "/workspace/ROOT_CAUSE.md" (the InMemory
+    # session's virtual workspace root) instead of a bare relative path —
+    # slice-44: qwen3:8b wrote "/workspace/ROOT_CAUSE.md", contained_write
+    # refused it, and the tool error made the model bail (nondeterministic
+    # "empty stream"). Map an absolute /workspace (or /workspace/...) path
+    # onto the job dir so the write lands inside the sandbox as intended.
+    if rel_path.startswith("/workspace"):
+        rel_path = rel_path[len("/workspace"):].lstrip("/")
     target = (base / rel_path).resolve()
     if not target.is_relative_to(base):
         raise ValueError(

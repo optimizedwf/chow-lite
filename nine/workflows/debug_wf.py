@@ -23,8 +23,10 @@ from nine.runtime.fsafety import contained_write
 from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow
 
-def _cap_instruction(instruction: str, limit: int = 700) -> str:
+def _cap_instruction(instruction: str, limit: int = 0) -> str:
     import os as _os
+    if not limit:
+        limit = int(_os.environ.get("NINE_INSTRUCTION_LIMIT", "1400"))
     if _os.environ.get("NINE_DEBUG_INSTR"):
         print(f"[cap] len={len(instruction)} limit={limit} capped={len(instruction)>limit}", flush=True)
     """slice-40: qwen3:8b tool-calling degenerates when the system prompt
@@ -32,6 +34,13 @@ def _cap_instruction(instruction: str, limit: int = 700) -> str:
     max_tokens budget (finish:"length", no tool call, no text). Cap the
     built instruction at `limit` chars, keeping the FRONT (role + task)
     and the tail (code context), with an ellipsis marker in between.
+
+    slice-45: the original 700-char cap dropped the critical STRICT-REJECT
+    requirements in the middle of fixture tasks (e.g. bugfix-small-006's
+    validate list), so the diagnose agent misread the bug. Default raised
+    to 1400 (env NINE_INSTRUCTION_LIMIT) — qwen3:8b handles ~1400 chars of
+    instruction fine with the /api/chat no-thinking fix; only re-lower if
+    degeneration (finish:length, no tool call) reappears.
     """
     if len(instruction) <= limit:
         return instruction
@@ -52,12 +61,14 @@ def _diagnose_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        # slice-40: qwen3:8b tool-calling degenerates with a long system
-        # prompt. The fixture tasks embed a ~2.6K "Problem Analysis" tail
-        # that is redundant with the essential description — cap the task
-        # at 700 chars (through the examples) so the diagnose agent keeps
-        # tool-calling.
-        task = str(inputs.get("task", ""))[:700]
+        # slice-45: task cap raised 700->1400 (env NINE_TASK_CAP) — the
+        # 700 cap dropped the STRICT-REJECT requirements in the middle of
+        # fixture tasks (006's validate list), so the diagnose agent
+        # misread the bug. qwen3:8b handles 1400 chars with the /api/chat
+        # no-thinking fix.
+        import os as _os
+        _task_cap = int(_os.environ.get("NINE_TASK_CAP", "1400"))
+        task = str(inputs.get("task", ""))[:_task_cap]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
@@ -102,7 +113,11 @@ def _diagnose_adk_node() -> Node:
             "1. **Symptom**: what is failing (errors, test failures, etc.)\n"
             "2. **Root Cause**: the specific line(s) or logic causing the issue\n"
             "3. **Fix Plan**: a step-by-step plan to patch the code\n"
-            "4. **Risk**: what else might break after the fix\n\n"
+            "4. **Risk**: what else might break after the fix\n"
+            "IMPORTANT: the supplied code is assumed to be RUNNABLE Python \n"
+            "(no syntax errors) unless a test output says otherwise — look \n"
+            "for LOGIC bugs (wrong values, wrong types, wrong conditions), \n"
+            "not imaginary syntax errors.\n\n"
             f"Task/symptom: {task}\n"
         )
         if fix_dir:
@@ -143,9 +158,10 @@ def _patch_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        # slice-40: cap the task at 700 chars (see diagnose node) so the
-        # patch agent keeps tool-calling on qwen3:8b.
-        task = str(inputs.get("task", ""))[:700]
+        # slice-45: task cap raised 700->1400 (see diagnose node).
+        import os as _os
+        _task_cap = int(_os.environ.get("NINE_TASK_CAP", "1400"))
+        task = str(inputs.get("task", ""))[:_task_cap]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
@@ -179,22 +195,29 @@ def _patch_adk_node() -> Node:
 
         seeded_test = (job_dir / "test_solution.py").exists()
         instruction = (
-            "You are the patch hop of nine. Write `patch.py` (write_file "
-            "tool) fixing the bug below; keep the original function "
-            "signatures so tests import it. "
+            "You are the patch hop of nine. Fix the bug and write `patch.py` "
+            "(write_file tool) with the EXACT SAME function names and "
+            "signatures as the original code — do NOT rename functions and "
+            "do NOT invent new ones. "
             + (
-                "Also write `test_solution.py`: pytest importing from "
-                "patch (`from patch import ...`); verify will run it. "
-                "NO patch without tests passes. Write PLAIN pytest "
-                "functions `def test_xxx():` with direct asserts (do NOT "
-                "use pytest.raises inside parametrize loops or table "
+                "Also write `test_solution.py` — a SECOND write_file call — "
+                "pytest importing from patch (`from patch import ...`); "
+                "verify will run it. NO patch without tests passes. Write "
+                "PLAIN pytest functions `def test_xxx():` with direct asserts "
+                "(do NOT use pytest.raises inside parametrize loops or table "
                 "drivers — one function per case, `with pytest.raises(...)` "
                 "inline). "
                 if not seeded_test
                 else "test_solution.py ALREADY EXISTS — do NOT overwrite "
                 "it; write ONLY patch.py. "
             )
-            + "\n\n"
+            + "CRITICAL: if the code builds JSON, use `json.dumps({...})` for "
+            "the ENTIRE object — NEVER hand-write JSON with string "
+            "concatenation (no `'{\\n...' + ...` patterns, no %-formatting "
+            "of JSON). Hand-built JSON strings break (stray brace / "
+            "unterminated string / mismatched quote). Serialize booleans "
+            "with json.dumps so Python True becomes JSON true. "
+            "\n\n"
         )
         if root_cause:
             instruction += f"ROOT_CAUSE.md:\n{root_cause}\n\n"
