@@ -16,7 +16,7 @@
   "gem-r1-slice38",
   "oai-r2-slice39"
  ],
- "est_quota_left": 0,
+ "est_quota_left": 30,
  "cooldown_until": "2026-08-15T00:00:00+00:00",
  "last_score": {
   "ship": 10,
@@ -34,7 +34,7 @@
    94
   ]
  },
- "next_target": "HARVEST round-13 complete (torture-25: 5 findings F1-F5, torture-26: 2 findings F1-F2; 6 implemented + hermetic tests + fixture bugfix-small-011 shipped slice 48). Next: SPAWN round-14 torture workers (surfaces 2+4: learn/memory + server/HTTP) once reports are harvested. Gemini canonical rerun of gem-r1 ERROR fixtures 002/005/006/009/010 still pending (est_quota_left=0; refresh ledger, run when >=30). DS4 interim SoT 10/10 SHIP.",
+ "next_target": "BENCH FIRST (operator directive 2026-08-15): Gemini quota PROBE VERIFIED BACK (single generate_content gemini-3.6-flash -> 'OK' at ~20:40Z; cooldown_until passed) -> run canonical gem-r2 = NINE_BENCH_FIXTURES=bugfix-small-002,005,006,009,010 (the gem-r1 empty-stream ERRORs) on the default gemini backend, then full set 001-011 if quota allows. est_quota_left set to 30 for this. After gem-r2: round-14 spawn (surfaces 2+4: learn/memory + server/HTTP). DS4 interim SoT 10/10 SHIP; round-13 harvest complete (slice 48).",
  "last_error": null,
  "last_harvest": "2026-08-15T19:22:48.818825+00:00",
  "last_spawn": {

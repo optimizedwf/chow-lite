@@ -35,7 +35,7 @@ gcloud auth application-default login
 gcloud config set project <your-project-id>   # or create one:
 gcloud projects create nine-$(date +%s) --name="nine"
 gcloud services enable run.googleapis.com firestore.googleapis.com
-cd ~/nine-work/nine
+cd ~/chow-work/chow-lite
 bash deploy/deploy.sh        # one-command Cloud Run deploy (scale-to-zero)
 ```
 
