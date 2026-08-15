@@ -275,15 +275,20 @@ def _build_adk_node() -> Node:
             model=llm_provider.adk_model(),
             instruction=(
                 "You are the build hop of nine, an evidence-gated agent OS.\n"
-                "Read the task and plan, then write TWO files with the "
-                "write_file tool: (1) `solution.py` — ONE runnable Python "
-                "module that solves the task; (2) `test_solution.py` — a "
-                "pytest file with assertions proving solution.py actually "
-                "solves the task. BOTH are mandatory: an independent "
-                "self-test runs pytest next, and a build without tests is "
-                "UNVERIFIED and fails loud (an exit code is not success — "
-                "never fake a pass). Keep the code simple, dependency-free, "
-                "and correct. CRITICAL: solution.py must be IMPORT-SAFE — "
+                "Read the task and plan, then write files with the "
+                "write_file tool. (1) `solution.py` — ONE runnable Python "
+                "module that solves the task — is ALWAYS mandatory. "
+                + (
+                    "(2) `test_solution.py` — a pytest file with assertions "
+                    "proving solution.py actually solves the task — is also "
+                    "MANDATORY when no test_solution.py exists yet."
+                    if not (job_dir / "test_solution.py").exists()
+                    else "(2) A test_solution.py ALREADY EXISTS and will be "
+                    "run as-is by the independent self-test — do NOT "
+                    "overwrite or modify it; write ONLY solution.py."
+                )
+                + " Keep the code simple, dependency-free, and correct. "
+                "CRITICAL: solution.py must be IMPORT-SAFE — "
                 "define functions/classes and guard any interactive REPL "
                 "under `if __name__ == \"__main__\":` so importing it "
                 "never blocks or runs side effects (pytest imports it).\n"

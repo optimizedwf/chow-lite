@@ -34,6 +34,34 @@ OPENAI_DEFAULT_MODEL = "deepseek-v4-flash"
 _BACKEND_WARNED: set[str] = set()
 
 
+def _is_local_ollama() -> bool:
+    """True when the [OI] base URL points at a local ollama server.
+
+    ollama's /v1/chat/completions compatibility layer does NOT honor
+    think:false the way /api/chat does — qwen3:8b still burns its whole
+    max_tokens budget on reasoning (finish:"length", empty content, no
+    tool call). The /api/chat endpoint with top-level think:false fully
+    suppresses reasoning (verified 2026-08-15, ollama 0.32.13). Use
+    /api/chat for 127.0.0.1/localhost ollama; keep /v1/chat/completions
+    for the DS4/opencode tunnel and any other [OI] server.
+    """
+    base = base_url()
+    return "127.0.0.1" in base or "localhost" in base
+
+
+def _chat_endpoint() -> str:
+    """The chat-completions endpoint for the active backend.
+
+    - gemini backend: not used (genai SDK, not HTTP chat completions)
+    - DS4/opencode tunnel: POST /v1/chat/completions ([OI] compatible)
+    - local ollama: POST /api/chat (top-level think:false fully suppresses
+      qwen3:8b reasoning; the /v1 shim only *reduces* it -> empty stream)
+    """
+    if _is_local_ollama():
+        return f"{base_url()}/api/chat"
+    return f"{base_url()}/chat/completions"
+
+
 def backend() -> str:
     """'gemini' (default) or 'openai' (testing tunnel).
 
@@ -124,24 +152,38 @@ def chat_text(
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
         resp = requests.post(
-            f"{base_url()}/chat/completions",
+            f"{_chat_endpoint()}",
             headers={"Authorization": f"Bearer {api_key()}",
                      "Content-Type": "application/json"},
             json={"model": model or model_name(),
                   "messages": messages,
                   "temperature": 0.0,
                   "max_tokens": 2048,
-                  "options": {"think": os.environ.get("NINE_THINK", "false").lower()
-                              in ("1", "true", "yes")}},
+                  # ollama /api/chat streams by default; force non-stream so
+                  # resp.json() parses as one object (the [OI] /v1 shim is
+                  # non-streaming by default, so this key is harmless there).
+                  "stream": False,
+                  # ollama 0.32.13 /v1: options.think is INVERTED (options.think=false
+                  # actually ENABLES thinking via the /think suffix); only TOP-LEVEL
+                  # think is honored. qwen3:8b with thinking ON burns the whole
+                  # max_tokens budget on reasoning -> empty content -> empty stream.
+                  "think": os.environ.get("NINE_THINK", "false").lower()
+                           in ("1", "true", "yes")},
             timeout=timeout,
         )
         if resp.status_code != 200:
             return None
         data = resp.json()
-        choices = data.get("choices") or []
-        if not choices:
-            return None
-        text = ((choices[0].get("message") or {}).get("content") or "").strip()
+        # /api/chat (local ollama) returns {"message": {...}}; the [OI]
+        # /v1 shim returns {"choices": [{"message": {...}}]}.
+        if "message" in data:
+            msg = data["message"]
+        else:
+            choices = data.get("choices") or []
+            if not choices:
+                return None
+            msg = choices[0].get("message") or {}
+        text = (msg.get("content") or "").strip()
         return text or None
     except Exception:  # noqa: BLE001 - model-or-fail: None, caller fails loud
         return None
@@ -399,10 +441,16 @@ def install_adk_override() -> None:
             # empty stream). think:false forces direct tool-call emission.
             # Default ON for the local backend; NINE_THINK=false disables
             # (Gemini/DS4 ignore this field).
-            if os.environ.get("NINE_THINK", "false").lower() in ("1", "true", "yes"):
-                payload["options"] = {"think": True}
-            else:
-                payload["options"] = {"think": False}
+            # ollama 0.32.13 /v1: options.think is INVERTED (options.think=false
+            # actually ENABLES thinking via the /think suffix); only TOP-LEVEL
+            # think is honored. qwen3:8b with thinking ON burns the whole
+            # max_tokens budget on reasoning -> empty content -> empty stream.
+            payload["think"] = os.environ.get("NINE_THINK", "false").lower() in (
+                "1", "true", "yes"
+            )
+            # ollama /api/chat streams by default; force non-stream so the
+            # response is a single JSON object (harmless for [OI] /v1).
+            payload["stream"] = False
             try:
                 import requests
 
@@ -416,7 +464,7 @@ def install_adk_override() -> None:
                 except ValueError:
                     _timeout_s = 120.0
                 resp = requests.post(
-                    f"{base_url()}/chat/completions",
+                    f"{_chat_endpoint()}",
                     headers={"Authorization": f"Bearer {api_key()}",
                              "Content-Type": "application/json"},
                     json=payload, timeout=_timeout_s,
@@ -425,11 +473,17 @@ def install_adk_override() -> None:
                     yield _err(f"tunnel HTTP {resp.status_code}")
                     return
                 data = resp.json()
-                choices = data.get("choices") or []
-                if not choices:
-                    yield _err("tunnel empty choices")
-                    return
-                msg = choices[0].get("message") or {}
+                # /api/chat (local ollama) returns {"message": {...},
+                # "done_reason": ...}; the [OI] /v1 shim returns
+                # {"choices": [{"message": {...}}]}.
+                if "message" in data:
+                    msg = data["message"]
+                else:
+                    choices = data.get("choices") or []
+                    if not choices:
+                        yield _err("tunnel empty choices")
+                        return
+                    msg = choices[0].get("message") or {}
                 parts: list[Any] = []
                 if msg.get("content"):
                     parts.append(types.Part(text=msg["content"]))

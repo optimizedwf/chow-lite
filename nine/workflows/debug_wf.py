@@ -23,6 +23,23 @@ from nine.runtime.fsafety import contained_write
 from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow
 
+def _cap_instruction(instruction: str, limit: int = 700) -> str:
+    import os as _os
+    if _os.environ.get("NINE_DEBUG_INSTR"):
+        print(f"[cap] len={len(instruction)} limit={limit} capped={len(instruction)>limit}", flush=True)
+    """slice-40: qwen3:8b tool-calling degenerates when the system prompt
+    grows long — with ~1000+ chars of appended context it burns its ENTIRE
+    max_tokens budget (finish:"length", no tool call, no text). Cap the
+    built instruction at `limit` chars, keeping the FRONT (role + task)
+    and the tail (code context), with an ellipsis marker in between.
+    """
+    if len(instruction) <= limit:
+        return instruction
+    head = instruction[: int(limit * 0.6)]
+    tail = instruction[-(limit - int(limit * 0.6)) :]
+    return head + "\n...[context truncated for model budget]...\n" + tail
+
+
 
 def _diagnose_adk_node() -> Node:
     """ADK LlmAgent that reads the symptom + existing code and writes ROOT_CAUSE.md.
@@ -35,7 +52,12 @@ def _diagnose_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:1500]
+        # slice-40: qwen3:8b tool-calling degenerates with a long system
+        # prompt. The fixture tasks embed a ~2.6K "Problem Analysis" tail
+        # that is redundant with the essential description — cap the task
+        # at 700 chars (through the examples) so the diagnose agent keeps
+        # tool-calling.
+        task = str(inputs.get("task", ""))[:700]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
@@ -51,12 +73,14 @@ def _diagnose_adk_node() -> Node:
         def write_file(path: str, content: str) -> str:
             """Write a file into the debug workspace (job dir)."""
             contained_write(job_dir, path, content)
-            return f"wrote {path} ({len(content)} bytes)"
+            return (f"wrote {path} ({len(content)} bytes) — FILE WRITE "
+                    "COMPLETE. Do NOT rewrite this file; the hop is DONE: "
+                    "reply with a one-line summary.")
 
         # Gather context: existing code, error logs, test output
         solution = ""
         if (job_dir / "solution.py").exists():
-            solution = (job_dir / "solution.py").read_text(encoding="utf-8")[:3000]
+            solution = (job_dir / "solution.py").read_text(encoding="utf-8")[:700]
 
         test_out = ""
         if (job_dir / "test_output.log").exists():
@@ -68,7 +92,7 @@ def _diagnose_adk_node() -> Node:
 
         test_code = ""
         if (job_dir / "test_solution.py").exists():
-            test_code = (job_dir / "test_solution.py").read_text(encoding="utf-8")[:1500]
+            test_code = (job_dir / "test_solution.py").read_text(encoding="utf-8")[:500]
 
         instruction = (
             "You are the diagnose hop of nine, an evidence-gated agent OS.\n"
@@ -95,7 +119,7 @@ def _diagnose_adk_node() -> Node:
         agent = LlmAgent(
             name="diagnostician",
             model=llm_provider.adk_model(),
-            instruction=instruction,
+            instruction=_cap_instruction(instruction),
             tools=[FunctionTool(write_file)],
         )
         node = ADKAgentNode(agent)
@@ -119,7 +143,9 @@ def _patch_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:1500]
+        # slice-40: cap the task at 700 chars (see diagnose node) so the
+        # patch agent keeps tool-calling on qwen3:8b.
+        task = str(inputs.get("task", ""))[:700]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
             raise WorkflowError(
@@ -135,7 +161,9 @@ def _patch_adk_node() -> Node:
         def write_file(path: str, content: str) -> str:
             """Write a file into the debug workspace (job dir)."""
             contained_write(job_dir, path, content)
-            return f"wrote {path} ({len(content)} bytes)"
+            return (f"wrote {path} ({len(content)} bytes) — FILE WRITE "
+                    "COMPLETE. Do NOT rewrite this file; the hop is DONE: "
+                    "reply with a one-line summary.")
 
         root_cause = ""
         if (job_dir / "ROOT_CAUSE.md").exists():
@@ -143,20 +171,30 @@ def _patch_adk_node() -> Node:
 
         solution = ""
         if (job_dir / "solution.py").exists():
-            solution = (job_dir / "solution.py").read_text(encoding="utf-8")[:3000]
+            solution = (job_dir / "solution.py").read_text(encoding="utf-8")[:700]
 
         test_code = ""
         if (job_dir / "test_solution.py").exists():
-            test_code = (job_dir / "test_solution.py").read_text(encoding="utf-8")[:1500]
+            test_code = (job_dir / "test_solution.py").read_text(encoding="utf-8")[:500]
 
+        seeded_test = (job_dir / "test_solution.py").exists()
         instruction = (
-            "You are the patch hop of nine, an evidence-gated agent OS.\n"
-            "Read the root cause analysis and the original code below.\n"
-            "Write a corrected Python module `patch.py` that fixes the issue.\n"
-            "Use the write_file tool. The patch must be a complete, runnable\n"
-            "Python module that can be tested independently. If the original\n"
-            "code had a function `solution.py`, replicate its public interface\n"
-            "(function names, signatures) in patch.py so tests can import it.\n\n"
+            "You are the patch hop of nine. Write `patch.py` (write_file "
+            "tool) fixing the bug below; keep the original function "
+            "signatures so tests import it. "
+            + (
+                "Also write `test_solution.py`: pytest importing from "
+                "patch (`from patch import ...`); verify will run it. "
+                "NO patch without tests passes. Write PLAIN pytest "
+                "functions `def test_xxx():` with direct asserts (do NOT "
+                "use pytest.raises inside parametrize loops or table "
+                "drivers — one function per case, `with pytest.raises(...)` "
+                "inline). "
+                if not seeded_test
+                else "test_solution.py ALREADY EXISTS — do NOT overwrite "
+                "it; write ONLY patch.py. "
+            )
+            + "\n\n"
         )
         if root_cause:
             instruction += f"ROOT_CAUSE.md:\n{root_cause}\n\n"
@@ -172,7 +210,7 @@ def _patch_adk_node() -> Node:
         agent = LlmAgent(
             name="patcher",
             model=llm_provider.adk_model(),
-            instruction=instruction,
+            instruction=_cap_instruction(instruction),
             tools=[FunctionTool(write_file)],
         )
         node = ADKAgentNode(agent)
@@ -196,6 +234,9 @@ def _build_verify_command() -> str:
         "if [ -f test_solution.py ]; then "
         "  sed 's/from solution import/from patch import/g; "
         "s/import solution/import patch/g' test_solution.py > test_patch.py; "
+        "  if [ -f patch.py ] && ! grep -qE 'import patch|from patch' test_patch.py; then "
+        "    printf 'from patch import *\\n' | cat - test_patch.py > test_patch_tmp && mv test_patch_tmp test_patch.py; "
+        "  fi; "
         "  python3 -B -m pytest test_patch.py --tb=short -q > test_output.log 2>&1; "
         "  rc=$?; "
         "  if [ $rc -eq 5 ] || grep -qE 'no tests ran|ERROR collecting' test_output.log; then "

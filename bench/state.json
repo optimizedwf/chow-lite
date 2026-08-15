@@ -2,13 +2,13 @@
  "last_cycle": "2026-08-15T07:16:04.002366+00:00",
  "cycles_run": 21,
  "last_bench": {
-  "run_id": "oai-r2",
+  "run_id": "run-dbg9",
   "backend": "openai",
-  "model": "deepseek-v4-flash",
-  "fixtures": "002,005,006,009,010",
-  "ship": "5/5",
-  "tests": "52/52",
-  "at": "2026-08-14T21:37:18.214144+00:00"
+  "model": "qwen3:8b",
+  "fixtures": "003",
+  "ship": "1/1",
+  "tests": "10/10",
+  "at": "2026-08-15T09:10:00.000000+00:00"
  },
  "bench_runs": [
   "r0-slice17-baseline",
@@ -34,7 +34,7 @@
    94
   ]
  },
- "next_target": "ROUND-11 HARVEST SHIPPED (slice 43): torture-21 (6) + torture-22 (3) all fixed, 26 new hermetic tests, 505 passed / 5 skipped (2 known fails = other workstream mid-edit debug_wf.py t11_f2/f3, no-clobber). Canonical GEMINI retry of gem-r1 ERROR fixtures (002/005/006/009/010) still pending: est_quota_left=0 (cooldown 2026-08-15T00:00Z passed but ledger never refreshed) -> refresh quota + run when est_quota_left>=30. DS4 interim SoT: 10/10 SHIP (unique 94/94). Fixture specs 011-015 deferred.",
+ "next_target": "fixture 003 SHIPS on local qwen3:8b (run-dbg9, 302.8s): root-caused ollama /v1 options.think inversion + ADK instruction brace interpolation crash; /api/chat + top-level think:false + brace-neutralize fix; 507 tests pass. Next: re-run 005/006/008, then Gemini canonical bench.",
  "last_error": null,
  "last_harvest": "2026-08-15T07:38:23.341879+00:00",
  "last_spawn": {

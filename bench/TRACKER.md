@@ -8,6 +8,7 @@ Cycle types: BENCH (real Gemini) / HARDEN (quota-free).
 
 | date | HEAD | cycle | score | tests | notes |
 |------|------|-------|-------|-------|-------|
+| 2026-08-15 | (slice 44, pending) | LOCAL DEBUG | 1/1 (003 SHIP) | 10/10 | qwen3:8b fixture 003 SHIPS end-to-end (run-dbg9, 302.8s): root-caused ollama /v1 options.think INVERSION (options.think=false ENABLED thinking via /think suffix -> qwen3:8b burned 4096-token budget on reasoning -> empty stream) + ADK instruction brace interpolation crash ({stripped} in ROOT_CAUSE.md -> KeyError -> 0 HTTP calls instant empty stream). Fixes: /api/chat endpoint for local ollama + top-level think:false (fully suppresses reasoning, 299 tokens) + brace-neutralize in ADKAgentNode + verify `from patch import *` guarded by [ -f patch.py ]. 507 tests pass. |
 | 2026-08-12 | c888ba6 (slice 17) | BENCH baseline (Dell) | 3/5 (60%) | 34/45 (75.6%) | 001 SHIP but candidate_unchanged (exit-code-only self-test); 002 FIX 2/9; 003 FIX 9/9 (perfect patch blocked: ROOT_CAUSE.md gate); 004 FIX 7/9; 005 FIX 5/9. 7 gaps logged -> slice 21 fixes A-F |
 | 2026-08-12 | e48354b (slice 22) | HARDEN | — | 183 pass | doc-truth gap-hunt: README + workflows.py claimed 'Gemini 3.5 Flash' while code defaults gemini-3.6-flash everywhere -> docs now match code |
 | 2026-08-12 | 0bfdbe7 (slice 22) | BENCH smoke | 0/1 (quota) | 2/9 | bugfix-small-002 via real key: ADK empty stream (quota exhausted by bench run) -> loud RuntimeError per fix A. Loop validated end-to-end locally. Switching to HARDEN until cooldown 2026-08-14 |

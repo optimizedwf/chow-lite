@@ -29,6 +29,33 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+import re
+
+
+_BRACE_NEUTRAL_RE = re.compile(r"\{+")
+
+
+def _neutralize_instruction_braces(text: str) -> str:
+    """Neutralize `{identifier}` sequences that ADK's instruction template
+    engine would try to interpolate as session-state variables.
+
+    google-adk's `inject_session_state` (instructions_utils.py) scans the
+    agent instruction for `{+[^{}]*}+` and replaces each match whose inner
+    name is a valid Python identifier with the session state value —
+    raising KeyError when the variable is absent. The debug workflow's
+    instructions embed the model's own ROOT_CAUSE.md / code snippets, and
+    an f-string placeholder like `{stripped}` inside the embedded code
+    crashes the instruction provider BEFORE any LLM call, surfacing as an
+    instant "empty stream" (0 HTTP calls, 0.5s per retry).
+
+    Insert a zero-width space after the first `{` of each brace group:
+    `{stripped}` -> `{\u200bstripped}`. The inner name is then no longer a
+    valid identifier, so ADK passes the match through unchanged. The
+    invisible character is never emitted by the model (it copies the
+    *text* it sees) and Python's tokenizer ignores it, so embedded code
+    stays executable.
+    """
+    return _BRACE_NEUTRAL_RE.sub(lambda m: m.group(0)[0] + "\u200b" + m.group(0)[1:], text)
 
 
 def adk_available() -> bool:
@@ -60,6 +87,14 @@ class ADKAgentNode:
 
         from google.adk.runners import InMemoryRunner
 
+        # ADK interpolates {var} in instructions as session state (KeyError
+        # when absent). Neutralize braces in embedded code/ROOT_CAUSE text
+        # so the instruction provider can never crash before the LLM call
+        # (slice-41: `{stripped}` in ROOT_CAUSE.md -> instant empty stream
+        # on every patch attempt, 0 HTTP calls).
+        inst = getattr(agent, "instruction", None)
+        if isinstance(inst, str):
+            agent.instruction = _neutralize_instruction_braces(inst)
         self.agent = agent
         self.app_name = app_name
         self.runner = InMemoryRunner(agent=agent, app_name=app_name)
