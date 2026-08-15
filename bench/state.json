@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-15T13:20:16.860193+00:00",
- "cycles_run": 22,
+ "last_cycle": "2026-08-15T13:31:17.600489+00:00",
+ "cycles_run": 23,
  "last_bench": {
   "run_id": "run-dbg18",
   "backend": "openai",
@@ -34,7 +34,7 @@
    94
   ]
  },
- "next_target": "HARVEST round-12 reports (torture-23: 1 HIGH recover-wipe tombstone, 1 MED gate-thread BaseException swallow, 1 LOW utf-8; torture-24: 2 MED verify-lane FIFO DoS + Firestore shape guard) -> fix best finding with hermetic tests. Gemini canonical rerun of gem-r1 ERROR fixtures 002/005/006/009/010 still pending (est_quota_left=0; refresh ledger + run when >=30). DS4 interim SoT 10/10 SHIP (unique 94/94). Fixture specs 011-015 deferred.",
+ "next_target": "SPAWN round-13 torture workers (surfaces 3+1). Gemini canonical rerun of gem-r1 ERROR fixtures 002/005/006/009/010 still pending (est_quota_left=0; refresh ledger, run when >=30). DS4 interim SoT 10/10 SHIP. Fixture specs 011-015 deferred.",
  "last_error": null,
  "last_harvest": "2026-08-15T07:38:23.341879+00:00",
  "last_spawn": {

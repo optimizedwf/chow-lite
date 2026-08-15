@@ -597,8 +597,19 @@ def cmd_recover(args) -> int:
         return 1
     task = ""
     task_txt = job_dir / "task.txt"
-    if task_txt.exists():
-        task = task_txt.read_text(encoding="utf-8").rstrip("\n")
+    # is_file() (not exists()): a FIFO at task.txt would make read_text
+    # block (torture-24 F1 family); a corrupt task.txt must refuse cleanly.
+    if task_txt.is_file():
+        try:
+            task = task_txt.read_text(encoding="utf-8").rstrip("\n")
+        except UnicodeDecodeError:
+            # torture-23 F3 (LOW): a non-UTF-8 task.txt raw-tracebacked.
+            # Refuse like the missing-task.txt path — re-executing from a
+            # corrupted raw task could SHIP garbage as a verified job.
+            print(f"error: cannot recover {job.job_id}: task.txt is not "
+                  "valid UTF-8 (corrupt raw task). Restore the workdir or "
+                  "re-submit the task.", file=sys.stderr)
+            return 1
     if not task:
         print(f"error: cannot recover {job.job_id}: task.txt is missing (raw "
               "task not available; the ledger only stores the redacted "
@@ -629,18 +640,31 @@ def cmd_recover(args) -> int:
             # blocked/failed can be recovered" and force a SECOND invocation.
             # Sync the cache to the durable state we just wrote: one call.
             ledger._jobs[args.job_id] = live
+    # torture-23 F1 (HIGH): the artifact wipe used to run AFTER
+    # ledger.recover() stamped a durable 'recovered' line — a
+    # PermissionError in unlink/rmtree raw-tracebacked and left the job
+    # durably 'recovered' with stale artifacts (a tombstone a second
+    # recover refuses: 'recovered' is not in the recoverable set). Wipe
+    # FIRST, while the job is still blocked/failed (the --force path above
+    # already degraded a stale running job to failed), and surface a clean
+    # error on OSError — the job stays recoverable, the operator fixes
+    # permissions and retries.
+    if job.status in ("blocked", "failed") and job_dir.exists():
+        try:
+            for p in job_dir.iterdir():
+                if p.is_file() or p.is_symlink():
+                    p.unlink()
+                elif p.is_dir():
+                    shutil.rmtree(p)
+        except OSError as e:
+            print(f"error: cannot recover {job.job_id}: failed to clear "
+                  f"stale artifacts in {job_dir}: {e}", file=sys.stderr)
+            return 1
     try:
         job = ledger.recover(args.job_id)
     except LedgerError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-
-    if job_dir.exists():
-        for p in job_dir.iterdir():
-            if p.is_file() or p.is_symlink():
-                p.unlink()
-            elif p.is_dir():
-                shutil.rmtree(p)
 
     print(f"recovering {job.job_id} ({job.workflow_id}) — re-executing")
     try:

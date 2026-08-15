@@ -401,7 +401,12 @@ def _review_verdict_consistent(ctx: dict, workdir) -> tuple[bool, str]:
     """
     wd = Path(workdir)
     rp, ep = wd / "review.md", wd / "EVAL.json"
-    if not rp.exists() or not ep.exists():
+    # torture-24 F4: exists() is True for a FIFO — an earlier hop that
+    # `mkfifo EVAL.json` would make read_text() below BLOCK the gate for
+    # the full NINE_GATE_TIMEOUT_S (60s) and leave an abandoned daemon
+    # thread per retry. is_file() degrades a FIFO to an instant, honest
+    # FAIL ("missing") instead of a misleading 'gate timed out' BLOCK.
+    if not rp.is_file() or not ep.is_file():
         return False, "review.md or EVAL.json missing"
     try:
         ev = json.loads(ep.read_text(encoding="utf-8"))

@@ -162,6 +162,15 @@ class ADKAgentNode:
         try:
             _max_calls = int(os.environ.get("NINE_MAX_LLM_CALLS", "24"))
         except ValueError:
+            # torture-24 F5: a non-numeric value silently fell back to the
+            # 24 default while the <1 branch below warned loudly — a
+            # typo'd NINE_MAX_LLM_CALLS=l4 was invisible to the operator
+            # (the cap they believed they tightened never applied). Mirror
+            # the established junk-env convention (T9-F6, T22-F2): surface
+            # it once on stderr.
+            _raw = os.environ.get("NINE_MAX_LLM_CALLS", "24")
+            print("WARNING: NINE_MAX_LLM_CALLS not an integer "
+                  f"(got {_raw!r}); using 24", file=sys.stderr)
             _max_calls = 24
         if _max_calls < 1:
             # torture-21 F4: 0/negative silently DISABLES the budget in ADK

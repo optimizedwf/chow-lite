@@ -147,9 +147,28 @@ python - <<'PYCHECK'
 import json, re, subprocess, sys
 from pathlib import Path
 
+# torture-24 F1: exists() is True for a FIFO/device/socket, so a hostile or
+# accidental hop that `mkfifo EVAL.json` (or CLAIMS.md, or any claimed ref)
+# would make read_text()/stat() below BLOCK the whole check node for the
+# full NINE_NODE_TIMEOUT_S. is_file() is False for non-regular files, so a
+# FIFO degrades to a fast, honest FAIL instead of a hang.
+def _regular(p):
+    try:
+        return p.is_file()
+    except OSError:
+        return False
+
+def _safe_out(p):
+    # write-side guard: a pre-existing FIFO at CHECKS.json/CHECKS.md would
+    # block open(..., "w") forever -- refuse loudly instead (exit 2 -> node
+    # FAIL, visible to the model, no 300s hang).
+    if p.exists() and not p.is_file():
+        sys.stderr.write(f"refusing to write {p}: not a regular file\n")
+        sys.exit(2)
+
 claims = []
 cm = Path("CLAIMS.md")
-if cm.exists():
+if _regular(cm):
     for line in cm.read_text(encoding="utf-8").splitlines():
         m = re.match(r"^\s*(\d+)[.)]\s+(.+)$", line)
         if m:
@@ -175,8 +194,8 @@ for c in claims:
     status = "PASS"
     tested = False
     if files:
-        existing = [f for f in files if Path(f).exists()]
-        missing = [f for f in files if not Path(f).exists()]
+        existing = [f for f in files if _regular(Path(f))]
+        missing = [f for f in files if not _regular(Path(f))]
         if missing:
             status = "FAIL"
             ev.append("missing referenced file(s): " + ", ".join(missing))
@@ -195,7 +214,7 @@ for c in claims:
                     ev.append(f"{f} compiles")
 
     ej = Path("EVAL.json")
-    if ej.exists():
+    if _regular(ej):
         try:
             d = json.loads(ej.read_text(encoding="utf-8"))
             passed = int(d.get("passed", -1))
@@ -222,18 +241,20 @@ for c in claims:
         "mechanical": bool(files or tested),
     })
 
+_safe_out(Path("CHECKS.json"))
 Path("CHECKS.json").write_text(
     json.dumps({"claim_count": len(claims), "claims": results}, indent=2),
     encoding="utf-8",
 )
+_safe_out(Path("CHECKS.md"))
 with open("CHECKS.md", "w", encoding="utf-8") as fh:
     fh.write("# Checks\n\n")
     fh.write(f"Claims extracted: {len(claims)}\n\n")
     fh.write("| # | status | claim | evidence |\n|---|---|---|---|\n")
     for r in results:
         fh.write(f"| {r['n']} | {r['status']} | "
-                 f"{r['claim'].replace('|', '\\\\|')} | "
-                 f"{r['evidence'].replace('|', '\\\\|')} |\n")
+                 f"{r['claim'].replace('|', '\\|')} | "
+                 f"{r['evidence'].replace('|', '\\|')} |\n")
 sys.exit(0)
 PYCHECK
 """

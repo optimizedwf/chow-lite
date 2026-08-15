@@ -39,6 +39,20 @@ def contained_write(job_dir: Path, rel_path: str, content: str) -> str:
             f"refusing write outside job dir: {rel_path!r} "
             f"(resolved {target})"
         )
+    # torture-24 F3: write-side FIFO guard. write_text() opens O_WRONLY, so
+    # a pre-existing FIFO/device/socket at a predictable target
+    # (solution.py / EVAL.json / HANDOFF.md) blocks until the node timeout
+    # (the bench seeds test_solution.py and every flagship hop writes
+    # EVAL.json at known names). is_file() is False for non-regular files,
+    # so refuse loudly and let the tool error surface to the model instead
+    # of hanging the node. (T21-F1 guarded the READ side; this is the same
+    # family on the WRITE path, which the read guards never touch.)
+    if target.exists() and not target.is_file():
+        kind = "directory" if target.is_dir() else "non-regular file"
+        raise ValueError(
+            f"refusing write to {kind}: {rel_path!r} "
+            f"(resolved {target})"
+        )
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
     return f"wrote {rel_path} ({len(content)} bytes)"

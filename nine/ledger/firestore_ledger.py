@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from nine.ledger.ledger import Job, LedgerError
+from nine.ledger.ledger import VALID_STATUSES, Job, LedgerError
 
 
 class FirestoreLedger:
@@ -72,6 +72,39 @@ class FirestoreLedger:
         job_id = rec.get("job_id")
         if not isinstance(workflow_id, str) or not workflow_id or \
                 not isinstance(job_id, str) or not job_id:
+            return None
+        # torture-24 F2: T21-F6's shape guard only checked the identity
+        # fields — a console-edited / version-drifted doc with a wrong-typed
+        # created_at or status still raw-TypeError'd discover()'s sorted()
+        # ('<' not supported between NoneType/str, e.g. created_at: null)
+        # and stats()'s dict-key bucket (unhashable 'dict') -> HTTP 500 for
+        # every caller. Type-check the fields the API actually consumes and
+        # skip the doc (JSONL parity: JSONLLedger._looks_like_job validates
+        # the same shapes — str status from the whitelist, list fields,
+        # per-entry shape).
+        # created_at is what discover() sorts on: None/12345 would TypeError
+        # the sorted() -> skip the doc. (updated_at/completed_at may be None
+        # legitimately — a fresh Job's completed_at is None — so they only
+        # need to be str-or-None.)
+        if "created_at" in rec and not isinstance(rec["created_at"], str):
+            return None
+        for field in ("updated_at", "completed_at"):
+            if field in rec and not isinstance(rec[field], (str, type(None))):
+                return None
+        if "status" in rec and not isinstance(rec["status"], str):
+            return None
+        if rec.get("status") not in (None, *VALID_STATUSES):
+            return None
+        for field in ("artifacts", "verdicts"):
+            if field in rec and not isinstance(rec[field], list):
+                return None
+        for art in rec.get("artifacts", []):
+            if not isinstance(art, dict) or "name" not in art:
+                return None
+        for vd in rec.get("verdicts", []):
+            if not isinstance(vd, dict):
+                return None
+        if "attempts" in rec and not isinstance(rec["attempts"], int):
             return None
         job = Job(workflow_id=workflow_id, job_id=job_id)
         job.__dict__.update(
@@ -159,5 +192,10 @@ class FirestoreLedger:
         for doc in self.db.collection(self.collection).stream():
             total += 1
             s = (doc.to_dict() or {}).get("status", "?")
+            # torture-24 F2 (belt): an unhashable status (dict/list) would
+            # TypeError in counts[s] — bucket it under "?" like any other
+            # malformed value instead of 500ing /v1/stats.
+            if not isinstance(s, str):
+                s = "?"
             counts[s] = counts.get(s, 0) + 1
         return {"total": total, "by_status": counts}

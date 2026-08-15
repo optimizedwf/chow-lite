@@ -282,7 +282,35 @@ class WorkflowExecutor:
         q: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=1)
 
         def _eval() -> None:
-            q.put(self.gate.evaluate(artifact_ctx, job_dir))
+            # torture-23 F2 (MED): a gate check that raised (BaseException
+            # included) died silently in this daemon thread, so q.get below
+            # burned the FULL NINE_GATE_TIMEOUT_S, returned a BLOCK that
+            # falsely blamed "FIFO/device?", and leaked a dead thread per
+            # timeout. Capture the crash at the thread boundary and turn it
+            # into an immediate, honest BLOCK with the real exception.
+            try:
+                result = self.gate.evaluate(artifact_ctx, job_dir)
+            except BaseException as exc:  # noqa: BLE001 - thread boundary
+                result = {
+                    "verdict": "BLOCK",
+                    "evidence_refs": sorted(
+                        artifact_ctx.get("artifact_paths", [])),
+                    "eval_results": {},
+                    "summary": f"gate crashed: {type(exc).__name__}: {exc}",
+                    "verified_at": datetime.now(UTC).isoformat(),
+                    "gate_version": GATE_VERSION,
+                }
+                try:
+                    validate("evidence-verdict", result)
+                except Exception:  # noqa: BLE001 - fall back raw
+                    result = {
+                        "verdict": "BLOCK",
+                        "summary": f"gate crashed: {type(exc).__name__}: {exc}",
+                    }
+            try:
+                q.put_nowait(result)
+            except queue.Full:
+                pass  # main thread already returned after its timeout
 
         t = threading.Thread(target=_eval, name="nine-gate-eval", daemon=True)
         t.start()
