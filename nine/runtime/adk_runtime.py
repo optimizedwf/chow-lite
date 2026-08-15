@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -81,7 +82,18 @@ class ADKAgentNode:
 
         task = inputs.get("task", "")
         user_id = "nine"
-        session_id = f"job-{inputs.get('job_id', 'default')}"
+        # Session scope: FRESH PER ATTEMPT. A chain (research->plan->build)
+        # shares the chain job_id, and retries of a hop would append to the
+        # same session — on a small local model (qwen3:8b, 8192 ctx) the
+        # growing conversation overflows and Ollama context-shifts (drops
+        # the oldest 4K tokens), which re-evaluates and loops for 10+
+        # minutes (seen in slice-40: 500s after 10m with context shifts).
+        # A fresh session per attempt keeps every model turn small and
+        # deterministic: retries redo the hop from zero (correct for a
+        # FIX directive, which is reworked input anyway).
+        agent_name = getattr(self.agent, "name", "agent")
+        attempt_stamp = f"{time.monotonic():.3f}".replace(".", "")
+        session_id = f"job-{inputs.get('job_id', 'default')}-{agent_name}-{attempt_stamp}"
         self._ensure_session(user_id, session_id)
 
         # sync run(): local-testing convenience API that drains the async
@@ -92,21 +104,20 @@ class ADKAgentNode:
         # gem-r1 bench (slice 38) showed 5/10 fixtures ERRORing because each
         # empty stream raised immediately and node-level retries re-hit the
         # same rate limit within seconds.
-        import time
-
         events: list[Any] = []
         last_exc: Exception | None = None
         empty_attempts = 0
         # RunConfig cap: a small/local model can loop on a tool (re-writing
         # the same file) and burn the node deadline turn after turn. Bound
-        # the LLM calls per agent run — default 12 (research/plan/build
-        # agents normally finish in 1-3 calls); NINE_MAX_LLM_CALLS overrides.
+        # the LLM calls per agent run — default 24 (a multi-file build hop
+        # needs ~8-12 calls: solution + tests + verification turns);
+        # NINE_MAX_LLM_CALLS overrides.
         from google.adk.agents import RunConfig
 
         try:
-            _max_calls = int(os.environ.get("NINE_MAX_LLM_CALLS", "12"))
+            _max_calls = int(os.environ.get("NINE_MAX_LLM_CALLS", "24"))
         except ValueError:
-            _max_calls = 12
+            _max_calls = 24
         for attempt in range(3):
             try:
                 evs = list(
@@ -128,6 +139,21 @@ class ADKAgentNode:
                     break
                 time.sleep(self._empty_backoff_s * (attempt + 1))
             except Exception as exc:  # noqa: BLE001 - transient API errors
+                from google.adk.agents.invocation_context import (
+                    LlmCallsLimitExceededError,
+                )
+
+                if isinstance(exc, LlmCallsLimitExceededError):
+                    # The run_config budget was exhausted (small-model loop).
+                    # Don't burn retries on a budget that won't grow — fail
+                    # loud with the real cause instead of an empty-stream
+                    # hint that misleads (Gemini 429 vs budget are different).
+                    raise RuntimeError(
+                        f"ADK agent exceeded max_llm_calls={_max_calls} for "
+                        f"task: {task[:120]!r} (model looped on tools) — "
+                        "raise NINE_MAX_LLM_CALLS or tighten the agent "
+                        "instruction"
+                    ) from exc
                 last_exc = exc
                 if attempt == 2:
                     break

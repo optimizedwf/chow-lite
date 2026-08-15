@@ -146,15 +146,20 @@ def test_success_writes_artifact_and_records_calls(tmp_path):
     assert "lookup" in text
 
 
-def test_session_created_once_per_job(tmp_path):
+def test_session_created_fresh_per_attempt(tmp_path):
+    """slice-40: sessions are FRESH PER ATTEMPT (not per job) so a local
+    model (qwen3:8b, 8192 ctx) never inherits a growing conversation that
+    overflows and context-shifts (which caused 10-minute hangs + empty
+    streams). Every node() call — even the same job — creates a new
+    session."""
     ev = _Event(is_final_response=True, content=_Content(parts=[_Part(text="ok")]))
     node = _make_node(_FakeRunner([[ev], [ev], [ev]]))
     node({"task": "a", "job_id": "j1"}, tmp_path)
     node({"task": "b", "job_id": "j1"}, tmp_path)
-    assert len(node.runner.session_service.created) == 1
-    # a second job id creates a second session
-    node({"task": "c", "job_id": "j2"}, tmp_path)
     assert len(node.runner.session_service.created) == 2
+    # a second job id creates a third session
+    node({"task": "c", "job_id": "j2"}, tmp_path)
+    assert len(node.runner.session_service.created) == 3
 
 
 def test_make_adk_node_spec_shape():
@@ -203,14 +208,16 @@ def _one_done_event():
 
 def test_run_config_max_llm_calls_default_cap(tmp_path, monkeypatch):
     """slice-40: a small/local model looping on a tool must not burn the
-    node deadline — every runner.run() carries RunConfig(max_llm_calls=12)
-    by default so the ADK stops the agent after 12 LLM calls."""
+    node deadline — every runner.run() carries RunConfig(max_llm_calls=24)
+    by default so the ADK stops the agent after 24 LLM calls (raised from
+    12 after the plan hop alone used 6 calls and the build hop needs
+    multi-file writes + verification turns)."""
     monkeypatch.delenv("NINE_MAX_LLM_CALLS", raising=False)
     node = _make_node(_CapturingRunner([[ _one_done_event() ]]))
     node._empty_backoff_s = 0
     node({"task": "hi", "job_id": "j1"}, tmp_path)
     rc = node.runner.last_run_kwargs["run_config"]
-    assert rc.max_llm_calls == 12
+    assert rc.max_llm_calls == 24
 
 
 def test_run_config_max_llm_calls_env_override(tmp_path, monkeypatch):
@@ -226,6 +233,6 @@ def test_run_config_max_llm_calls_malformed_env_falls_back(tmp_path, monkeypatch
     node = _make_node(_CapturingRunner([[ _one_done_event() ]]))
     node._empty_backoff_s = 0
     node({"task": "hi", "job_id": "j1"}, tmp_path)
-    assert node.runner.last_run_kwargs["run_config"].max_llm_calls == 12
+    assert node.runner.last_run_kwargs["run_config"].max_llm_calls == 24
 
 

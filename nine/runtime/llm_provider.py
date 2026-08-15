@@ -130,7 +130,9 @@ def chat_text(
             json={"model": model or model_name(),
                   "messages": messages,
                   "temperature": 0.0,
-                  "max_tokens": 2048},
+                  "max_tokens": 2048,
+                  "options": {"think": os.environ.get("NINE_THINK", "false").lower()
+                              in ("1", "true", "yes")}},
             timeout=timeout,
         )
         if resp.status_code != 200:
@@ -377,16 +379,47 @@ def install_adk_override() -> None:
             if tools:
                 payload["tools"] = tools
             cfg = llm_request.config
+            cfg_max = None
             if cfg is not None and getattr(cfg, "max_output_tokens", None):
-                payload["max_tokens"] = cfg.max_output_tokens
+                cfg_max = cfg.max_output_tokens
+            # max_tokens is MANDATORY: a reasoning model (qwen3:8b) with no
+            # cap generates reasoning tokens until the context truncates
+            # (n_decoded 18K+ / truncated=1, slice-40 debugging) — an
+            # infinite "thinking" loop that hangs the request. Local
+            # default 4096 (code + reasoning headroom); NINE_MAX_TOKENS
+            # overrides. Gemini/DS4 keep their ADK-specified value.
+            try:
+                _max_tok = int(os.environ.get("NINE_MAX_TOKENS", "4096"))
+            except ValueError:
+                _max_tok = 4096
+            payload["max_tokens"] = cfg_max or _max_tok
+            # qwen3:8b is a REASONING model: with thinking on it spends the
+            # entire max_tokens budget on ... reasoning and NEVER emits the
+            # tool call (slice-40: build hop 3x ~2min turns, no tool call,
+            # empty stream). think:false forces direct tool-call emission.
+            # Default ON for the local backend; NINE_THINK=false disables
+            # (Gemini/DS4 ignore this field).
+            if os.environ.get("NINE_THINK", "false").lower() in ("1", "true", "yes"):
+                payload["options"] = {"think": True}
+            else:
+                payload["options"] = {"think": False}
             try:
                 import requests
 
+                # t9-F7: HTTP timeout — default 120s (Gemini/DS4 fast); a
+                # slow local model (qwen3:8b thinking turns) can exceed 2
+                # minutes per turn, so NINE_LLM_TIMEOUT_S raises it (600s
+                # for local runs). Timeout -> HTTP 500 -> empty stream was
+                # the local build-hop killer (slice 40 debugging).
+                try:
+                    _timeout_s = float(os.environ.get("NINE_LLM_TIMEOUT_S", "120"))
+                except ValueError:
+                    _timeout_s = 120.0
                 resp = requests.post(
                     f"{base_url()}/chat/completions",
                     headers={"Authorization": f"Bearer {api_key()}",
                              "Content-Type": "application/json"},
-                    json=payload, timeout=120,
+                    json=payload, timeout=_timeout_s,
                 )
                 if resp.status_code != 200:
                     yield _err(f"tunnel HTTP {resp.status_code}")

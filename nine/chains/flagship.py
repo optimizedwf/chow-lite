@@ -63,7 +63,9 @@ def _research_adk_node() -> Node:
         def write_file(path: str, content: str) -> str:
             """Write a findings file into the research workspace (job dir)."""
             _contained_write(job_dir, path, content)
-            return f"wrote {path} ({len(content)} bytes)"
+            return (f"wrote {path} ({len(content)} bytes) — FILE WRITE "
+                    "COMPLETE. The research hop task is DONE: reply with a "
+                    "one-line summary and do NOT call write_file again.")
 
         agent = LlmAgent(
             name="researcher",
@@ -159,11 +161,15 @@ def _plan_adk_node() -> Node:
         def write_file(path: str, content: str) -> str:
             """Write the plan file into the plan workspace (job dir)."""
             _contained_write(job_dir, path, content)
-            return f"wrote {path} ({len(content)} bytes)"
+            return (f"wrote {path} ({len(content)} bytes) — FILE WRITE "
+                    "COMPLETE. The plan hop task is DONE: reply with a "
+                    "one-line summary and do NOT call write_file again.")
 
         handoff = ""
         if (job_dir / "HANDOFF.md").exists():
-            handoff = (job_dir / "HANDOFF.md").read_text(encoding="utf-8")[:1200]
+            # slice-40: same tool-call degeneration as the build hop's plan
+            # truncation — keep the distilled research short for qwen3:8b.
+            handoff = (job_dir / "HANDOFF.md").read_text(encoding="utf-8")[:600]
 
         agent = LlmAgent(
             name="planner",
@@ -249,11 +255,20 @@ def _build_adk_node() -> Node:
         def write_file(path: str, content: str) -> str:
             """Write a source file into the build workspace (job dir)."""
             _contained_write(job_dir, path, content)
-            return f"wrote {path} ({len(content)} bytes)"
+            return (f"wrote {path} ({len(content)} bytes) — FILE WRITE "
+                    "COMPLETE. Do NOT rewrite {path}; if both solution.py "
+                    "and test_solution.py exist the build hop task is DONE: "
+                    "reply with a one-line summary.")
 
         plan = ""
         if (job_dir / "PLAN.md").exists():
-            plan = (job_dir / "PLAN.md").read_text(encoding="utf-8")[:800]
+            # slice-40: qwen3:8b tool-calling degenerates when the system
+            # prompt grows long — with ~1000+ chars of plan it burns the
+            # whole max_tokens budget on (empty) reasoning and never emits
+            # the write_file tool call (finish:"length", 4096 tokens, no
+            # tool call, no text). 600 chars of plan is enough context for
+            # the build hop and keeps tool-calling reliable.
+            plan = (job_dir / "PLAN.md").read_text(encoding="utf-8")[:600]
 
         agent = LlmAgent(
             name="coder",
@@ -268,7 +283,10 @@ def _build_adk_node() -> Node:
                 "self-test runs pytest next, and a build without tests is "
                 "UNVERIFIED and fails loud (an exit code is not success — "
                 "never fake a pass). Keep the code simple, dependency-free, "
-                "and correct.\n"
+                "and correct. CRITICAL: solution.py must be IMPORT-SAFE — "
+                "define functions/classes and guard any interactive REPL "
+                "under `if __name__ == \"__main__\":` so importing it "
+                "never blocks or runs side effects (pytest imports it).\n"
                 f"Task: {task}\nPlan:\n{plan or '(none)'}"
                 + _fix_directive_suffix(fix_dir)
             ),
@@ -292,7 +310,7 @@ def _build_self_test_command() -> str:
     """
     return (
         "if [ -f test_solution.py ]; then\n"
-        "  python3 -B -m pytest test_solution.py --tb=short -q > test_output.log 2>&1; rc=$?;\n"
+        "  timeout 60 python3 -B -m pytest test_solution.py --tb=short -q > test_output.log 2>&1; rc=$?;\n"
         "  if [ $rc -eq 5 ] || grep -qE 'no tests ran|ERROR collecting' test_output.log; then\n"
         "    printf '{\"checks\":[{\"name\":\"tests-pass\",\"passed\":false,"
         "\"message\":\"pytest collection error\"}],\"exit_code\":1}' > EVAL.json;\n"
