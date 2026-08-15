@@ -59,6 +59,7 @@ def test_adk_empty_stream_raises_not_silent_pass(tmp_path):
 
     def _node(events):
         n = object.__new__(ADKAgentNode)
+        n._attempt_seq = 0
         n.agent = None
         n.app_name = "nine"
         n.runner = SimpleNamespace(
@@ -89,6 +90,7 @@ def test_adk_stream_with_text_succeeds(tmp_path):
         return None
 
     n = object.__new__(ADKAgentNode)
+    n._attempt_seq = 0
     n.agent = None
     n.app_name = "nine"
     ev = SimpleNamespace(

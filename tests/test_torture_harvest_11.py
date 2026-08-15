@@ -211,6 +211,7 @@ def _make_node(runner):
     from nine.runtime.adk_runtime import ADKAgentNode
 
     node = object.__new__(ADKAgentNode)
+    node._attempt_seq = 0
     node.agent = None
     node.app_name = "nine"
     node.runner = runner

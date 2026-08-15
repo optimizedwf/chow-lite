@@ -25,12 +25,11 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
 from typing import Any
-import re
-
 
 _BRACE_NEUTRAL_RE = re.compile(r"\{+")
 
@@ -99,6 +98,11 @@ class ADKAgentNode:
         self.app_name = app_name
         self.runner = InMemoryRunner(agent=agent, app_name=app_name)
         self._created_sessions: set[str] = set()
+        # guarantee a UNIQUE session id per __call__ even if two attempts of
+        # the same job land in the same clock tick (ms-granular monotonic
+        # stamp collided -> session silently REUSED -> retry inherited the
+        # prior conversation; caught as a flaky session-count test).
+        self._attempt_seq = 0
 
     def _ensure_session(self, user_id: str, session_id: str) -> None:
         # sessions are per-job; track created ids (a single bool previously
@@ -128,7 +132,12 @@ class ADKAgentNode:
         # deterministic: retries redo the hop from zero (correct for a
         # FIX directive, which is reworked input anyway).
         agent_name = getattr(self.agent, "name", "agent")
-        attempt_stamp = f"{time.monotonic():.3f}".replace(".", "")
+        # monotonic_ns + per-node sequence: unique per attempt, never
+        # collides across rapid successive calls on the same node. Lazy
+        # getattr so object.__new__-constructed test nodes work too.
+        seq = getattr(self, "_attempt_seq", 0)
+        self._attempt_seq = seq + 1
+        attempt_stamp = f"{time.monotonic_ns()}-{seq}"
         session_id = f"job-{inputs.get('job_id', 'default')}-{agent_name}-{attempt_stamp}"
         self._ensure_session(user_id, session_id)
 

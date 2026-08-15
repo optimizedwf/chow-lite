@@ -46,6 +46,7 @@ def _make_node(runner) -> ADKAgentNode:
     node.app_name = "nine"
     node.runner = runner
     node._created_sessions = set()
+    node._attempt_seq = 0
     return node
 
 
@@ -160,6 +161,26 @@ def test_session_created_fresh_per_attempt(tmp_path):
     # a second job id creates a third session
     node({"task": "c", "job_id": "j2"}, tmp_path)
     assert len(node.runner.session_service.created) == 3
+
+
+def test_session_unique_when_clock_ticks_collide(tmp_path, monkeypatch):
+    """slice-46: two attempts of the same job within one clock tick MUST
+    still get distinct sessions. The old ms-granular monotonic stamp
+    (time.monotonic():.3f) collided -> session silently REUSED -> the
+    retry inherited the prior conversation; this test pins the fix
+    (monotonic_ns + per-node sequence)."""
+    import nine.runtime.adk_runtime as adk_mod
+
+    monkeypatch.setattr(adk_mod.time, "monotonic_ns", lambda: 123456789)
+    ev = _Event(is_final_response=True, content=_Content(parts=[_Part(text="ok")]))
+    node = _make_node(_FakeRunner([[ev], [ev], [ev]]))
+    node({"task": "a", "job_id": "j1"}, tmp_path)
+    node({"task": "b", "job_id": "j1"}, tmp_path)
+    node({"task": "c", "job_id": "j2"}, tmp_path)
+    # all three calls share one fake clock tick: sessions must still differ
+    assert len(node.runner.session_service.created) == 3
+    ids = [c[2] for c in node.runner.session_service.created]
+    assert len(set(ids)) == 3
 
 
 def test_make_adk_node_spec_shape():

@@ -23,6 +23,7 @@ from nine.runtime.fsafety import contained_write
 from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow
 
+
 def _cap_instruction(instruction: str, limit: int = 0) -> str:
     import os as _os
     if not limit:

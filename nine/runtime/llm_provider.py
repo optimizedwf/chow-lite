@@ -390,14 +390,14 @@ def install_adk_override() -> None:
                     # the raw string to local ollama, keep the envelope for
                     # the [OI] tunnel.
                     if _is_local_ollama():
-                        content = resp if isinstance(resp, str) else _json.dumps(resp)
+                        tool_content = resp if isinstance(resp, str) else _json.dumps(resp)
                     else:
-                        content = _json.dumps(resp)
+                        tool_content = _json.dumps(resp)
                     tool_msgs.append({
                         "role": "tool",
                         "tool_call_id": fr.id or "call_0",
                         "name": fr.name,
-                        "content": content,
+                        "content": tool_content,
                     })
             if tool_msgs and not tool_calls and not text_parts:
                 # pure tool-result content (role user OR tool): tool msgs only
