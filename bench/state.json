@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-15T13:31:17.600489+00:00",
- "cycles_run": 23,
+ "last_cycle": "2026-08-15T19:22:48.818825+00:00",
+ "cycles_run": 24,
  "last_bench": {
   "run_id": "run-dbg18",
   "backend": "openai",
@@ -34,18 +34,18 @@
    94
   ]
  },
- "next_target": "SPAWN round-13 torture workers (surfaces 3+1). Gemini canonical rerun of gem-r1 ERROR fixtures 002/005/006/009/010 still pending (est_quota_left=0; refresh ledger, run when >=30). DS4 interim SoT 10/10 SHIP. Fixture specs 011-015 deferred.",
+ "next_target": "HARVEST round-13 complete (torture-25: 5 findings F1-F5, torture-26: 2 findings F1-F2; 6 implemented + hermetic tests + fixture bugfix-small-011 shipped slice 48). Next: SPAWN round-14 torture workers (surfaces 2+4: learn/memory + server/HTTP) once reports are harvested. Gemini canonical rerun of gem-r1 ERROR fixtures 002/005/006/009/010 still pending (est_quota_left=0; refresh ledger, run when >=30). DS4 interim SoT 10/10 SHIP.",
  "last_error": null,
- "last_harvest": "2026-08-15T07:38:23.341879+00:00",
+ "last_harvest": "2026-08-15T19:22:48.818825+00:00",
  "last_spawn": {
-  "round": 11,
+  "round": 13,
   "attempt": 1,
   "workers": [
-   "torture-21/sub-cecd41e5",
-   "torture-22/sub-d45cf8d0"
+   "torture-25/sub-ac62ad71",
+   "torture-26/sub-03518002"
   ],
-  "at": "2026-08-15T07:16:04.002366+00:00",
+  "at": "2026-08-15T19:08:03+00:00",
   "backend": "opencode-go/deepseek-v4-flash",
-  "note": "t21 = runtime+gates (adk retry/RunConfig, EVAL gate, self-test/verify, ledger, redaction, recover); t22 = robustness+fixtures (env, bad JSON, missing files, CLI exit codes, fixture 011+ proposals)"
+  "note": "round-13: t25 = robustness+fixtures, t26 = runtime+gates"
  }
 }

@@ -19,6 +19,7 @@ import os
 import queue
 import random
 import signal
+import stat
 import subprocess as sp
 import sys
 import threading
@@ -252,6 +253,36 @@ class WorkflowExecutor:
 
     def _hash(self, data: bytes) -> str:
         return hashlib.sha256(data).hexdigest()
+
+    @staticmethod
+    def _try_read_bytes(p: Path) -> bytes | None:
+        """Read a file for hashing WITHOUT ever blocking the main thread.
+
+        torture-26 F1 (MED): the stale guard re-reads seeded inputs
+        (test_solution.py, task.txt) to compare content digests. A FIFO /
+        device swapped in at one of those paths makes Path.read_bytes()
+        block FOREVER — the read runs on the main thread, outside every
+        gate/node timeout, and is cancel-proof (the executor can only
+        cancel between node steps). is_file() is False for FIFOs on every
+        platform but the snapshot could have been taken while the path was
+        still a regular file. Guard the read itself: open with O_NONBLOCK
+        so a FIFO returns EWOULDBLOCK immediately instead of parking the
+        thread, and never treat a non-regular-file as content.
+        """
+        try:
+            fd = os.open(p, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            return None
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                return None
+            with os.fdopen(fd, "rb", closefd=True) as fh:
+                return fh.read()
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
     def _gate_timeout_s(self) -> int:
         """NINE_GATE_TIMEOUT_S env override for the evidence-gate window.
@@ -586,10 +617,10 @@ class WorkflowExecutor:
                     # permission drift) must not raw-crash execute() — skip
                     # it from the snapshot so the stale guard treats it as
                     # run-produced (BLOCK) instead of exempting it.
-                    try:
-                        snap[rel] = self._hash(p.read_bytes())
-                    except OSError:
-                        continue
+                    data = self._try_read_bytes(p)
+                    if data is None:
+                        continue  # unreadable / FIFO / device: not unchanged content
+                    snap[rel] = self._hash(data)
                 self._first_attempt_before[key] = snap
 
             seen: dict[str, str] = {}  # reset per attempt: reruns re-register the full dir
@@ -899,14 +930,17 @@ class WorkflowExecutor:
                             # earlier attempt is run-produced evidence that
                             # must be re-registered in the shipping attempt,
                             # or the manifest omits the certified content.
-                            try:
-                                unchanged = self._hash(
-                                    p_expected.read_bytes()
-                                ) == snap.get(expected_name)
-                            except OSError:
-                                # torture-15 F2: an unreadable input is not
-                                # unchanged content — BLOCK, never raise.
+                            data = self._try_read_bytes(p_expected)
+                            if data is None:
+                                # torture-15 F2 (unreadable) + torture-26 F1
+                                # (FIFO/device swapped in after the snapshot):
+                                # not unchanged content — BLOCK, never hang,
+                                # never raise.
                                 unchanged = False
+                            else:
+                                unchanged = (
+                                    self._hash(data) == snap.get(expected_name)
+                                )
                             if unchanged:
                                 continue
                             stale.append(expected_name)

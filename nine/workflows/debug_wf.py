@@ -24,10 +24,34 @@ from nine.runtime.llm_provider import key_available
 from nine.runtime.workflows import Node, Workflow
 
 
+def _env_cap(name: str, default: int = 1400) -> int:
+    """Read an int env knob with the junk-env convention (torture-25 F3):
+    a non-numeric value (e.g. NINE_TASK_CAP=2k) prints ONE loud stderr
+    warning naming the variable and falls back to `default` — mirroring
+    NINE_MAX_LLM_CALLS (T24-F5) / NINE_GATE_TIMEOUT_S (T22-F2) behavior.
+    A value < 1 is treated the same as junk (a 0-char task cap would
+    silently empty every task)."""
+    import os as _os
+    raw = _os.environ.get(name, "")
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        print(f"WARNING: {name}={raw!r} is not an integer - using {default}",
+              file=_os.sys.stderr if hasattr(_os, "sys") else __import__("sys").stderr)
+        return default
+    if value < 1:
+        print(f"WARNING: {name}={raw!r} is < 1 - using {default}",
+              file=_os.sys.stderr if hasattr(_os, "sys") else __import__("sys").stderr)
+        return default
+    return value
+
+
 def _cap_instruction(instruction: str, limit: int = 0) -> str:
     import os as _os
     if not limit:
-        limit = int(_os.environ.get("NINE_INSTRUCTION_LIMIT", "1400"))
+        limit = _env_cap("NINE_INSTRUCTION_LIMIT")
     if _os.environ.get("NINE_DEBUG_INSTR"):
         print(f"[cap] len={len(instruction)} limit={limit} capped={len(instruction)>limit}", flush=True)
     """slice-40: qwen3:8b tool-calling degenerates when the system prompt
@@ -67,8 +91,7 @@ def _diagnose_adk_node() -> Node:
         # fixture tasks (006's validate list), so the diagnose agent
         # misread the bug. qwen3:8b handles 1400 chars with the /api/chat
         # no-thinking fix.
-        import os as _os
-        _task_cap = int(_os.environ.get("NINE_TASK_CAP", "1400"))
+        _task_cap = _env_cap("NINE_TASK_CAP")
         task = str(inputs.get("task", ""))[:_task_cap]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():
@@ -160,8 +183,7 @@ def _patch_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         # slice-45: task cap raised 700->1400 (see diagnose node).
-        import os as _os
-        _task_cap = int(_os.environ.get("NINE_TASK_CAP", "1400"))
+        _task_cap = _env_cap("NINE_TASK_CAP")
         task = str(inputs.get("task", ""))[:_task_cap]
         fix_dir = str(inputs.get("fix_directive", ""))[:1500]
         if not key_available():

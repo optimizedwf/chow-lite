@@ -20,6 +20,7 @@ function of the environment: default (unset / gemini) changes NOTHING.
 from __future__ import annotations
 
 import json as _json
+import math
 import os
 import sys
 from pathlib import Path
@@ -187,6 +188,26 @@ def chat_text(
         return text or None
     except Exception:  # noqa: BLE001 - model-or-fail: None, caller fails loud
         return None
+
+
+def _tunnel_timeout() -> float:
+    """HTTP timeout for tunnel posts (t9-F7): default 120s; a slow local
+    model (qwen3:8b thinking turns) can exceed 2 minutes per turn, so
+    NINE_LLM_TIMEOUT_S raises it (600s for local runs). Junk-env doctrine
+    (torture-25 F4): float("nan")/-5/1e400 parse fine and kill every
+    requests.post with a library-level error (NaN / negative-timeout /
+    OverflowError) that names NO env var — warn loudly, fall back 120.0."""
+    try:
+        raw = os.environ.get("NINE_LLM_TIMEOUT_S", "120")
+        value = float(raw)
+    except ValueError:
+        value = 120.0
+    if not math.isfinite(value) or value < 1:
+        print(f"WARNING: NINE_LLM_TIMEOUT_S={os.environ.get('NINE_LLM_TIMEOUT_S')!r} "
+              "is not a finite positive timeout - using 120.0",
+              file=sys.stderr)
+        value = 120.0
+    return value
 
 
 def make_model_client() -> Any | None:
@@ -486,15 +507,7 @@ def install_adk_override() -> None:
             try:
                 import requests
 
-                # t9-F7: HTTP timeout — default 120s (Gemini/DS4 fast); a
-                # slow local model (qwen3:8b thinking turns) can exceed 2
-                # minutes per turn, so NINE_LLM_TIMEOUT_S raises it (600s
-                # for local runs). Timeout -> HTTP 500 -> empty stream was
-                # the local build-hop killer (slice 40 debugging).
-                try:
-                    _timeout_s = float(os.environ.get("NINE_LLM_TIMEOUT_S", "120"))
-                except ValueError:
-                    _timeout_s = 120.0
+                _timeout_s = _tunnel_timeout()
                 resp = requests.post(
                     f"{_chat_endpoint()}",
                     headers={"Authorization": f"Bearer {api_key()}",

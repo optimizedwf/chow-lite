@@ -1,0 +1,56 @@
+{
+ "fixture_id": "bugfix-small-011",
+ "lab": "chow-agent-eval-lab",
+ "version": "0.1.0",
+ "category": "robustness",
+ "difficulty": "easy",
+ "dimensions": [
+  {
+   "id": "verified_with_exact_evidence",
+   "label": "Verified With Exact Evidence",
+   "weight": 0.3,
+   "description": "present claims are VERIFIED with the exact matched excerpt as evidence (never the whole corpus)",
+   "pass_if": "present-claim tests return VERIFIED and the evidence field equals only the matched substring"
+  },
+  {
+   "id": "honest_unverified",
+   "label": "Honest Unverified",
+   "weight": 0.2,
+   "description": "absent claims are UNVERIFIED with empty evidence \u2014 never stamped VERIFIED",
+   "pass_if": "absent-claim tests return UNVERIFIED with evidence ''"
+  },
+  {
+   "id": "negative_claims",
+   "label": "Negative Claims",
+   "weight": 0.2,
+   "description": "NOT-prefixed claims are FAILED when contradicted by evidence and VERIFIED when absent; never dropped or downgraded",
+   "pass_if": "NOT-present -> FAILED with excerpt; NOT-absent -> VERIFIED with ''; claim count preserved"
+  },
+  {
+   "id": "completeness_order",
+   "label": "Completeness & Order",
+   "weight": 0.15,
+   "description": "every input claim yields exactly one verdict in input order",
+   "pass_if": "mixed/order tests return the same number of verdicts in the same order"
+  },
+  {
+   "id": "shape_style",
+   "label": "Shape & Style",
+   "weight": 0.15,
+   "description": "verdict dicts have exactly claim/status/evidence keys, status in the enum, stdlib only",
+   "pass_if": "shape tests pass and implementation uses only re/stdlib, signature unchanged"
+  }
+ ],
+ "verdict_thresholds": {
+  "pass": 0.7,
+  "partial": 0.4,
+  "fail": 0.0
+ },
+ "eval_criteria": [
+  "verified_with_exact_evidence",
+  "honest_unverified",
+  "negative_claims",
+  "completeness_order",
+  "shape_style"
+ ]
+}

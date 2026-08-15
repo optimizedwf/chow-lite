@@ -210,7 +210,11 @@ def cmd_chain(args) -> int:
         return 1
 
     # seed the chain job dir with the task input file
-    job = ledger.submit(chain.id, input={"task": args.task})
+    try:
+        job = ledger.submit(chain.id, input={"task": args.task})
+    except LedgerError as e:
+        print(f"error: cannot submit to ledger: {e}", file=sys.stderr)
+        return 1
     job_dir = Path(getattr(args, "workdir", "work")) / job.job_id
     try:
         # torture-16 F7: a `work` FILE in cwd made mkdir raw-traceback
@@ -419,9 +423,17 @@ def cmd_submit(args) -> int:
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
-    job.attach_route_decision(decision)
-    ledger.update(job)
+    try:
+        job = ledger.submit(workflow_id=decision.workflow_id, input={"task": args.task})
+        job.attach_route_decision(decision)
+        ledger.update(job)
+    except LedgerError as e:
+        # torture-25 F1 (MED): the PRIMARY submit path sat outside every
+        # try — an un-appendable ledger (chmod 444, full disk) raw-tracebacked
+        # LedgerError. Every other command promises ONE clean error: line;
+        # submit must too (job never became durable, safe to refuse).
+        print(f"error: cannot submit to ledger: {e}", file=sys.stderr)
+        return 1
     try:
         return _execute_job(ledger, job, args.task, args)
     except (WorkflowError, ValueError) as exc:
@@ -602,13 +614,15 @@ def cmd_recover(args) -> int:
     if task_txt.is_file():
         try:
             task = task_txt.read_text(encoding="utf-8").rstrip("\n")
-        except UnicodeDecodeError:
+        except (UnicodeDecodeError, OSError):
             # torture-23 F3 (LOW): a non-UTF-8 task.txt raw-tracebacked.
-            # Refuse like the missing-task.txt path — re-executing from a
-            # corrupted raw task could SHIP garbage as a verified job.
+            # torture-25 F2 (LOW): a chmod-000 task.txt passes is_file()
+            # and read_text raises PermissionError (an OSError) — the same
+            # clean refusal. Re-executing from a corrupted raw task could
+            # SHIP garbage as a verified job.
             print(f"error: cannot recover {job.job_id}: task.txt is not "
-                  "valid UTF-8 (corrupt raw task). Restore the workdir or "
-                  "re-submit the task.", file=sys.stderr)
+                  "readable (corrupt, unreadable, or not valid UTF-8). "
+                  "Restore the workdir or re-submit the task.", file=sys.stderr)
             return 1
     if not task:
         print(f"error: cannot recover {job.job_id}: task.txt is missing (raw "

@@ -41,7 +41,7 @@ KEY_PATH = Path(os.environ.get("NINE_BENCH_KEY", os.path.expanduser("~/.agent-va
 NINE_BIN = REPO / ".venv" / "bin" / "nine"
 GEMINI_MODEL = "gemini-3.6-flash"
 _env_fx = os.environ.get("NINE_BENCH_FIXTURES", "")
-FIXTURES = _env_fx.split(",") if _env_fx else [f"bugfix-small-{i:03d}" for i in range(1, 11)]
+FIXTURES = _env_fx.split(",") if _env_fx else [f"bugfix-small-{i:03d}" for i in range(1, 12)]
 
 TASK_MODE = os.environ.get("NINE_BENCH_TASK_MODE", "full")  # full | desc
 RUNID = os.environ.get("NINE_BENCH_RUNID", "r0")

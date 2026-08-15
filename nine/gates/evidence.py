@@ -122,6 +122,13 @@ def file_nonempty_check(name: str, min_chars: int = 10) -> CheckFn:
         f = Path(workdir) / name
         if f.is_symlink() or not f.exists():
             return False, f"{name} missing — cannot verify"
+        if not f.is_file():
+            # torture-26 F2 (LOW): a DIRECTORY at RESPONSE.md exists and
+            # stat()s with a big st_size — the old check certified it as a
+            # non-trivial answer and the verify lane read_text()d the dir
+            # (IsADirectoryError raw-traceback). An artifact must be a
+            # regular file to be non-trivial evidence.
+            return False, f"{name} is not a regular file — cannot verify"
         size = f.stat().st_size
         if size < min_chars:
             return False, f"{name} too small ({size}B < {min_chars}B)"
@@ -196,8 +203,17 @@ def exit_codes_check() -> CheckFn:
 def required_artifact_check(expected: list[str]) -> CheckFn:
     """Factory: a check that requires certain artifact files exist."""
     def _check(ctx: dict[str, Any], workdir: Path) -> tuple[bool, str]:
-        missing = [e for e in expected
-                   if (workdir / e).is_symlink() or not (workdir / e).exists()]
+        missing = []
+        for e in expected:
+            p = workdir / e
+            if p.is_symlink() or not p.exists():
+                missing.append(e)
+            elif not (p.is_file() or p.is_dir()):
+                # torture-26 F2 (LOW): a FIFO/device at the artifact path
+                # exists() as True and a verify read would hang — a named
+                # pipe is not an artifact. Directories stay legal (the
+                # build-multi `solution/` artifact is a directory).
+                missing.append(e)
         if missing:
             return False, f"missing artifacts: {missing}"
         return True, f"artifacts present: {expected}"
