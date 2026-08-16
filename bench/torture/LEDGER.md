@@ -236,3 +236,17 @@ discovering a regression. No LEDGER rows this round. Slice-51 instead ran
 an AST gap-scan armor pass (13 new hermetic tests) which surfaced and
 fixed one real defect: force_terminal's direct-set fallback omitted
 completed_at for terminal statuses.
+
+
+## Round 17 (2026-08-16) — surfaces: runtime+gates / robustness+fixtures — 2 findings, 2 FIXED
+
+torture-33 (runtime+gates re-attack: empty-stream retry, gate parsing fuzz,
+timeout races) completed without filing a report — budget burn, no findings.
+torture-34 (robustness+fixtures re-attack: env junk, corrupt stores,
+permission errors, Firestore parity) filed 2 findings; both FIXED in
+slice-52 with hermetic regression tests.
+
+| id | area | severity | title | disposition |
+|----|------|----------|-------|-------------|
+| T34-F1 | robustness (learn/events store) | high | valid-JSON wrong-shape route-event lines (confidence str / verdict bool / checks bool) raw-crash `nine learn events` (ValueError format-code on {conf:.2f}) and `nine learn scan` (TypeError str-vs-float on confidence >= 0.7) | FIXED slice-52: `_coerce_route_event` strict-typed read belt in RouteEventStore.all() — non-conforming lines skipped with the T6-F3 ledger-read convention (test_wrong_shape_event_lines_are_skipped_not_crashed) |
+| T34-F2 | robustness (learn/candidates store) | medium | CandidateStore.update_status (nine learn apply/revert rewrite) read its JSONL outside the OSError belt — directory at path / chmod-000 raw-crashed IsADirectoryError/PermissionError | FIXED slice-52: best-effort read belt mirroring all() T28-F3 — warn on stderr, never crash (test_candidate_update_status_read_oserror_is_clean) |

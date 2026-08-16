@@ -1,0 +1,23 @@
+[
+  {
+    "fixture": "bugfix-small-010",
+    "routed_workflow": "debug",
+    "router_model": "deterministic-keyword",
+    "verdict": "ERROR",
+    "verdict_summary": null,
+    "final_status": "failed-loud",
+    "attempts": 1,
+    "duration_s": 10.2,
+    "tests_passed": 0,
+    "tests_total": 0,
+    "check_exit": null,
+    "timed_out": false,
+    "cli_error": "job e59140d2-e4d2-4f61-8b07-b05576be7a92 failed loud: node diagnose failed: node diagnose failed after 3 attempts: ADK agent produced no output for task: '# Eval Fixture: bugfix-small-010\\n\\n## Task Description\\n\\nFix the bug in the following Python module.\\n\\nThe module implement' - empty stream (often Gemini 429 quota exhaustion; retry after quota reset)",
+    "job_id": "e59140d2-e4d2-4f61-8b07-b05576be7a92",
+    "task_mode": "full",
+    "run_id": "gem-r2-010",
+    "test_solution_expected_tests": 10,
+    "candidate_file": "solution.py",
+    "candidate_unchanged_from_starter": true
+  }
+]

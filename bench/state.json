@@ -1,23 +1,27 @@
 {
- "last_cycle": "2026-08-16T18:45:00.000000+00:00",
- "cycles_run": 27,
+ "last_cycle": "2026-08-16T19:34:12.461147+00:00",
+ "cycles_run": 28,
  "last_bench": {
-  "run_id": "run-dbg18",
-  "backend": "openai",
-  "model": "qwen3:8b",
-  "fixtures": "001-010 (full set)",
-  "ship": "10/10",
-  "tests": "94/94",
-  "at": "2026-08-15T15:00:00.000000+00:00"
+  "run_id": "gem-r2-002/005/006/009 (incremental)",
+  "backend": "gemini",
+  "model": "gemini-3.6-flash",
+  "fixtures": "002 canary, 005, 006, 009 (010 ERROR empty-stream)",
+  "ship": "4/4",
+  "tests": "42/42",
+  "at": "2026-08-16T19:30:00.000000+00:00"
  },
  "bench_runs": [
   "r0-slice17-baseline",
   "smoke-slice22-002",
   "gem-r1-slice38",
-  "oai-r2-slice39"
+  "oai-r2-slice39",
+  "gem-r2-002",
+  "gem-r2-005",
+  "gem-r2-006",
+  "gem-r2-009"
  ],
  "est_quota_left": 0,
- "cooldown_until": "2026-08-15T00:00:00+00:00",
+ "cooldown_until": "2026-08-17T00:00:00+00:00",
  "last_score": {
   "ship": 10,
   "total": 10,
@@ -34,28 +38,28 @@
    94
   ]
  },
- "next_target": "slice-51 HARDEN COMPLETE (596/601, 13 armor tests + force_terminal completed_at fix). OPERATOR DIRECTIVE 2026-08-16 (gem-r2 protocol change): run the canonical Gemini rerun INCREMENTALLY \u2014 one fixture per quota window, NEVER a full-set run first. Evidence: Aug 15 full-set attempt burned the fresh window after fixture 001 SHIP; 002-011 all 429 empty-stream. Order: 002 canary first, then 005, 006, 009, 010 one at a time (continue same window only if probe still shows quota). On 429/empty-stream: stop immediately, set est_quota_left=0, resume next fixture after PT-midnight reset. Each single-fixture SHIP logs to the gem-r2 scorecard (001/003/004/007/008 already gemini-SHIP from gem-r1 + slice-49). HARDEN (round-16 spawn) continues as fallback between windows. Interim SoT DS4 10/10 stands.",
+ "next_target": "slice-52 SHIPPED: gem-r2 incremental 002/005/006/009 SHIP (42/42 tests, 9/10 canonical gemini) + round-17 harvest 2/2 fixes (route-event type belt + update_status read OSError belt). OPERATOR DIRECTIVE gem-r2 protocol: ONE fixture remains (010) — resume after PT-midnight reset; probe first; on 429/empty-stream stop immediately, set est_quota_left=0. After 010, full gemini rerun = 10/10 SHIP possible (001/003/004/007/008 from gem-r1+slice-49 already SHIP). HARDEN (round-18 spawn) between windows. Interim SoT DS4 10/10 stands.",
  "last_error": {
-  "at": "2026-08-16T01:40:44.276139+00:00",
-  "what": "BENCH attempt slice-49: full-set run started (001 SHIP gemini-3.6-flash 9/9; 002-011 ERROR empty-stream = Gemini free-tier 429 mid-run). est_quota_left set to 0. operator gem-r2 (fixtures 002/005/006/009/010) NOT completed \u2014 quota exhausted. Next: retry gem-r2 after cooldown/next probe."
+  "at": "2026-08-16T19:34:12.461147+00:00",
+  "what": "slice-52 BENCH: gem-r2 incremental 002/005/006/009 SHIP (42/42 tests) then 010 ERROR empty-stream x2 (gemini agentic quota throttled; simple probe still OK). gem-r2 9/10 canonical gemini SHIP (010 pending). est_quota_left=0. Next: resume 010 after PT-midnight reset."
  },
- "last_harvest": "2026-08-16T08:10:00.000000+00:00",
+ "last_harvest": "2026-08-16T19:34:12.461147+00:00",
  "last_spawn": {
-  "round": 16,
+  "round": 17,
   "attempt": 1,
   "workers": [
-   "torture-31 (surface runtime+gates)",
-   "torture-32 (surface learn+memory+deploy)"
+   "torture-33 (surface runtime+gates)",
+   "torture-34 (surface robustness+fixtures)"
   ],
-  "at": "2026-08-16T13:08:30.168733+00:00",
+  "at": "2026-08-16T19:34:12.461147+00:00",
   "backend": "opencode-go/deepseek-v4-flash",
-  "note": "round-16: t31 = runtime+gates re-attack, t32 = learn+memory+deploy re-attack (post harvest-15)"
+  "note": "round-17: t33 = runtime+gates re-attack (empty-stream retry, gate parsing fuzz, timeout races), t34 = robustness+fixtures re-attack (env junk, corrupt stores, permission errors)"
  },
  "last_hardening": {
-  "slice": 51,
-  "kind": "HARDEN",
-  "at": "2026-08-16T18:45:00.000000+00:00",
-  "what": "test armor: 13 hermetic tests for long-untested paths (force_terminal, topological_order, default_gate, CLI artifacts/cancel, base_url) + FIX force_terminal fallback missing completed_at for terminal statuses",
-  "suite": "596 passed / 5 skipped (601 collected)"
+  "slice": 52,
+  "kind": "BENCH + HARDEN",
+  "at": "2026-08-16T19:34:12.461147+00:00",
+  "what": "gem-r2 incremental bench 002/005/006/009 SHIP (010 quota-blocked); round-17 harvest: t34 F1 (wrong-shape route-event lines crash learn events/scan) + F2 (CandidateStore.update_status read OSError) BOTH FIXED with hermetic tests",
+  "suite": "598 passed / 5 skipped (603 collected)"
  }
 }

@@ -1,0 +1,23 @@
+[
+  {
+    "fixture": "bugfix-small-006",
+    "routed_workflow": "debug",
+    "router_model": "gemini-3.6-flash",
+    "verdict": "SHIP",
+    "verdict_summary": "all evidence checks passed",
+    "final_status": "shipped",
+    "attempts": 1,
+    "duration_s": 106.7,
+    "tests_passed": 12,
+    "tests_total": 12,
+    "check_exit": 0,
+    "timed_out": false,
+    "cli_error": null,
+    "job_id": "6694e8a8-78ed-422e-952c-e344a7918bb0",
+    "task_mode": "full",
+    "run_id": "gem-r2-006",
+    "test_solution_expected_tests": 12,
+    "candidate_file": "patch.py",
+    "candidate_unchanged_from_starter": false
+  }
+]

@@ -47,6 +47,34 @@ class RouteEvent:
         return asdict(self)
 
 
+def _coerce_route_event(rec: dict[str, Any]) -> RouteEvent | None:
+    """Strict-typed RouteEvent construction for the JSONL READ path.
+
+    slice-52 (torture-34 F1): a valid-JSON WRONG-SHAPE line (confidence as a
+    string, checks_passed as a float, verdict as a bool) constructs a
+    RouteEvent fine (dataclasses never type-check) and then raw-crashes
+    `nine learn events` (format-code ValueError on ``{ev.confidence:.2f}``)
+    and `nine learn scan` (str-vs-float TypeError on ``confidence >= 0.7``).
+    Only well-typed records may enter the LEARN loop; anything else is
+    skipped like the ledger read path (T6-F3) does for corrupt lines.
+    """
+    for key in ("event_id", "job_id", "task_redacted", "workflow_id",
+                "router_version", "verdict", "recorded_at"):
+        if not isinstance(rec.get(key), str):
+            return None
+    confidence = rec.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        return None
+    for key in ("checks_passed", "checks_total"):
+        val = rec.get(key)
+        if isinstance(val, bool) or not isinstance(val, int):
+            return None
+    try:
+        return RouteEvent(**rec)
+    except TypeError:
+        return None
+
+
 @dataclass
 class ImprovementCandidate:
     """A proposed change; requires human/review approval to apply."""
@@ -109,10 +137,9 @@ class RouteEventStore:
                 continue  # one corrupt line must not brick event loading
             if not isinstance(rec, dict):
                 continue
-            try:
-                out.append(RouteEvent(**rec))
-            except TypeError:
-                continue
+            event = _coerce_route_event(rec)
+            if event is not None:
+                out.append(event)
         return out
 
     def by_workflow(self, workflow_id: str) -> list[RouteEvent]:
@@ -176,8 +203,19 @@ class CandidateStore:
     def update_status(self, candidate_id: str, status: str) -> None:
         """Rewrite the JSONL with a new status for one candidate (immutable
         log -> status is a state transition, applied in place)."""
+        # slice-52 (torture-34 F2): the rewrite's READ was outside the
+        # OSError belt — a read-only candidates.jsonl or a directory at the
+        # path raw-tracebacked PermissionError/IsADirectoryError out of
+        # `nine learn apply`/`revert`. Mirror the all() belt (T28-F3): the
+        # transition is best-effort; a broken store is surfaced, not fatal.
+        try:
+            raw = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"WARNING: candidate status update skipped "
+                  f"({exc})", file=sys.stderr)
+            return
         recs = []
-        for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
+        for line in raw.splitlines():
             if not line.strip():
                 continue
             try:

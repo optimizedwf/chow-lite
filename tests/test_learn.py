@@ -8,7 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # noqa: E402
 
 from nine.chains.chain import ChainExecutor
 from nine.chains.flagship import demo_lane
-from nine.learn.learner import Learner, RouteEvent, RouteEventStore
+from nine.learn.learner import CandidateStore, Learner, RouteEvent, RouteEventStore
 from nine.ledger.ledger import JSONLLedger
 
 
@@ -188,3 +188,75 @@ def test_candidate_store_status_roundtrip(tmp_path):
     assert learner.cands.get(cid).status == "applied"
     learner.cands.update_status(cid, "pending")
     assert learner.cands.get(cid).status == "pending"
+
+
+def test_wrong_shape_event_lines_are_skipped_not_crashed(tmp_path):
+    """slice-52 (torture-34 F1): a valid-JSON WRONG-SHAPE route-event line
+    (confidence as a string, verdict as a bool, checks_passed as a bool)
+    used to construct a RouteEvent and then raw-crash `nine learn events`
+    (format-code ValueError on ``{ev.confidence:.2f}``) and `nine learn scan`
+    (str-vs-float TypeError). The read path must skip such lines — the same
+    belt the ledger read path (T6-F3) gives corrupt lines."""
+    import json
+
+    store = RouteEventStore(tmp_path / "events.jsonl")
+    bad_lines = [
+        {"event_id": "ev-x-0", "job_id": "j", "task_redacted": "t",
+         "workflow_id": "debug", "confidence": "0.99", "router_version": "v",
+         "verdict": "SHIP", "checks_passed": 1, "checks_total": 1,
+         "fix_directive": "", "recorded_at": "2026-08-16T00:00:00+00:00"},
+        {"event_id": "ev-x-1", "job_id": "j", "task_redacted": "t",
+         "workflow_id": "debug", "confidence": 0.8, "router_version": "v",
+         "verdict": True, "checks_passed": 1, "checks_total": 1,
+         "fix_directive": "", "recorded_at": "2026-08-16T00:00:00+00:00"},
+        {"event_id": "ev-x-2", "job_id": "j", "task_redacted": "t",
+         "workflow_id": "debug", "confidence": 0.8, "router_version": "v",
+         "verdict": "FIX", "checks_passed": True, "checks_total": 1,
+         "fix_directive": "", "recorded_at": "2026-08-16T00:00:00+00:00"},
+    ]
+    good = {"event_id": "ev-good", "job_id": "j", "task_redacted": "t",
+            "workflow_id": "debug", "confidence": 0.9, "router_version": "v",
+            "verdict": "SHIP", "checks_passed": 1, "checks_total": 1,
+            "fix_directive": "", "recorded_at": "2026-08-16T00:00:00+00:00"}
+    with store.path.open("a") as f:
+        for rec in bad_lines + [good]:
+            f.write(json.dumps(rec) + "\n")
+    events = store.all()
+    assert [e.event_id for e in events] == ["ev-good"]
+    # the display path must not crash on the surviving (well-typed) line
+    assert f"{events[0].confidence:.2f}" == "0.90"
+    # the scan path must not crash either
+    cands = Learner(store).learn()
+    assert isinstance(cands, list)
+
+
+def test_candidate_update_status_read_oserror_is_clean(tmp_path):
+    """slice-52 (torture-34 F2): `CandidateStore.update_status` (the rewrite
+    used by `nine learn apply`/`revert`) read its JSONL OUTSIDE the OSError
+    belt — a directory at candidates.jsonl or a chmod-000 store
+    raw-tracebacked IsADirectoryError/PermissionError. The read must be
+    best-effort like the write side: warn on stderr, never crash."""
+    import json
+    import os as _os
+
+    store = RouteEventStore(tmp_path / "events.jsonl")
+    _low_conf_event(store)
+    learner = Learner(store)
+    cid = learner.learn()[0].candidate_id
+    # directory at the candidates path
+    cand_dir = tmp_path / "cand-dir"
+    cand_dir.mkdir()
+    cstore = CandidateStore(cand_dir)
+    cstore.update_status(cid, "approved")  # must warn, not raise
+    # chmod-000 store (read denied)
+    cand_ro = tmp_path / "candidates-ro.jsonl"
+    cand_ro.write_text(json.dumps({
+        "candidate_id": cid, "kind": "gate", "description": "x",
+        "evidence": [], "status": "pending",
+    }) + "\n")
+    _os.chmod(cand_ro, 0)
+    cstore2 = CandidateStore(cand_ro)
+    cstore2.update_status(cid, "approved")  # must warn, not raise
+    # healthy store still transitions
+    learner.cands.update_status(cid, "applied")
+    assert learner.cands.get(cid).status == "applied"
