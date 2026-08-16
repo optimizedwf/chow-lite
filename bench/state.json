@@ -34,7 +34,7 @@
    94
   ]
  },
- "next_target": "slice-50 ROUND-15 HARVEST COMPLETE (torture-29 x6 + torture-30 x3, 9/9 fixed, 15 hermetic tests, 583/588). gem-r2 canonical rerun (fixtures 002/005/006/009/010) STILL PENDING \u2014 est_quota_left=0; probe quota after cooldown. Next: round-16 spawn or gem-r2 if quota returns.",
+ "next_target": "slice-50 ROUND-15 HARVEST COMPLETE (9/9 fixed, 583/588). OPERATOR DIRECTIVE 2026-08-16 (gem-r2 protocol change): run the canonical Gemini rerun INCREMENTALLY \u2014 one fixture per quota window, NEVER a full-set run first. Evidence: Aug 15 full-set attempt burned the fresh window after fixture 001 SHIP; 002-011 all 429 empty-stream. Order: 002 canary first, then 005, 006, 009, 010 one at a time (continue same window only if probe still shows quota). On 429/empty-stream: stop immediately, set est_quota_left=0, resume next fixture after PT-midnight reset. Each single-fixture SHIP logs to the gem-r2 scorecard (001/003/004/007/008 already gemini-SHIP from gem-r1 + slice-49). HARDEN (round-16 spawn) continues as fallback between windows. Interim SoT DS4 10/10 stands.",
  "last_error": {
   "at": "2026-08-16T01:40:44.276139+00:00",
   "what": "BENCH attempt slice-49: full-set run started (001 SHIP gemini-3.6-flash 9/9; 002-011 ERROR empty-stream = Gemini free-tier 429 mid-run). est_quota_left set to 0. operator gem-r2 (fixtures 002/005/006/009/010) NOT completed \u2014 quota exhausted. Next: retry gem-r2 after cooldown/next probe."
