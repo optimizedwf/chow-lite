@@ -462,7 +462,8 @@ def _record_route_event(learner, job, decision, verdict: dict) -> None:
     try:
         learner.observe(
             RouteEvent(
-                event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
+                event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}"
+                         f"-{int((job.metadata or {}).get('run_seq', 0)) if job else 0}",
                 job_id=job.job_id if job else "",
                 task_redacted=decision.task_redacted[:200],
                 workflow_id=decision.workflow_id,

@@ -34,12 +34,19 @@ def datahub_context_tool(inputs: dict[str, Any], job_dir: Path) -> dict[str, Any
             "enabled": False,
             "reason": "datahub-agent-context not installed (pip install datahub-agent-context)",
         }
-    # Live DataHub MCP requires a reachable metadata service; that path is
-    # exercised in the datahub-2026 repo (github.com/optimizedwf/datahub-2026).
+    # torture-27 F4: the node must NOT report enabled:True while doing no
+    # work — a silent no-op in the middle of an evidence-gated pipeline
+    # would let consumers certify "graph context contributed" when nothing
+    # was read. Honest state: the kit is importable but the tool is not yet
+    # wired to a metadata service, so it reports disabled with the reason.
+    # Live DataHub MCP (search/get_lineage) is exercised in the datahub-2026
+    # repo (github.com/optimizedwf/datahub-2026); wire it here when a
+    # reachable metadata service is configured.
     return {
-        "enabled": True,
-        "note": "datahub-agent-context importable; wire search/get_lineage here "
-                "for graph-backed context (see optimizedwf/datahub-2026).",
+        "enabled": False,
+        "reason": "datahub-agent-context importable but no metadata service "
+                  "is wired (search/get_lineage not implemented); "
+                  "integration lives in optimizedwf/datahub-2026.",
     }
 
 

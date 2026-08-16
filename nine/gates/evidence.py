@@ -59,16 +59,29 @@ class EvidenceGate:
         """
         results: dict[str, Any] = {}
         all_passed = True
+        errored = False
         for name, fn in self.checks.items():
             try:
                 passed, message = fn(artifact_ctx, workdir)
                 results[name] = {"passed": passed, "message": message}
                 all_passed = all_passed and passed
             except Exception as exc:  # noqa: BLE001
-                results[name] = {"passed": False, "message": f"check error: {exc}"}
+                # torture-28 F2: a RAISING check is a broken check, not a
+                # failed verification. Tag it so the executor can fail loud
+                # (BLOCK) instead of issuing a FIX directive the evidence
+                # can never satisfy (doomed model-budget-burning fix loops).
+                results[name] = {
+                    "passed": False,
+                    "message": f"check error: {exc}",
+                    "error": True,
+                }
                 all_passed = False
+                errored = True
 
-        if all_passed and results:
+        if errored:
+            verdict = "BLOCK"
+            summary = "gate check(s) raised an exception — broken check, not fixable evidence"
+        elif all_passed and results:
             verdict = "SHIP"
             summary = "all evidence checks passed"
         elif results and not all_passed:

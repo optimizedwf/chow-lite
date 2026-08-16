@@ -22,7 +22,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from nine.chains.chain import ChainError
 from nine.gates.evidence import (
@@ -255,6 +255,13 @@ class _LazyFallbackLedger:
             global _ledger_failed  # noqa: PLW0603
             try:
                 return primary_attr(*args, **kwargs)
+            except LedgerError:
+                # torture-28 F1: a LedgerError from the PRIMARY (unknown job
+                # id -> the endpoint's clean 404 contract, stale id from
+                # another instance, etc.) is NOT an outage — re-raise so the
+                # endpoint handles it. Only non-LedgerError failures
+                # (gRPC/network/Unknown) engage the JSONL fallback.
+                raise
             except Exception as exc:  # noqa: BLE001 - switch to JSONL on any query failure
                 if self._fallback is None:
                     print(
@@ -290,6 +297,16 @@ class SubmitRequest(BaseModel):
     """Validated task payload — caps prompt size to bound Gemini bills."""
     task: str = Field(..., min_length=1, max_length=2000)
 
+    @field_validator("task")
+    @classmethod
+    def _task_not_blank(cls, v: str) -> str:
+        # torture-28 F5: whitespace-only tasks passed min_length=1 and
+        # routed to the respond lane, spending a paid model call on a blank
+        # prompt and shipping SHIP entries whose task_redacted is empty.
+        if not v.strip():
+            raise ValueError("task must not be blank")
+        return v
+
 
 # --- lightweight auth + rate limiting (demo-appropriate; no OAuth needed) ---
 _API_KEY = os.environ.get("NINE_API_KEY", "")
@@ -324,7 +341,23 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
     so the table size tracks ACTIVE IPs only.
     """
     global _hits_swept  # noqa: PLW0603
-    ip = request.client.host if request.client else "unknown"
+    # torture-28 F6: behind Cloud Run's HTTPS LB every request presents the
+    # LB's IP (client.host) — keying on it collapses ALL tenants into one
+    # shared bucket (a single noisy consumer 429s the whole API). Use the
+    # real client IP from the trusted platform header when present. Trust
+    # boundary: Cloud Run sets X-Forwarded-For with the real client as the
+    # LAST value it inserts; only the last hop is trusted (never a
+    # client-supplied first value).
+    ip = "unknown"
+    headers = getattr(request, "headers", None)
+    if headers is not None:
+        xff = headers.get("x-forwarded-for")
+        if xff:
+            hops = [h.strip() for h in xff.split(",") if h.strip()]
+            if hops:
+                ip = hops[-1]
+    if ip == "unknown" and getattr(request, "client", None) is not None:
+        ip = request.client.host
     now = monotonic()
     if now - _hits_swept >= RATE_LIMIT["window_s"]:
         _hits_swept = now
@@ -396,7 +429,10 @@ def build_gate() -> EvidenceGate:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "nine", "model": MODEL}
+    # torture-28 F7: MODEL was captured at import time — a container that
+    # boots before its secret is mounted reported "none" forever (and never
+    # updated after a key rotation). Read the provider live instead.
+    return {"status": "ok", "service": "nine", "model": llm_provider.model_name()}
 
 
 @app.post("/v1/submit")
@@ -555,7 +591,8 @@ def _record_route_event(learner, job, decision, verdict: dict) -> None:
     try:
         learner.observe(
             RouteEvent(
-                event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}",
+                event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}"
+                         f"-{int((job.metadata or {}).get('run_seq', 0)) if job else 0}",
                 job_id=job.job_id if job else "",
                 task_redacted=decision.task_redacted[:200],
                 workflow_id=decision.workflow_id,
@@ -599,6 +636,14 @@ def job_detail(job_id: str):
 @app.get("/v1/events")
 def events(limit: int = 50):
     """Recent route events (the LEARN loop's raw material)."""
+    # torture-28 F4: limit<=0 previously returned the WHOLE store
+    # (all_ev[-0:] is unbounded) or silently inverted intent (negative N);
+    # a monitoring consumer probing with limit=0 pulled everything per poll.
+    if limit < 1 or limit > 1000:
+        return JSONResponse(
+            {"detail": "limit must be between 1 and 1000"},
+            status_code=422,
+        )
     learner = get_learner()
     all_ev = learner.store.all()
     return {

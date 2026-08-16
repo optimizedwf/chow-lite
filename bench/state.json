@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-15T19:22:48.818825+00:00",
- "cycles_run": 24,
+ "last_cycle": "2026-08-16T02:38:28.759479+00:00",
+ "cycles_run": 25,
  "last_bench": {
   "run_id": "run-dbg18",
   "backend": "openai",
@@ -16,7 +16,7 @@
   "gem-r1-slice38",
   "oai-r2-slice39"
  ],
- "est_quota_left": 30,
+ "est_quota_left": 0,
  "cooldown_until": "2026-08-15T00:00:00+00:00",
  "last_score": {
   "ship": 10,
@@ -34,18 +34,18 @@
    94
   ]
  },
- "next_target": "BENCH FIRST (operator directive 2026-08-15): Gemini quota PROBE VERIFIED BACK (single generate_content gemini-3.6-flash -> 'OK' at ~20:40Z; cooldown_until passed) -> run canonical gem-r2 = NINE_BENCH_FIXTURES=bugfix-small-002,005,006,009,010 (the gem-r1 empty-stream ERRORs) on the default gemini backend, then full set 001-011 if quota allows. est_quota_left set to 30 for this. After gem-r2: round-14 spawn (surfaces 2+4: learn/memory + server/HTTP). DS4 interim SoT 10/10 SHIP; round-13 harvest complete (slice 48).",
- "last_error": null,
- "last_harvest": "2026-08-15T19:22:48.818825+00:00",
+ "next_target": "HARDEN slice-49 COMPLETE (round-14 harvest 12/12). gem-r2 canonical rerun (fixtures 002/005/006/009/010) STILL PENDING \u2014 est_quota_left=0 after slice-49 bench attempt hit 429 mid-run; refresh quota probe when cooldown passes. Next: round-15 spawn.",
+ "last_error": {
+  "at": "2026-08-16T01:40:44.276139+00:00",
+  "what": "BENCH attempt slice-49: full-set run started (001 SHIP gemini-3.6-flash 9/9; 002-011 ERROR empty-stream = Gemini free-tier 429 mid-run). est_quota_left set to 0. operator gem-r2 (fixtures 002/005/006/009/010) NOT completed \u2014 quota exhausted. Next: retry gem-r2 after cooldown/next probe."
+ },
+ "last_harvest": "2026-08-16T02:38:28.759479+00:00",
  "last_spawn": {
-  "round": 13,
-  "attempt": 1,
-  "workers": [
-   "torture-25/sub-ac62ad71",
-   "torture-26/sub-03518002"
-  ],
-  "at": "2026-08-15T19:08:03+00:00",
+  "round": 15,
+  "attempt": 0,
+  "workers": [],
+  "at": "",
   "backend": "opencode-go/deepseek-v4-flash",
-  "note": "round-13: t25 = robustness+fixtures, t26 = runtime+gates"
+  "note": "round-14: t27 = learn+memory, t28 = server+HTTP"
  }
 }

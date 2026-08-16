@@ -91,7 +91,16 @@ class RouteEventStore:
 
     def all(self) -> list[RouteEvent]:
         out = []
-        for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
+        # torture-28 F3: the read side must match the write side's t21-F1
+        # belt — a directory (or unreadable FIFO) at events.jsonl previously
+        # raw-500'd GET /v1/events instead of returning an empty store.
+        try:
+            raw = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"[nine] WARNING: cannot read events store "
+                  f"{self.path}: {exc}", flush=True)
+            return []
+        for line in raw.splitlines():
             if not line.strip():
                 continue
             try:
@@ -135,7 +144,15 @@ class CandidateStore:
 
     def all(self) -> list[ImprovementCandidate]:
         out = []
-        for line in self.path.read_text(encoding="utf-8", errors="replace").splitlines():
+        # torture-28 F3: same belt as RouteEventStore.all — a directory at
+        # candidates.jsonl must not raw-500 GET /v1/stats.
+        try:
+            raw = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"[nine] WARNING: cannot read candidates store "
+                  f"{self.path}: {exc}", flush=True)
+            return []
+        for line in raw.splitlines():
             if not line.strip():
                 continue
             try:

@@ -378,6 +378,12 @@ class JSONLLedger:
             )
         job.transition("recovered")
         job.attempts = 0
+        # torture-27 F1: each recovery is a NEW run — bump the run sequence
+        # so the route event id differs from the original run's. Otherwise
+        # the re-run's observation is recorded under the SAME event_id and
+        # Learner.learn() dedupes it away (LEARN is blind to re-runs, even
+        # when the verdict flips BLOCK -> SHIP).
+        job.metadata["run_seq"] = int(job.metadata.get("run_seq", 0)) + 1
         self._jobs[job_id] = job
         self._append(job)
         return job

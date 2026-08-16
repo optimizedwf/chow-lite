@@ -107,6 +107,10 @@ class LocalMemoryGraph:
         if not self.path.exists():
             return []
         terms = [t.lower() for t in query.split() if t]
+        if not terms:
+            return []  # torture-27 F2: an empty/whitespace query must not
+            # return the k most-recent records as false "hits" (parity with
+            # the Firestore backend which already early-returns []).
         hits: list[dict[str, Any]] = []
         for line in reversed(open(self.path, encoding="utf-8",
                                   errors="replace").read().splitlines()):
@@ -159,21 +163,29 @@ class FirestoreMemoryGraph:
         verdict: str,
     ) -> str:
         memory_id = f"mem-{uuid.uuid4().hex[:12]}"
-        self._ref(memory_id).set({
-            "memory_id": memory_id,
-            "job_id": job_id,
-            "chain_id": chain_id,
-            "hop_id": hop_id,
-            "workflow_id": workflow_id,
-            "artifact_name": artifact_name,
-            "kind": kind,
-            "sha256": sha256,
-            "size": size,
-            "summary": summary,
-            "task_redacted": task_redacted,
-            "verdict": verdict,
-            "created_at": _now(),
-        })
+        # torture-27 F3 (T22-F1 parity): the cloud backend must be as
+        # best-effort as the JSONL one — a Firestore outage/403
+        # (google.api_core.exceptions.*, NOT an OSError) mid-hop must not
+        # crash the chain nor 500 the server on an already-shipped job.
+        try:
+            self._ref(memory_id).set({
+                "memory_id": memory_id,
+                "job_id": job_id,
+                "chain_id": chain_id,
+                "hop_id": hop_id,
+                "workflow_id": workflow_id,
+                "artifact_name": artifact_name,
+                "kind": kind,
+                "sha256": sha256,
+                "size": size,
+                "summary": summary,
+                "task_redacted": task_redacted,
+                "verdict": verdict,
+                "created_at": _now(),
+            })
+        except Exception as exc:  # noqa: BLE001 - best-effort side effect
+            print(f"WARNING: memory write skipped ({exc}); "
+                  "hop verdict already durable", file=sys.stderr)
         return memory_id
 
     def search_context(self, query: str, k: int = 5) -> list[dict[str, Any]]:

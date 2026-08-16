@@ -15,6 +15,7 @@ the job record + route events are the persistent memory of the system.
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from nine.ledger.ledger import VALID_STATUSES, Job, LedgerError
@@ -38,7 +39,16 @@ class FirestoreLedger:
         # mirror (populated by get/refresh) so the backend swap is real.
         self._jobs: dict[str, Job] = {}
 
+    # torture-28 F8: Firestore document ids must not contain "/" (path
+    # separator) or "." segments (silently normalized/escaping) — an id
+    # like "a/b" resolves to a nested subpath and ".." addresses outside
+    # the intended namespace. Reject them as a clean LedgerError (the JSONL
+    # backend already 404s these; the parity claim must hold on Firestore).
+    _JOB_ID_OK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
     def _ref(self, job_id: str):
+        if not self._JOB_ID_OK.match(job_id):
+            raise LedgerError(f"job not found: {job_id}")
         return self.db.collection(self.collection).document(job_id)
 
     def submit(self, workflow_id: str, input: dict[str, Any] | None = None,

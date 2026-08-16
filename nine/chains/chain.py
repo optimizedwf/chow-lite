@@ -242,7 +242,8 @@ class ChainExecutor:
                     try:
                         self.learner.observe(
                             RouteEvent(
-                                event_id=f"ev-{hop_job.job_id[:8]}",
+                                event_id=f"ev-{hop_job.job_id[:8]}"
+                                           f"-{int((hop_job.metadata or {}).get('run_seq', 0))}",
                                 job_id=hop_job.job_id,
                                 task_redacted=redact(str(inputs.get("task", "")))[:200],
                                 workflow_id=wf_id,

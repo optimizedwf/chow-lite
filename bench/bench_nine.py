@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """bench_nine.py — benchmark nine (agent OS) against chow-agent-evals bugfix fixtures.
 
-For each fixture bugfix-small-001..009:
+CLI: bench_nine.py [--help] [--list] [--dry-run] [--fixtures 001,005,011]
+       [--task-mode full|desc] [--runid NAME]
+  Unknown flags ABORT with usage — they never start a live Gemini bench
+  (a typo'd --help used to silently run the full set and burn quota).
+  All options also work as env vars (NINE_BENCH_FIXTURES, NINE_BENCH_TASK_MODE,
+  NINE_BENCH_RUNID) for the documented invocations.
+
+For each fixture bugfix-small-001..011:
   1. create an isolated bench dir under bench-runs/<fixture>/
   2. seed the nine job dir with the fixture starter (solution.py) plus a pytest
      test_solution.py converted 1:1 from the fixture's own tests/check.sh
@@ -619,8 +626,92 @@ def attempts_from_ledger(ledger_path: Path, job_id: str | None) -> int | None:
     return attempts
 
 # ------------------------------------------------------------------ main -----
-def main() -> int:
+def _parse_args(argv: list[str]) -> dict | None:
+    """Tiny argv parser. Returns a dict of overrides, or None on --help/--list/
+    --dry-run (caller must return immediately). Aborts with usage on unknown
+    flags — a typo must NEVER silently start a live Gemini bench (slice-49:
+    `--help` ran the full set and burned the quota)."""
+    out: dict[str, object] = {}
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg in ("--help", "-h"):
+            print(__doc__)
+            return None
+        if arg in ("--list", "--dry-run"):
+            out[arg[2:]] = True
+            i += 1
+            continue
+        if arg == "--fixtures":
+            i += 1
+            if i >= len(argv):
+                print("error: --fixtures requires a comma-separated list "
+                      "(e.g. 001,005,011)", file=sys.stderr)
+                return False
+            out["fixtures"] = argv[i].split(",")
+        elif arg == "--task-mode":
+            i += 1
+            if i >= len(argv):
+                print("error: --task-mode requires full|desc", file=sys.stderr)
+                return False
+            if argv[i] not in ("full", "desc"):
+                print(f"error: --task-mode must be full|desc (got {argv[i]!r})",
+                      file=sys.stderr)
+                return False
+            out["task_mode"] = argv[i]
+        elif arg == "--runid":
+            i += 1
+            if i >= len(argv):
+                print("error: --runid requires a name", file=sys.stderr)
+                return False
+            out["runid"] = argv[i]
+        else:
+            print(f"error: unknown argument {arg!r}", file=sys.stderr)
+            print("usage: bench_nine.py [--help] [--list] [--dry-run] "
+                  "[--fixtures 001,005,011] [--task-mode full|desc] "
+                  "[--runid NAME]", file=sys.stderr)
+            return False
+        i += 1
+    return out
+
+
+def _apply_overrides(parsed: dict) -> None:
+    """Apply parsed argv overrides to the module-level bench configuration."""
+    global FIXTURES, TASK_MODE, RUNID  # noqa: PLW0603 - argv overrides
+    if "fixtures" in parsed:
+        FIXTURES = [f"bugfix-small-{int(f):03d}" if f.isdigit() else f
+                    for f in parsed["fixtures"]]
+    if "task_mode" in parsed:
+        TASK_MODE = parsed["task_mode"]
+    if "runid" in parsed:
+        RUNID = parsed["runid"]
+
+
+def main(argv: list[str] | None = None) -> int:
+    # Programmatic callers (tests, automation) pass nothing -> no CLI flags
+    # -> run with env/module defaults. Only the __main__ entry passes argv,
+    # so a script invocation like `--help` is parsed but a bare `main()`
+    # call is NOT hijacked by the caller's own sys.argv (pytest args etc.).
+    if argv:
+        parsed = _parse_args(argv)
+        if parsed is None:
+            return 0
+        if parsed is False:
+            return 2
+        _apply_overrides(parsed)
+        if parsed.get("list"):
+            print("Available fixtures:")
+            for fx in sorted(p.name for p in FIXTURES_DIR.iterdir() if p.is_dir()):
+                print(f"  {fx}")
+            return 0
+        if parsed.get("dry-run"):
+            print("DRY-RUN: would run these fixtures "
+                  f"({len(FIXTURES)}): {', '.join(FIXTURES)}")
+            print("  router=default backend  task_mode="
+                  f"{TASK_MODE}  runid={RUNID}")
+            return 0
     BENCH_ROOT.mkdir(parents=True, exist_ok=True)
+
     results = []
     for fx in FIXTURES:
         fx_dir = FIXTURES_DIR / fx
@@ -753,4 +844,4 @@ def main() -> int:
     return 1
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
