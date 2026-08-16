@@ -32,6 +32,43 @@ def _fix_directive_suffix(fix_dir: str) -> str:
     )
 
 
+
+
+def _cap_task_text(text: str, env_name: str = "NINE_TASK_CAP",
+                   default: int = 1400) -> str:
+    """Cap a task/fix-directive string for the ADK prompt budget.
+
+    torture-29 F4: research/plan/build hardcoded `[:1500]`, silently
+    ignoring the documented NINE_TASK_CAP env knob and dropping the tail
+    with NO marker — a long task lost its ending (where acceptance
+    criteria usually live) with no signal to the model. Mirror the
+    debug_wf convention (slice-40/45): cap with an explicit
+    "...[truncated]..." marker so the model knows the task was cut.
+    Junk env values warn loudly (T24-F5 / T25-F3 junk-env convention)
+    instead of silently changing the budget.
+    """
+    import os as _os
+
+    raw = _os.environ.get(env_name, "")
+    if raw:
+        try:
+            limit = int(raw)
+        except ValueError:
+            print(f"WARNING: {env_name}={raw!r} is not an integer - "
+                  f"using {default}", file=__import__("sys").stderr)
+            limit = default
+        if limit < 1:
+            print(f"WARNING: {env_name}={raw!r} is < 1 - using {default}",
+                  file=__import__("sys").stderr)
+            limit = default
+    else:
+        limit = default
+    if len(text) <= limit:
+        return text
+    head = text[: int(limit * 0.6)]
+    tail = text[-(limit - int(limit * 0.6)):]
+    return head + "\n...[task truncated for model budget]...\n" + tail
+
 def _research_adk_node() -> Node:
     """Research hop backed by a REAL Google ADK 2.0 LlmAgent.
 
@@ -47,8 +84,8 @@ def _research_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:1500]
-        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
+        task = _cap_task_text(str(inputs.get("task", "")))
+        fix_dir = _cap_task_text(str(inputs.get("fix_directive", "")))
         if not key_available():
             raise WorkflowError(
                 "research requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) — no offline "
@@ -145,8 +182,8 @@ def _plan_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:1500]
-        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
+        task = _cap_task_text(str(inputs.get("task", "")))
+        fix_dir = _cap_task_text(str(inputs.get("fix_directive", "")))
         if not key_available():
             raise WorkflowError(
                 "plan requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) — no offline "
@@ -239,8 +276,8 @@ def _build_adk_node() -> Node:
         from nine.runtime.adk_runtime import ADKAgentNode
 
         job_dir = Path(job_dir)
-        task = str(inputs.get("task", ""))[:1500]
-        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
+        task = _cap_task_text(str(inputs.get("task", "")))
+        fix_dir = _cap_task_text(str(inputs.get("fix_directive", "")))
         if not key_available():
             raise WorkflowError(
                 "build requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) — no offline "
@@ -546,8 +583,10 @@ def research_plan_build_review_teach() -> Chain:
 def demo_lane() -> Chain:
     """The lean Taskmaster demo lane: inbox -> triage -> task -> report.
 
-    This is deliberately small (4 deterministic hops) so the live demo
+    This is deliberately small (3 deterministic hops) so the live demo
     finishes fast and every hop evidence is visible in the ledger.
+    (torture-29 F5: the docstring claimed 4 hops; the chain is
+    triage -> task -> report.)
     """
     triage_wf = Workflow(id="triage", description="Classify the inbox item")
     triage_wf.add_node(Node(

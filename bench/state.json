@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-16T02:38:28.759479+00:00",
- "cycles_run": 25,
+ "last_cycle": "2026-08-16T08:10:00.000000+00:00",
+ "cycles_run": 26,
  "last_bench": {
   "run_id": "run-dbg18",
   "backend": "openai",
@@ -34,18 +34,21 @@
    94
   ]
  },
- "next_target": "HARDEN slice-49 COMPLETE (round-14 harvest 12/12). gem-r2 canonical rerun (fixtures 002/005/006/009/010) STILL PENDING \u2014 est_quota_left=0 after slice-49 bench attempt hit 429 mid-run; refresh quota probe when cooldown passes. Next: round-15 spawn.",
+ "next_target": "slice-50 ROUND-15 HARVEST COMPLETE (torture-29 x6 + torture-30 x3, 9/9 fixed, 15 hermetic tests, 583/588). gem-r2 canonical rerun (fixtures 002/005/006/009/010) STILL PENDING \u2014 est_quota_left=0; probe quota after cooldown. Next: round-16 spawn or gem-r2 if quota returns.",
  "last_error": {
   "at": "2026-08-16T01:40:44.276139+00:00",
   "what": "BENCH attempt slice-49: full-set run started (001 SHIP gemini-3.6-flash 9/9; 002-011 ERROR empty-stream = Gemini free-tier 429 mid-run). est_quota_left set to 0. operator gem-r2 (fixtures 002/005/006/009/010) NOT completed \u2014 quota exhausted. Next: retry gem-r2 after cooldown/next probe."
  },
- "last_harvest": "2026-08-16T02:38:28.759479+00:00",
+ "last_harvest": "2026-08-16T08:10:00.000000+00:00",
  "last_spawn": {
   "round": 15,
-  "attempt": 0,
-  "workers": [],
-  "at": "",
+  "attempt": 1,
+  "workers": [
+   "torture-29 (surface workflows+router+CLI+docs)",
+   "torture-30 (surface robustness+fixtures)"
+  ],
+  "at": "2026-08-16T07:08:18.214319+00:00",
   "backend": "opencode-go/deepseek-v4-flash",
-  "note": "round-14: t27 = learn+memory, t28 = server+HTTP"
+  "note": "round-15: t29 = workflows+router+CLI+docs re-attack, t30 = robustness+fixtures re-attack (post harvest-14)"
  }
 }

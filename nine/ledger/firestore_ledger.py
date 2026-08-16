@@ -191,9 +191,20 @@ class FirestoreLedger:
             )
         job.transition("recovered")
         job.attempts = 0
+        # torture-29 F2: mirror the JSONLLedger run_seq bump (torture-27
+        # F1). Without it a Firestore-backed recovery records its route
+        # event under the ORIGINAL run's event id (cli.py builds
+        # ev-<jobid>-<run_seq>) and Learner.learn() dedupes the re-run
+        # away — LEARN is blind to verdict flips on Firestore deployments
+        # exactly as the JSONL path was before T27-F1.
+        job.metadata["run_seq"] = int(job.metadata.get("run_seq", 0)) + 1
         self._jobs[job_id] = job
-        self._ref(job_id).update({"status": job.status, "updated_at": job.updated_at,
-                                  "attempts": job.attempts})
+        self._ref(job_id).update({
+            "status": job.status,
+            "updated_at": job.updated_at,
+            "attempts": job.attempts,
+            "metadata": job.metadata,
+        })
         return job
 
     def stats(self) -> dict[str, Any]:

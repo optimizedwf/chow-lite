@@ -1,7 +1,7 @@
 # nine
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/nine/ci.yml?branch=main&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/tests-507%20passing%2C%205%20skipped%20(512%20collected)-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-583%20passing%2C%205%20skipped%20(588%20collected)-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
 </p>
@@ -233,17 +233,17 @@ nine/
   runtime/adk_runtime.py  Google ADK 2.0 integration layer
   cli.py                  operator CLI (submit/status/discover/...)
 schemas/                  JSON Schemas: route-decision, agent-job, verdict, artifact
-learn/                    route-event store + improvement candidates
-chains/                   chain engine + flagship 5-hop chain + demo lane
-workflows/                example workflow DAGs
+nine/learn/               route-event store + improvement candidates
+nine/chains/              chain engine + flagship 5-hop chain + demo lane
+nine/workflows/           example workflow DAGs
 deploy/                   Cloud Run + Firestore config (FastAPI operator API)
 docs/                     architecture diagram (SVG + PNG)
-tests/                    512 tests (router, ledger, gates, executor, chains, learn, ADK)
+tests/                    588 tests (router, ledger, gates, executor, chains, learn, ADK, doc-truth)
 ```
 
 ## Roadmap
 
-- [x] Core loop (router → workflow → gate → ledger) with 507 passing tests (512 collected, 5 live-gated skips)
+- [x] Core loop (router → workflow → gate → ledger) with 583 passing tests (588 collected, 5 live-gated skips)
 - [x] Google ADK 2.0 agent integration (agents as `subagent` nodes)
 - [x] 5-hop chain (research → plan → build → review → teach) + demo lane
 - [x] Cloud Run + Firestore deploy layer (Dockerfile, service, rules, API)

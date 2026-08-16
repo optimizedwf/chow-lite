@@ -388,7 +388,10 @@ def test_flagship_hops_consume_fix_directive():
     for fn_name in ("_research_adk_node", "_plan_adk_node", "_build_adk_node"):
         import inspect as _i
         body = _i.getsource(getattr(fl, fn_name))
-        assert "fix_dir = str(inputs.get(\"fix_directive\"" in body, fn_name
+        # torture-29 F4: the raw [:1500] slice became _cap_task_text (which
+        # honors NINE_TASK_CAP + appends a truncation marker) — the
+        # directive must still flow into the suffix for the retry prompt.
+        assert "_cap_task_text(str(inputs.get(\"fix_directive\"" in body, fn_name
         assert "_fix_directive_suffix(fix_dir)" in body, fn_name
 
 

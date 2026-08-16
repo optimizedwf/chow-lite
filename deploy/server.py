@@ -25,11 +25,6 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from nine.chains.chain import ChainError
-from nine.gates.evidence import (
-    EvidenceGate,
-    eval_json_check,
-    exit_codes_check,
-)
 from nine.ledger.firestore_ledger import FirestoreLedger
 from nine.ledger.ledger import VALID_STATUSES, LedgerError
 from nine.router.classifier import Router
@@ -415,16 +410,6 @@ def build_router() -> Router:
         r = Router(model=model, version=f"{llm_provider.model_name()}-live")
         _register(r)
     return r
-
-
-def build_gate() -> EvidenceGate:
-    """Generic single-shot gate. Per-hop gates live in the chain/hop
-    definitions (ChainExecutor._gate_for); this one only verifies that
-    EVAL.json exists with passing checks and no bash node crashed."""
-    gate = EvidenceGate()
-    gate.register_check("eval-json", eval_json_check())
-    gate.register_check("exit-codes", exit_codes_check())
-    return gate
 
 
 @app.get("/health")

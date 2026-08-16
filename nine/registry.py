@@ -241,6 +241,20 @@ def _load_plugin_workflows() -> dict[str, Callable[[], Workflow]]:
     mod = _ilu.module_from_spec(spec)
     try:
         spec.loader.exec_module(mod)
+        raw_plugins = getattr(mod, "PLUGIN_WORKFLOWS", {})
+        # torture-29 F1: a syntactically valid registry whose
+        # PLUGIN_WORKFLOWS is NOT a dict (e.g. `= 42` or `= "abc"`)
+        # previously raw-tracebacked at import: the dict(...) conversion
+        # ran OUTSIDE this guard, so one malformed plugin file took down
+        # EVERY nine command (submit/status/--help) with a TypeError. Same
+        # "broken plugin config must not break nine" contract as the
+        # exec_module guard above (torture-12 F7) — a wrong shape is a
+        # broken registry, not a license to brick the CLI.
+        if not isinstance(raw_plugins, dict):
+            print(f"warning: plugin registry {reg_path} has a non-dict "
+                  f"PLUGIN_WORKFLOWS ({type(raw_plugins).__name__}) - "
+                  "plugin workflows will NOT be available", file=sys.stderr)
+            return {}
     except Exception as exc:  # noqa: BLE001 - a broken plugin registry must not break nine
         # torture-12 F7: a syntax error / import failure silently disabled
         # EVERY plugin lane while operators believed composed lanes were
@@ -251,7 +265,7 @@ def _load_plugin_workflows() -> dict[str, Callable[[], Workflow]]:
         return {}
     return {
         wid: _wf(fac)
-        for wid, fac in dict(getattr(mod, "PLUGIN_WORKFLOWS", {})).items()
+        for wid, fac in raw_plugins.items()
     }
 
 

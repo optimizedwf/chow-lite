@@ -290,11 +290,26 @@ class WorkflowExecutor:
         Default 60s; malformed or <1 values fall back to 60 (same pattern
         as the node-timeout override, torture-21 F1).
         """
+        raw = os.environ.get("NINE_GATE_TIMEOUT_S", "60")
         try:
-            timeout_s = int(os.environ.get("NINE_GATE_TIMEOUT_S", "60"))
+            timeout_s = int(raw)
         except ValueError:
+            # torture-30 F2: a malformed NINE_GATE_TIMEOUT_S used to fall
+            # back silently — an operator who typo'd `60s` got the default
+            # with NO signal while believing their knob was live (violates
+            # the T24-F5 junk-env convention that NINE_MAX_LLM_CALLS
+            # follows: loud stderr warning naming the variable). Mirror
+            # debug_wf._env_cap / adk_runtime._max_llm_calls.
+            import sys as _sys
+            print(f"WARNING: NINE_GATE_TIMEOUT_S={raw!r} is not an integer "
+                  "- using 60", file=_sys.stderr)
             timeout_s = 60
-        return timeout_s if timeout_s >= 1 else 60
+        if timeout_s < 1:
+            import sys as _sys
+            print(f"WARNING: NINE_GATE_TIMEOUT_S={raw!r} is < 1 - using 60",
+                  file=_sys.stderr)
+            timeout_s = 60
+        return timeout_s
 
     def _run_gate(self, artifact_ctx: dict[str, Any], job_dir: Path) -> dict[str, Any]:
         """Evaluate the evidence gate under a hard timeout (torture-21 F1).

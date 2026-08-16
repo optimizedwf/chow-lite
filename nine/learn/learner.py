@@ -181,9 +181,19 @@ class CandidateStore:
             if not line.strip():
                 continue
             try:
-                recs.append(json.loads(line))
+                rec = json.loads(line)
             except (json.JSONDecodeError, TypeError, ValueError):
                 continue
+            # torture-30 F1: a valid-JSON WRONG-SHAPE line (e.g. a bare
+            # string or array, hand-edited or version-skewed store) used
+            # to raw-crash update_status with AttributeError ('str' object
+            # has no attribute 'get') — bricking `nine learn apply`/`revert`
+            # while the read paths (all/get) already skipped such lines.
+            # Same shape guard as the read side (T28-F3): non-dict records
+            # are skipped, never trusted for mutation.
+            if not isinstance(rec, dict):
+                continue
+            recs.append(rec)
         changed = False
         for rec in recs:
             if rec.get("candidate_id") == candidate_id:

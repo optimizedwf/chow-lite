@@ -28,11 +28,6 @@ import shutil
 import sys
 from pathlib import Path
 
-from nine.gates.evidence import (
-    EvidenceGate,
-    eval_json_check,
-    exit_codes_check,
-)
 from nine.ledger.ledger import InvalidTransition, JSONLLedger, LedgerError
 from nine.router.classifier import Router
 from nine.runtime.workflows import WorkflowError, WorkflowExecutor
@@ -245,15 +240,6 @@ def cmd_chain(args) -> int:
     for a in ledger.get(job.job_id).artifacts:
         print(f"  {a['name']}  {a['sha256'][:12]}  {a['size']}B  by {a['produced_by']}")
     return 0 if res["final"] == "SHIPPED" else 2
-
-
-def build_default_gate() -> EvidenceGate:
-    """Generic gate: artifact requirements live in hop/workflow definitions,
-    not here (research.md != review.md != solution.py)."""
-    gate = EvidenceGate()
-    gate.register_check("eval-json", eval_json_check())
-    gate.register_check("exit-codes", exit_codes_check())
-    return gate
 
 
 def _execute_job(ledger, job, task: str, args) -> int:

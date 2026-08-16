@@ -278,8 +278,23 @@ class ChainExecutor:
                 if attempt <= hop.max_fix_loops:
                     missing = [a for a in hop.required_artifacts
                                if not (job_dir / a).exists()]
+                    # torture-29 F3: the chain FIX directive used to say
+                    # only "gate checks failed" — dropping the failing check
+                    # names/messages that res["verdict"]["eval_results"]
+                    # already carries (workflows.py enumerates them:
+                    # "gate FIX after attempt N: <k>: <message>; ...").
+                    # Flagship ADK hops expose only a write_file tool (no
+                    # read tool), so this directive is the retry's ONLY
+                    # signal — "gate checks failed" made retries blind
+                    # (T7-F2: the directive must name what failed).
+                    failures = [
+                        f"{k}: {v['message']}"
+                        for k, v in res["verdict"]["eval_results"].items()
+                        if not v.get("passed")
+                    ]
                     reason = (f"missing artifacts {missing}" if missing
-                              else "gate checks failed")
+                              else ("; ".join(failures) if failures
+                                     else "gate checks failed"))
                     chain_inputs["fix_directive"] = (
                         f"hop {hop.id} failed gate (attempt {attempt}): "
                         f"{reason}; rework and re-run."

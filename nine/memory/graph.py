@@ -112,8 +112,20 @@ class LocalMemoryGraph:
             # return the k most-recent records as false "hits" (parity with
             # the Firestore backend which already early-returns []).
         hits: list[dict[str, Any]] = []
-        for line in reversed(open(self.path, encoding="utf-8",
-                                  errors="replace").read().splitlines()):
+        # torture-30 F3: a DIRECTORY (or unreadable path) at the memory
+        # store used to raw-crash `nine memory search` with IsADirectoryError
+        # — cmd_memory list has the OSError belt, search did not (its open()
+        # ran outside any guard, and the cli.py search path only catches
+        # bad SHAPE records, not I/O). Same best-effort contract as the
+        # save path (torture-21 F1): a broken store degrades to "no
+        # matches", never a traceback.
+        try:
+            text = self.path.read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            print(f"WARNING: memory store {self.path} unreadable ({exc}) - "
+                  "returning no matches", file=sys.stderr)
+            return []
+        for line in reversed(text.splitlines()):
             if not line.strip():
                 continue
             try:
