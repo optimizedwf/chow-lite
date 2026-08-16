@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-16T08:10:00.000000+00:00",
- "cycles_run": 26,
+ "last_cycle": "2026-08-16T18:45:00.000000+00:00",
+ "cycles_run": 27,
  "last_bench": {
   "run_id": "run-dbg18",
   "backend": "openai",
@@ -34,21 +34,28 @@
    94
   ]
  },
- "next_target": "slice-50 ROUND-15 HARVEST COMPLETE (9/9 fixed, 583/588). OPERATOR DIRECTIVE 2026-08-16 (gem-r2 protocol change): run the canonical Gemini rerun INCREMENTALLY \u2014 one fixture per quota window, NEVER a full-set run first. Evidence: Aug 15 full-set attempt burned the fresh window after fixture 001 SHIP; 002-011 all 429 empty-stream. Order: 002 canary first, then 005, 006, 009, 010 one at a time (continue same window only if probe still shows quota). On 429/empty-stream: stop immediately, set est_quota_left=0, resume next fixture after PT-midnight reset. Each single-fixture SHIP logs to the gem-r2 scorecard (001/003/004/007/008 already gemini-SHIP from gem-r1 + slice-49). HARDEN (round-16 spawn) continues as fallback between windows. Interim SoT DS4 10/10 stands.",
+ "next_target": "slice-51 HARDEN COMPLETE (596/601, 13 armor tests + force_terminal completed_at fix). OPERATOR DIRECTIVE 2026-08-16 (gem-r2 protocol change): run the canonical Gemini rerun INCREMENTALLY \u2014 one fixture per quota window, NEVER a full-set run first. Evidence: Aug 15 full-set attempt burned the fresh window after fixture 001 SHIP; 002-011 all 429 empty-stream. Order: 002 canary first, then 005, 006, 009, 010 one at a time (continue same window only if probe still shows quota). On 429/empty-stream: stop immediately, set est_quota_left=0, resume next fixture after PT-midnight reset. Each single-fixture SHIP logs to the gem-r2 scorecard (001/003/004/007/008 already gemini-SHIP from gem-r1 + slice-49). HARDEN (round-16 spawn) continues as fallback between windows. Interim SoT DS4 10/10 stands.",
  "last_error": {
   "at": "2026-08-16T01:40:44.276139+00:00",
   "what": "BENCH attempt slice-49: full-set run started (001 SHIP gemini-3.6-flash 9/9; 002-011 ERROR empty-stream = Gemini free-tier 429 mid-run). est_quota_left set to 0. operator gem-r2 (fixtures 002/005/006/009/010) NOT completed \u2014 quota exhausted. Next: retry gem-r2 after cooldown/next probe."
  },
  "last_harvest": "2026-08-16T08:10:00.000000+00:00",
  "last_spawn": {
-  "round": 15,
+  "round": 16,
   "attempt": 1,
   "workers": [
-   "torture-29 (surface workflows+router+CLI+docs)",
-   "torture-30 (surface robustness+fixtures)"
+   "torture-31 (surface runtime+gates)",
+   "torture-32 (surface learn+memory+deploy)"
   ],
-  "at": "2026-08-16T07:08:18.214319+00:00",
+  "at": "2026-08-16T13:08:30.168733+00:00",
   "backend": "opencode-go/deepseek-v4-flash",
-  "note": "round-15: t29 = workflows+router+CLI+docs re-attack, t30 = robustness+fixtures re-attack (post harvest-14)"
+  "note": "round-16: t31 = runtime+gates re-attack, t32 = learn+memory+deploy re-attack (post harvest-15)"
+ },
+ "last_hardening": {
+  "slice": 51,
+  "kind": "HARDEN",
+  "at": "2026-08-16T18:45:00.000000+00:00",
+  "what": "test armor: 13 hermetic tests for long-untested paths (force_terminal, topological_order, default_gate, CLI artifacts/cancel, base_url) + FIX force_terminal fallback missing completed_at for terminal statuses",
+  "suite": "596 passed / 5 skipped (601 collected)"
  }
 }

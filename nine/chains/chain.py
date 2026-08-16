@@ -83,8 +83,14 @@ def force_terminal(job: Job, status: str) -> None:
     try:
         job.transition(status)
     except Exception:  # noqa: BLE001 - fall back to direct set
+        # Slice-51 armor: the direct-set fallback must stamp completed_at
+        # for terminal statuses, exactly like Job.transition does —
+        # a force-blocked/failed/cancelled chain job that never gets
+        # completed_at looks permanently in-flight to discover/status.
         job.status = status
         job.updated_at = datetime.now(UTC).isoformat()
+        if status in ("shipped", "blocked", "failed", "cancelled", "archived"):
+            job.completed_at = job.updated_at
 
 
 class ChainExecutor:

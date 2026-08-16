@@ -225,3 +225,14 @@ One row per finding: id | date | worker | severity | title | disposition | slice
 | T30-F1 | 2026-08-16 | torture-30 | MEDIUM | `CandidateStore.update_status` raw-crashed `AttributeError: 'str' object has no attribute 'get'` on a valid-JSON wrong-shape line (read path guarded, write path wasn't) | FIXED slice-50: parse + `isinstance(rec, dict)` skip-guard in update_status matching the read path (test_t30_f1_candidate_update_status_skips_wrong_shape_lines) |
 | T30-F2 | 2026-08-16 | torture-30 | LOW | malformed `NINE_GATE_TIMEOUT_S` (e.g. "60s") silently fell back to 60 — env junk hid operator error | FIXED slice-50: loud stderr warning + fallback (T24-F5 junk-env convention); valid values honored (test_t30_f2_gate_timeout_junk_warns_loudly) |
 | T30-F3 | 2026-08-16 | torture-30 | MEDIUM | `LocalMemoryGraph.search_context` had NO OSError belt — a directory at the memory path raw-crashed `nine memory search` with IsADirectoryError (cmd_memory list already had the belt) | FIXED slice-50: try/except OSError around read_text -> WARNING + [] (save-path T21-F1 parity) (test_t30_f3_search_context_directory_belts_to_empty) |
+
+
+## Round 16 (2026-08-16) — surfaces: runtime+gates / learn+memory+deploy — 0 findings
+
+torture-31 (runtime+gates re-attack) and torture-32 (learn+memory+deploy
+re-attack) completed on 2026-08-16 but filed EMPTY reports (headers only,
+no findings) — both workers hit their tool-call/report budget without
+discovering a regression. No LEDGER rows this round. Slice-51 instead ran
+an AST gap-scan armor pass (13 new hermetic tests) which surfaced and
+fixed one real defect: force_terminal's direct-set fallback omitted
+completed_at for terminal statuses.
