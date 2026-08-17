@@ -41,33 +41,15 @@ def _cap_task_text(text: str, env_name: str = "NINE_TASK_CAP",
     torture-29 F4: research/plan/build hardcoded `[:1500]`, silently
     ignoring the documented NINE_TASK_CAP env knob and dropping the tail
     with NO marker — a long task lost its ending (where acceptance
-    criteria usually live) with no signal to the model. Mirror the
-    debug_wf convention (slice-40/45): cap with an explicit
-    "...[truncated]..." marker so the model knows the task was cut.
-    Junk env values warn loudly (T24-F5 / T25-F3 junk-env convention)
-    instead of silently changing the budget.
+    criteria usually live) with no signal to the model. Shared
+    implementation lives in nine/runtime/truncate.py (torture-35 F1: the
+    debug workflow routes through the SAME capper so every ADK hop caps
+    identically). Junk env values warn loudly (T24-F5 / T25-F3 junk-env
+    convention) instead of silently changing the budget.
     """
-    import os as _os
+    from nine.runtime.truncate import cap_task_text
 
-    raw = _os.environ.get(env_name, "")
-    if raw:
-        try:
-            limit = int(raw)
-        except ValueError:
-            print(f"WARNING: {env_name}={raw!r} is not an integer - "
-                  f"using {default}", file=__import__("sys").stderr)
-            limit = default
-        if limit < 1:
-            print(f"WARNING: {env_name}={raw!r} is < 1 - using {default}",
-                  file=__import__("sys").stderr)
-            limit = default
-    else:
-        limit = default
-    if len(text) <= limit:
-        return text
-    head = text[: int(limit * 0.6)]
-    tail = text[-(limit - int(limit * 0.6)):]
-    return head + "\n...[task truncated for model budget]...\n" + tail
+    return cap_task_text(text, env_name=env_name, default=default)
 
 def _research_adk_node() -> Node:
     """Research hop backed by a REAL Google ADK 2.0 LlmAgent.

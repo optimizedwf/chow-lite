@@ -163,15 +163,15 @@ def test_t29_f5_demo_lane_docstring_says_three_hops():
 
 # ---------------------------------------------------------------- T29-F6 ---
 def test_t29_f6_doc_counts_track_actual_suite():
-    """README/SUBMISSION must claim the CURRENT suite size (598 passing /
-    603 collected), never a stale count."""
+    """README/SUBMISSION must claim the CURRENT suite size (602 passing /
+    607 collected), never a stale count."""
     from tests.test_doc_truth import _readme, _submission
 
     for doc in (_readme(), _submission()):
         assert "568" not in doc, "stale 568 count in docs"
         assert "583" not in doc, "stale 583 count in docs"
-        assert "598/603" in doc or "598 tests (603" in doc or \
-               "598%20passing" in doc, "current counts missing"
+        assert "602/607" in doc or "602 tests (607" in doc or \
+               "602%20passing" in doc, "current counts missing"
 
 
 # ---------------------------------------------------------------- T30-F1 ---

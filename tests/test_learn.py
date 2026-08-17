@@ -260,3 +260,41 @@ def test_candidate_update_status_read_oserror_is_clean(tmp_path):
     # healthy store still transitions
     learner.cands.update_status(cid, "applied")
     assert learner.cands.get(cid).status == "applied"
+
+
+def test_derive_keyword_picks_longest_informative_token(monkeypatch):
+    """_derive_keyword armor: the candidate's actionable keyword is the
+    longest non-stopword, non-already-routing token (capped at 30 chars);
+    stopwords and existing keywords are excluded; an empty result is
+    returned when nothing qualifies."""
+    import nine.learn.learner as lrn
+
+    # hermetic: fixed keyword table, independent of the git-tracked catalog
+    # (_derive_keyword imports KEYWORDS from nine.registry at call time)
+    import nine.registry as reg
+    monkeypatch.setattr(
+        reg, "KEYWORDS", {"research": ["research", "investigate"]})
+
+    ev = RouteEvent(
+        event_id="ev-k", job_id="j", task_redacted="please investigate the quantum chromodynamics structure", workflow_id="research",
+        confidence=0.1, router_version="v", verdict="SHIP",
+        checks_passed=1, checks_total=1,
+    )
+    kw = lrn._derive_keyword(ev)
+    assert kw == "chromodynamics"  # longest token, stopwords + existing skipped
+
+    # a 30-char cap on the derived token
+    ev2 = RouteEvent(
+        event_id="ev-k2", job_id="j", task_redacted="supercalifragilisticexpialidocious needs work", workflow_id="research",
+        confidence=0.1, router_version="v", verdict="SHIP",
+        checks_passed=1, checks_total=1,
+    )
+    assert len(lrn._derive_keyword(ev2)) == 30
+
+    # nothing informative -> empty
+    ev3 = RouteEvent(
+        event_id="ev-k3", job_id="j", task_redacted="please research the investigate", workflow_id="research",
+        confidence=0.1, router_version="v", verdict="SHIP",
+        checks_passed=1, checks_total=1,
+    )
+    assert lrn._derive_keyword(ev3) == ""

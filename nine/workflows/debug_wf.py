@@ -21,6 +21,7 @@ from nine.gates.evidence import (
 )
 from nine.runtime.fsafety import contained_write
 from nine.runtime.llm_provider import key_available
+from nine.runtime.truncate import cap_task_text
 from nine.runtime.workflows import Node, Workflow
 
 
@@ -91,9 +92,11 @@ def _diagnose_adk_node() -> Node:
         # fixture tasks (006's validate list), so the diagnose agent
         # misread the bug. qwen3:8b handles 1400 chars with the /api/chat
         # no-thinking fix.
-        _task_cap = _env_cap("NINE_TASK_CAP")
-        task = str(inputs.get("task", ""))[:_task_cap]
-        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
+        # torture-35 F1: head+tail cap with marker (shared truncate module)
+        # -- a silent [:N] tail-drop hides acceptance criteria, and the
+        # hardcoded [:1500] for fix_dir ignored the NINE_TASK_CAP knob.
+        task = cap_task_text(str(inputs.get("task", "")))
+        fix_dir = cap_task_text(str(inputs.get("fix_directive", "")))
         if not key_available():
             raise WorkflowError(
                 "debug requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - no offline "
@@ -183,9 +186,11 @@ def _patch_adk_node() -> Node:
 
         job_dir = Path(job_dir)
         # slice-45: task cap raised 700->1400 (see diagnose node).
-        _task_cap = _env_cap("NINE_TASK_CAP")
-        task = str(inputs.get("task", ""))[:_task_cap]
-        fix_dir = str(inputs.get("fix_directive", ""))[:1500]
+        # torture-35 F1: head+tail cap with marker (shared truncate module)
+        # -- a silent [:N] tail-drop hides acceptance criteria, and the
+        # hardcoded [:1500] for fix_dir ignored the NINE_TASK_CAP knob.
+        task = cap_task_text(str(inputs.get("task", "")))
+        fix_dir = cap_task_text(str(inputs.get("fix_directive", "")))
         if not key_available():
             raise WorkflowError(
                 "debug requires an LLM key (gemini: GEMINI_API_KEY; openai: NINE_LLM_API_KEY/OPENCODE_GO_API_KEY) (ADK LlmAgent) - no offline "

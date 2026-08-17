@@ -250,3 +250,13 @@ slice-52 with hermetic regression tests.
 |----|------|----------|-------|-------------|
 | T34-F1 | robustness (learn/events store) | high | valid-JSON wrong-shape route-event lines (confidence str / verdict bool / checks bool) raw-crash `nine learn events` (ValueError format-code on {conf:.2f}) and `nine learn scan` (TypeError str-vs-float on confidence >= 0.7) | FIXED slice-52: `_coerce_route_event` strict-typed read belt in RouteEventStore.all() — non-conforming lines skipped with the T6-F3 ledger-read convention (test_wrong_shape_event_lines_are_skipped_not_crashed) |
 | T34-F2 | robustness (learn/candidates store) | medium | CandidateStore.update_status (nine learn apply/revert rewrite) read its JSONL outside the OSError belt — directory at path / chmod-000 raw-crashed IsADirectoryError/PermissionError | FIXED slice-52: best-effort read belt mirroring all() T28-F3 — warn on stderr, never crash (test_candidate_update_status_read_oserror_is_clean) |
+
+## Round 18 (2026-08-17) — surfaces: workflows+router+CLI+docs / learn+memory+deploy — 1 finding so far, 1 FIXED
+
+torture-35 (workflows+router+CLI+docs fresh angles) filed 1 finding; FIXED
+in slice-53 with hermetic regression tests (tests/test_torture_harvest_16.py).
+torture-36 (learn+memory+deploy fresh angles) still running at slice-53 ship time.
+
+| id | area | severity | title | disposition |
+|----|------|----------|-------|-------------|
+| T35-F1 | workflows (debug lane truncation) | medium | debug_wf diagnose/patch hops head-truncate the task with silent `[:N]` slices and hardcode `[:1500]` for fix_directive — T29-F4's exact anti-pattern (tail where acceptance criteria live dropped with NO marker; NINE_TASK_CAP knob ignored for fix_dir) | FIXED slice-53: new shared nine/runtime/truncate.py cap_task_text (head+tail+ellipsis marker, NINE_TASK_CAP honored, junk env warns loudly); debug_wf diagnose+patch sites and flagship's _cap_task_text all route through it (test_t35_f1_debug_wf_uses_shared_marker_cap + test_t35_f1_cap_task_text_keeps_tail_and_marks) |

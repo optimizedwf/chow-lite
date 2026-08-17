@@ -257,3 +257,40 @@ def test_run_config_max_llm_calls_malformed_env_falls_back(tmp_path, monkeypatch
     assert node.runner.last_run_kwargs["run_config"].max_llm_calls == 24
 
 
+# ---------------------------------------------------------------- slice-52 armor ---
+def test_neutralize_instruction_braces_breaks_adk_interpolation():
+    """slice-41 fix, armored slice-52: an f-string placeholder like
+    `{stripped}` inside an agent instruction (e.g. embedded ROOT_CAUSE.md /
+    code snippet) makes google-adk's inject_session_state raise KeyError
+    BEFORE any LLM call -> instant empty stream. The neutralizer must
+    insert a zero-width space after the first `{` of every brace group so
+    the inner name is no longer a valid identifier, while leaving
+    brace-free text untouched."""
+    from nine.runtime.adk_runtime import _neutralize_instruction_braces
+
+    zw = "​"  # zero-width space
+
+    # the exact slice-41 crash input: placeholder survives, but neutralized
+    out = _neutralize_instruction_braces("patch {stripped}")
+    assert "{" + zw + "stripped}" in out
+    assert out.count(zw) == 1
+
+    # every brace group is neutralized, brace-free text is untouched
+    out2 = _neutralize_instruction_braces(
+        "for x in {items}: {value} and plain text")
+    assert "{" + zw + "items}" in out2
+    assert "{" + zw + "value}" in out2
+    assert out2.count(zw) == 2
+    assert _neutralize_instruction_braces("no braces here") == "no braces here"
+
+    # embedded code/json with braces (multi-line ROOT_CAUSE-style) is safe
+    code = 'return {"status": {status}, "count": {n}}'
+    out3 = _neutralize_instruction_braces(code)
+    assert "{" + zw + '"status"' in out3
+    assert "{" + zw + "status}" in out3
+    assert "{" + zw + "n}" in out3
+    assert out3.count(zw) == 3
+
+    # a brace group's inner name is no longer a valid Python identifier
+    # (that is the entire point - ADK passes it through unchanged)
+    assert "{" + zw + "n}" in out3

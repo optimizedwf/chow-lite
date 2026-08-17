@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-16T19:34:12.461147+00:00",
- "cycles_run": 28,
+ "last_cycle": "2026-08-17T01:33:00.613579+00:00",
+ "cycles_run": 29,
  "last_bench": {
   "run_id": "gem-r2-002/005/006/009 (incremental)",
   "backend": "gemini",
@@ -18,10 +18,11 @@
   "gem-r2-002",
   "gem-r2-005",
   "gem-r2-006",
-  "gem-r2-009"
+  "gem-r2-009",
+  "gem-r2-010c"
  ],
  "est_quota_left": 0,
- "cooldown_until": "2026-08-17T00:00:00+00:00",
+ "cooldown_until": "2026-08-18T00:00:00+00:00",
  "last_score": {
   "ship": 10,
   "total": 10,
@@ -38,10 +39,10 @@
    94
   ]
  },
- "next_target": "slice-52 SHIPPED: gem-r2 incremental 002/005/006/009 SHIP (42/42 tests, 9/10 canonical gemini) + round-17 harvest 2/2 fixes (route-event type belt + update_status read OSError belt). OPERATOR DIRECTIVE gem-r2 protocol: ONE fixture remains (010) — resume after PT-midnight reset; probe first; on 429/empty-stream stop immediately, set est_quota_left=0. After 010, full gemini rerun = 10/10 SHIP possible (001/003/004/007/008 from gem-r1+slice-49 already SHIP). HARDEN (round-18 spawn) between windows. Interim SoT DS4 10/10 stands.",
+ "next_target": "slice-53 HARDEN SHIPPED: round-18 (torture-35/36) spawn; t35-F1 debug_wf diagnose+patch silent [:N]/[:1500] slices -> shared nine/runtime/truncate.cap_task_text (head+tail+marker, NINE_TASK_CAP honored) FIXED + 2 hermetic tests (harvest-16). Suite 602 passed / 5 skipped (607 collected). BENCH: gem-r2 010 STILL pending (3x empty-stream attempts incl. 010c; probe OK but agentic quota throttled) \u2014 resume after next PT-midnight reset (cooldown 2026-08-18T00:00Z); probe first, stop on 429/empty-stream. After 010: canonical gemini 10/10 SHIP possible.",
  "last_error": {
-  "at": "2026-08-16T19:34:12.461147+00:00",
-  "what": "slice-52 BENCH: gem-r2 incremental 002/005/006/009 SHIP (42/42 tests) then 010 ERROR empty-stream x2 (gemini agentic quota throttled; simple probe still OK). gem-r2 9/10 canonical gemini SHIP (010 pending). est_quota_left=0. Next: resume 010 after PT-midnight reset."
+  "at": "2026-08-17T01:33:00.613579+00:00",
+  "what": "slice-53: gem-r2 010 resume attempt (gem-r2-010c) after PT-midnight reset \u2014 probe OK but ADK agentic path empty-stream x3 (010/010b/010c); Gemini free-tier tool-calling sessions still throttled. Stopped per operator directive; est_quota_left=0. gem-r2 stays 9/10 canonical (only 010 pending)."
  },
  "last_harvest": "2026-08-16T19:34:12.461147+00:00",
  "last_spawn": {
