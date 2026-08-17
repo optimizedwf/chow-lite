@@ -270,3 +270,21 @@ richest harvest of the loop — all FIXED in slice-54
 | T36-F6 | deploy/server | low | rate limiter trusts client-supplied X-Forwarded-For in non-Cloud-Run deployments (XFF rotation bypasses; shared middlebox IP starves all tenants); no CORS anywhere (OPTIONS 405, API silently accepts any Origin) | FIXED slice-54: XFF trusted only under K_SERVICE or NINE_TRUST_PROXY=1, else socket peer key; CORSMiddleware with NINE_CORS_ORIGINS allowlist (default: same-origin only, no wildcard) |
 | T36-F7 | learn (keyword derive) | low | `_derive_keyword` ASCII-only word class mangles non-ASCII tasks ("déployer café ☕" → "ployer") — garbage keyword can seed catalog.json via learn apply | FIXED slice-54: `\b[A-Za-z]{4,}\b` scan (Unicode-aware boundaries) + isascii() — non-ASCII tasks yield "" (candidate says <human-chosen>) |
 | T36-F8 | learn (idempotence) | low | scan dedupe is evidence-string-based and case/whitespace-sensitive — semantically identical events re-suggest look-alike candidates after apply→revert | FIXED slice-54: CandidateStore.has() normalizes description (casefold + collapse whitespace) before comparing; event-id guard unchanged |
+
+## Round 19 (2026-08-17) — surfaces: runtime+gates / robustness+fixtures (post-slice-54 re-attack) — 0 findings, empty-worker logged
+
+torture-37 (runtime+gates) + torture-38 (robustness+fixtures) spawned on
+opencode-go/deepseek-v4-flash; BOTH completed WITHOUT writing reports
+(empty-worker pattern). Sessions show real exploration (read adk_runtime.py,
+learner.py, deploy/server.py, cli.py, registry.py, classifier.py) but
+stopped before filing. Zero quota consumed. No findings to triage; workers
+deleted at slice-55 close.
+
+| id | date | worker | sev | title | disposition |
+|----|------|--------|-----|-------|-------------|
+| (none) | 2026-08-17 | torture-37/38 | - | no findings filed | EMPTY — logged + deleted; next round re-attacks with fresh surfaces |
+
+Slice-55 HARDEN item shipped instead: ADK error-path WIRING armor (2 hermetic
+tests in test_torture_harvest_17.py) proving the max_llm_calls +
+produced-no-output RuntimeError sites route through _safe_task_fragment —
+guards slice-54 T36-F1 against wiring regressions.

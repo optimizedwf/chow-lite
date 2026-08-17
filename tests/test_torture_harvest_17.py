@@ -29,6 +29,8 @@ from __future__ import annotations
 import json
 import types
 
+import pytest
+
 from nine.learn.learner import (
     CandidateStore,
     ImprovementCandidate,
@@ -286,3 +288,68 @@ def test_coerce_candidate_rejects_wrong_types():
     assert _coerce_candidate({"candidate_id": "x", "kind": "k",
                               "description": "d", "evidence": ["ev-1"],
                               "params": {"a": 1}}) is not None
+
+
+# ------------------------------------------------------ F1 wiring armor
+def test_t36_f1_no_output_runtimeerror_never_embeds_raw_task(tmp_path):
+    """WIRING armor: the actual 'produced no output' RuntimeError raised by
+    ADKAgentNode.__call__ must carry the redacted fragment — a revert of the
+    task[:120] -> _safe_task_fragment wiring would re-leak credentials into
+    CLI stderr / HTTP 502 even if the helper itself stays correct."""
+    from types import SimpleNamespace
+
+    from nine.runtime.adk_runtime import ADKAgentNode
+
+    async def _create_session(**kw):
+        return None
+
+    node = object.__new__(ADKAgentNode)
+    node._attempt_seq = 0
+    node.agent = None
+    node.app_name = "nine"
+    node.runner = SimpleNamespace(
+        run=lambda **kw: iter([]),  # fully empty stream
+        session_service=SimpleNamespace(create_session=_create_session),
+    )
+    node._created_sessions = set()
+
+    leaky_task = "change the password to hunter2 and use AIzaSyD1234567890abcdef"
+    with pytest.raises(RuntimeError) as ei:
+        node({"task": leaky_task}, tmp_path)
+    msg = str(ei.value)
+    assert "hunter2" not in msg
+    assert "AIzaSyD1234567890abcdef" not in msg
+    assert "<task redacted>" in msg or "redacted" in msg
+
+def test_t36_f1_max_llm_calls_runtimeerror_never_embeds_raw_task(tmp_path):
+    """WIRING armor: the max_llm_calls RuntimeError must also route through
+    _safe_task_fragment (LlmCallsLimitExceededError injected via fake
+    runner — the small-model-loop path)."""
+    from types import SimpleNamespace
+
+    from google.adk.agents.invocation_context import LlmCallsLimitExceededError
+
+    from nine.runtime.adk_runtime import ADKAgentNode
+
+    async def _create_session(**kw):
+        return None
+
+    def _boom(**kw):
+        raise LlmCallsLimitExceededError("budget")
+
+    node = object.__new__(ADKAgentNode)
+    node._attempt_seq = 0
+    node.agent = None
+    node.app_name = "nine"
+    node.runner = SimpleNamespace(
+        run=_boom,
+        session_service=SimpleNamespace(create_session=_create_session),
+    )
+    node._created_sessions = set()
+
+    leaky_task = "deploy the secret ghp_ABCDEF1234567890 to prod"
+    with pytest.raises(RuntimeError) as ei:
+        node({"task": leaky_task}, tmp_path)
+    msg = str(ei.value)
+    assert "ghp_ABCDEF1234567890" not in msg
+    assert "<task redacted>" in msg or "redacted" in msg
