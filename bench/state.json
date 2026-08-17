@@ -1,6 +1,6 @@
 {
- "last_cycle": "2026-08-17T07:21:58.285840+00:00",
- "cycles_run": 31,
+ "last_cycle": "2026-08-17T14:38:52.303911+00:00",
+ "cycles_run": 32,
  "last_bench": {
   "run_id": "gem-r2-002/005/006/009 (incremental)",
   "backend": "gemini",
@@ -39,21 +39,21 @@
    94
   ]
  },
- "next_target": "slice-55 HARDEN SHIPPED: round-19 workers empty (torture-37/38 no reports); HARDEN item = ADK error-path WIRING armor (2 tests proving the RuntimeError sites route through _safe_task_fragment \u2014 not just the helper). Suite 616 passed / 5 skipped (621 collected). BENCH: gem-r2 010 STILL pending (3x empty-stream: 010/010b/010c) \u2014 resume after next PT-midnight reset (cooldown 2026-08-18T00:00Z); probe first, stop on 429/empty-stream. After 010: canonical gemini 10/10 SHIP possible. Next spawn round-20 (fresh surfaces).",
+ "next_target": "slice-56 HARDEN SHIPPED: bench fixture DEFAULT list now DISK-DISCOVERED (was hardcoded range(1,12) \u2014 new fixture 012+ would silently never bench, deleted one would silently shrink scoreboard) + hermetic regression test (test_bench_cli_guard 8->9). Suite 617 passed / 5 skipped (622 collected). BENCH: gem-r2 010 STILL pending (3x empty-stream) \u2014 cooldown 2026-08-18T00:00Z; probe first, stop on 429/empty-stream. Round-20 torture-39/40 (deploy+server / learn+memory) RUNNING \u2014 harvest reports next cycle.",
  "last_error": {
   "at": "2026-08-17T01:33:00.613579+00:00",
   "what": "slice-53: gem-r2 010 resume attempt (gem-r2-010c) after PT-midnight reset \u2014 probe OK but ADK agentic path empty-stream x3 (010/010b/010c); Gemini free-tier tool-calling sessions still throttled. Stopped per operator directive; est_quota_left=0. gem-r2 stays 9/10 canonical (only 010 pending)."
  },
  "last_harvest": "2026-08-16T19:34:12.461147+00:00",
  "last_spawn": {
-  "round": 19,
+  "round": 20,
   "workers": [
-   "torture-37-runtime-gates",
-   "torture-38-robustness-fixtures"
+   "torture-39-deploy-server",
+   "torture-40-learn-memory"
   ],
   "model": "opencode-go/deepseek-v4-flash",
-  "at": "2026-08-17T07:21:58.285840+00:00",
-  "note": "both completed WITHOUT reports (empty-worker pattern \u2014 explored runtime+gates and robustness+fixtures surfaces post-slice-54, no findings filed)"
+  "at": "2026-08-17T14:38:52.303911+00:00",
+  "note": "spawned this cycle; running at slice-56 close \u2014 harvest next cycle"
  },
  "last_hardening": {
   "slice": 52,

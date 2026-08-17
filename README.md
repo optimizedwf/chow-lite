@@ -1,7 +1,7 @@
 # nine
 <p align="center">
   <img src="https://img.shields.io/github/actions/workflow/status/optimizedwf/nine/ci.yml?branch=main&label=CI" alt="CI">
-  <img src="https://img.shields.io/badge/tests-616%20passing%2C%205%20skipped%20(621%20collected)-brightgreen" alt="tests">
+  <img src="https://img.shields.io/badge/tests-617%20passing%2C%205%20skipped%20(622%20collected)-brightgreen" alt="tests">
   <img src="https://img.shields.io/badge/coverage-80%25-yellow" alt="coverage">
   <img src="https://img.shields.io/badge/license-MIT-blue" alt="license">
 </p>
@@ -238,12 +238,12 @@ nine/chains/              chain engine + flagship 5-hop chain + demo lane
 nine/workflows/           example workflow DAGs
 deploy/                   Cloud Run + Firestore config (FastAPI operator API)
 docs/                     architecture diagram (SVG + PNG)
-tests/                    621 tests (router, ledger, gates, executor, chains, learn, ADK, doc-truth)
+tests/                    622 tests (router, ledger, gates, executor, chains, learn, ADK, doc-truth)
 ```
 
 ## Roadmap
 
-- [x] Core loop (router → workflow → gate → ledger) with 616 passing tests (621 collected, 5 live-gated skips)
+- [x] Core loop (router → workflow → gate → ledger) with 617 passing tests (622 collected, 5 live-gated skips)
 - [x] Google ADK 2.0 agent integration (agents as `subagent` nodes)
 - [x] 5-hop chain (research → plan → build → review → teach) + demo lane
 - [x] Cloud Run + Firestore deploy layer (Dockerfile, service, rules, API)

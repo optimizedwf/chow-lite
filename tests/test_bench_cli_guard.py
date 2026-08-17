@@ -82,3 +82,29 @@ def test_combined_flags_parse():
     assert res["fixtures"] == ["001", "005"]
     assert res["runid"] == "x1"
     assert res["task_mode"] == "desc"
+
+
+def test_default_fixtures_discovered_from_disk_not_hardcoded():
+    """The DEFAULT fixture set must equal what is actually on disk — a new
+    fixture (bugfix-small-012+) must bench by default, a deleted one must
+    not silently shrink the scoreboard (bench_nine.py used to hardcode
+    range(1, 12); slice-56 switched to disk discovery).
+
+    NOTE: other tests in this file call _apply_overrides() which mutates
+    bn.FIXTURES, so this test re-imports the module fresh.
+    """
+    import importlib
+
+    import bench_nine as bn
+
+    bn = importlib.reload(bn)  # drop any overrides applied by earlier tests
+
+    on_disk = sorted(
+        p.name for p in bn.FIXTURES_DIR.iterdir()
+        if p.is_dir() and p.name.startswith("bugfix-small-")
+    )
+    assert bn.FIXTURES == on_disk, (
+        f"default FIXTURES {bn.FIXTURES} drifts from disk {on_disk}"
+    )
+    # sanity: 001 is present so discovery is actually reading the dir
+    assert "bugfix-small-001" in on_disk

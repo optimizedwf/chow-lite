@@ -288,3 +288,15 @@ Slice-55 HARDEN item shipped instead: ADK error-path WIRING armor (2 hermetic
 tests in test_torture_harvest_17.py) proving the max_llm_calls +
 produced-no-output RuntimeError sites route through _safe_task_fragment —
 guards slice-54 T36-F1 against wiring regressions.
+
+## Round 20 (2026-08-17) — surfaces: deploy+server / learn+memory (post-slice-54 re-attack) — spawned, running
+
+torture-39 (deploy+server: XFF/CORS trust gates, auth, rate limit, body limits,
+clean-502, Firestore parity) + torture-40 (learn+memory: candidate lifecycle,
+_coerce_candidate skip semantics, dedupe normalization, LocalMemoryGraph id
+scheme, learn best-effort guarantees) on opencode-go/deepseek-v4-flash.
+Both RUNNING at slice-56 close; harvest next cycle.
+
+| id | date | worker | sev | title | disposition |
+|----|------|--------|-----|-------|-------------|
+| (pending) | 2026-08-17 | torture-39/40 | - | in flight at slice-56 close | RUNNING — harvest next cycle |

@@ -48,7 +48,17 @@ KEY_PATH = Path(os.environ.get("NINE_BENCH_KEY", os.path.expanduser("~/.agent-va
 NINE_BIN = REPO / ".venv" / "bin" / "nine"
 GEMINI_MODEL = "gemini-3.6-flash"
 _env_fx = os.environ.get("NINE_BENCH_FIXTURES", "")
-FIXTURES = _env_fx.split(",") if _env_fx else [f"bugfix-small-{i:03d}" for i in range(1, 12)]
+if _env_fx:
+    FIXTURES = _env_fx.split(",")
+else:
+    # Discover fixtures from disk, not a hardcoded range — a new fixture
+    # (bugfix-small-012+) would otherwise silently never bench, and a
+    # deleted one would silently shrink the scoreboard (the --list flag
+    # already discovers; the DEFAULT must not drift from reality).
+    FIXTURES = sorted(
+        p.name for p in FIXTURES_DIR.iterdir()
+        if p.is_dir() and p.name.startswith("bugfix-small-")
+    )
 
 TASK_MODE = os.environ.get("NINE_BENCH_TASK_MODE", "full")  # full | desc
 RUNID = os.environ.get("NINE_BENCH_RUNID", "r0")
