@@ -75,6 +75,40 @@ def _coerce_route_event(rec: dict[str, Any]) -> RouteEvent | None:
         return None
 
 
+def _coerce_candidate(rec: dict[str, Any]) -> ImprovementCandidate | None:
+    """Strict-typed ImprovementCandidate construction for the JSONL READ path.
+
+    slice-54 (torture-36 F3): a valid-JSON WRONG-SHAPE candidate line
+    (``params`` as a string, evidence as a string) constructs an
+    ImprovementCandidate fine (dataclasses never type-check) and then
+    raw-crashes ``nine learn apply``/``revert`` with an AttributeError on
+    ``cand.params.get(...)``. Only well-typed records may enter the
+    approval queue; anything else is skipped like the event/ledger read
+    paths (T6-F3/T34-F1) do for corrupt lines.
+    """
+    for key in ("candidate_id", "kind", "description"):
+        if not isinstance(rec.get(key), str):
+            return None
+    # status/created_at have dataclass defaults — absent is fine, wrong type
+    # is not (a bool status would break update_status transitions).
+    for key in ("status", "created_at"):
+        val = rec.get(key)
+        if val is not None and not isinstance(val, str):
+            return None
+    evidence = rec.get("evidence")
+    if not isinstance(evidence, list) or not all(
+        isinstance(e, str) for e in evidence
+    ):
+        return None
+    params = rec.get("params", {})
+    if not isinstance(params, dict):
+        return None
+    try:
+        return ImprovementCandidate(**rec)
+    except TypeError:
+        return None
+
+
 @dataclass
 class ImprovementCandidate:
     """A proposed change; requires human/review approval to apply."""
@@ -188,10 +222,9 @@ class CandidateStore:
                 continue
             if not isinstance(rec, dict):
                 continue
-            try:
-                out.append(ImprovementCandidate(**rec))
-            except TypeError:
-                continue
+            cand = _coerce_candidate(rec)
+            if cand is not None:
+                out.append(cand)
         return out
 
     def get(self, candidate_id: str) -> ImprovementCandidate | None:
@@ -249,8 +282,17 @@ class CandidateStore:
                   file=sys.stderr)
 
     def has(self, description: str, evidence: list[str]) -> bool:
+        # torture-36 F8: dedupe is evidence-string-based — case/whitespace
+        # drift in the embedded directive produced near-duplicate candidates
+        # on rescan after apply->revert. Normalize both sides so semantic
+        # duplicates are caught (event-id guard in learn() still handles the
+        # byte-identical case; this covers the drifted one).
+        def norm(s: str) -> str:
+            return " ".join(s.casefold().split())
+
         return any(
-            c.description == description and c.evidence == evidence
+            norm(c.description) == norm(description)
+            and c.evidence == evidence
             for c in self.all()
         )
 
@@ -309,11 +351,19 @@ class Learner:
             if ev.event_id in used_events:
                 continue
             if ev.verdict == "BLOCK":
+                # torture-36 F5: fix_directive is embedded in the DURABLE
+                # candidate description — it must be redact()ed first (the
+                # task text is redacted at the ledger boundary, but the
+                # directive is a second write path the boundary never
+                # touches; a gate directive quoting a credential would land
+                # verbatim in candidates.jsonl and GET /v1/stats).
+                from nine.router.classifier import redact
+
                 self._suggest(
                     "gate",
                     f"workflow '{ev.workflow_id}' BLOCKed with fix_directive "
-                    f"'{ev.fix_directive[:80]}'; consider a stricter gate or "
-                    "a recovery hop",
+                    f"'{redact(ev.fix_directive[:80])}'; consider a stricter "
+                    "gate or a recovery hop",
                     [ev.event_id],
                 )
             elif ev.verdict == "FIX" and ev.confidence >= 0.7:
@@ -369,9 +419,14 @@ def _derive_keyword(ev: RouteEvent) -> str:
     from nine.registry import KEYWORDS
 
     existing = set(KEYWORDS.get(ev.workflow_id, []))
+    # torture-36 F7: the ASCII-only [a-z] word class MANGLED non-ASCII
+    # tasks ("déployer café" -> "ployer" — the é is dropped and the 4+
+    # tail survives as a non-word that no future task contains). Require
+    # the whole token to be pure ASCII letters so a non-ASCII task yields
+    # "" (candidate says <human-chosen>) instead of garbage in the catalog.
     toks = [
-        t for t in re.findall(r"[a-z]{4,}", ev.task_redacted.lower())
-        if t not in _STOPWORDS and t not in existing
+        t for t in re.findall(r"\b[A-Za-z]{4,}\b", ev.task_redacted)
+        if t.isascii() and t not in _STOPWORDS and t not in existing
     ]
     if not toks:
         return ""

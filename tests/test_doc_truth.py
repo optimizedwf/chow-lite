@@ -25,14 +25,14 @@ def test_readme_test_counts_are_current():
     # torture-29 F6: the 5 doc-truth tests THEMSELVES pushed the suite
     # 573 -> 578 collected, so the doc had to track reality again.
     t = _readme()
-    assert "tests-602%20passing" in t, "badge stale (expected 602 passing)"
-    assert "602 passing tests (607 collected" in t, "roadmap claim stale"
-    assert "607 tests (router, ledger" in t, "tree count stale"
+    assert "tests-614%20passing" in t, "badge stale (expected 614 passing)"
+    assert "614 passing tests (619 collected" in t, "roadmap claim stale"
+    assert "619 tests (router, ledger" in t, "tree count stale"
 
 def test_submission_test_counts_are_current():
     s = _submission()
-    assert "602/607 tests pass" in s, "submission loop claim stale"
-    assert "602 tests (607 collected)" in s, "submission readiness claim stale"
+    assert "614/619 tests pass" in s, "submission loop claim stale"
+    assert "614 tests (619 collected)" in s, "submission readiness claim stale"
 
 def test_readme_layout_tree_points_at_real_paths():
     t = _readme()

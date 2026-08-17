@@ -57,6 +57,40 @@ def _neutralize_instruction_braces(text: str) -> str:
     return _BRACE_NEUTRAL_RE.sub(lambda m: m.group(0)[0] + "\u200b" + m.group(0)[1:], text)
 
 
+def _safe_task_fragment(task: str, limit: int = 120) -> str:
+    """Return a task fragment safe to embed in error messages.
+
+    torture-36 F1 (HIGH): ADK error paths echoed the RAW task — credentials
+    that redact() misses (bare-value shapes like "password to hunter2",
+    AIza/GitHub/Slack token prefixes at odd positions) reached CLI stderr
+    and HTTP 502 bodies on the NORMAL free-tier empty-stream failure.
+    Redaction is lexical and lossy (its docstring says so); the error path
+    must never depend on it. Strategy: redact the FULL text first (patterns
+    see the whole context), truncate after, then a final paranoid pass —
+    if any credential-family token still survives, drop the fragment
+    entirely rather than risk a leak.
+    """
+    from nine.router.classifier import redact
+
+    frag = redact(str(task))[:limit]
+    # paranoid belt: if the fragment mentions credentials AT ALL (a key
+    # name, a token family prefix, a private-key block), do not quote it —
+    # redaction is lexical and lossy, so "password to hunter2" becomes
+    # "password=*** hunter2" with the VALUE still dangling. The error path
+    # is allowed to say WHAT failed, never WHAT the task contained.
+    suspicious = re.compile(
+        r"(password|passwd|pwd|secret|token|api[ _-]?key|private[ _-]?key|"
+        r"consumer[ _-]?key|access[ _-]?key|client[ _-]?key|ssh[ _-]?key|"
+        r"aws_secret_access_key|aws_access_key_id|github_pat_|glpat-|"
+        r"lin_api_|xox[baprs]-|sk-|ghp_|gho_|ghu_|AIza|AKIA|ASIA|"
+        r"Bearer|-----BEGIN [A-Z ]*PRIVATE KEY-----)",
+        re.IGNORECASE,
+    )
+    if suspicious.search(frag):
+        return "<task redacted>"
+    return frag
+
+
 def adk_available() -> bool:
     try:
         import google.adk  # noqa: F401
@@ -212,7 +246,7 @@ class ADKAgentNode:
                     # hint that misleads (Gemini 429 vs budget are different).
                     raise RuntimeError(
                         f"ADK agent exceeded max_llm_calls={_max_calls} for "
-                        f"task: {task[:120]!r} (model looped on tools) — "
+                        f"task: {_safe_task_fragment(task)!r} (model looped on tools) — "
                         "raise NINE_MAX_LLM_CALLS or tighten the agent "
                         "instruction"
                     ) from exc
@@ -250,7 +284,7 @@ class ADKAgentNode:
             if empty_attempts:
                 hint += f" (empty stream x{empty_attempts} with {self._empty_backoff_s:g}s backoff)"
             raise RuntimeError(
-                f"ADK agent produced no output for task: {task[:120]!r}{hint} "
+                f"ADK agent produced no output for task: {_safe_task_fragment(task)!r}{hint} "
                 "- empty stream (often Gemini 429 quota exhaustion; retry "
                 "after quota reset)"
             )

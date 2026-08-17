@@ -22,6 +22,7 @@ verdict.)
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -445,10 +446,14 @@ def _record_route_event(learner, job, decision, verdict: dict) -> None:
     from nine.learn.learner import RouteEvent
 
     eval_results = verdict.get("eval_results") or {}
+    # torture-36 F2: full job id in the event identity — the [:8] prefix
+    # collapsed distinct jobs onto ONE event, permanently blinding LEARN
+    # for those runs (anon-<hash> when no job exists).
+    job_id_full = job.job_id if job else ""
     try:
         learner.observe(
             RouteEvent(
-                event_id=f"ev-{job.job_id[:8] if job else decision.task_redacted[:8]}"
+                event_id=f"ev-{job_id_full if job else 'anon-' + hashlib.sha256(decision.task_redacted.encode()).hexdigest()[:16]}"
                          f"-{int((job.metadata or {}).get('run_seq', 0)) if job else 0}",
                 job_id=job.job_id if job else "",
                 task_redacted=decision.task_redacted[:200],

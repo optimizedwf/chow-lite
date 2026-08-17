@@ -163,15 +163,15 @@ def test_t29_f5_demo_lane_docstring_says_three_hops():
 
 # ---------------------------------------------------------------- T29-F6 ---
 def test_t29_f6_doc_counts_track_actual_suite():
-    """README/SUBMISSION must claim the CURRENT suite size (602 passing /
-    607 collected), never a stale count."""
+    """README/SUBMISSION must claim the CURRENT suite size (614 passing /
+    619 collected), never a stale count."""
     from tests.test_doc_truth import _readme, _submission
 
     for doc in (_readme(), _submission()):
         assert "568" not in doc, "stale 568 count in docs"
         assert "583" not in doc, "stale 583 count in docs"
-        assert "602/607" in doc or "602 tests (607" in doc or \
-               "602%20passing" in doc, "current counts missing"
+        assert "614/619" in doc or "614 tests (619" in doc or \
+               "614%20passing" in doc, "current counts missing"
 
 
 # ---------------------------------------------------------------- T30-F1 ---
@@ -184,11 +184,18 @@ def test_t30_f1_update_status_skips_wrong_shape_lines(tmp_path):
     p.write_text(
         '"not-a-dict"\n'
         '{"candidate_id": "c1", "status": "pending", "kind": "keyword", '
-        '"description": "d", "evidence": "e", "params": {}}\n',
+        '"description": "d", "evidence": "e", "params": {}}\n'
+        '{"candidate_id": "c2", "status": "pending", "kind": "keyword", '
+        '"description": "d", "evidence": ["ev-1"], "params": {}}\n',
         encoding="utf-8")
     cs = CandidateStore(p)
-    cs.update_status("c1", "applied")  # must not AttributeError
-    assert cs.get("c1").status == "applied"
+    cs.update_status("c1", "applied")  # corrupt line skipped, no crash
+    cs.update_status("c2", "applied")  # well-shaped line updated
+    # slice-54 (torture-36 F3): the evidence-as-string line is now skipped
+    # at READ time by _coerce_candidate (strict-typed like events), so c1
+    # no longer resolves at all — the write path stays crash-free.
+    assert cs.get("c1") is None
+    assert cs.get("c2").status == "applied"
 
 
 # ---------------------------------------------------------------- T30-F2 ---

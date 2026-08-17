@@ -248,7 +248,10 @@ class ChainExecutor:
                     try:
                         self.learner.observe(
                             RouteEvent(
-                                event_id=f"ev-{hop_job.job_id[:8]}"
+                                # torture-36 F2: full job id — the [:8] prefix collapsed distinct
+                                # jobs onto ONE event id, permanently
+                                # blinding LEARN for those runs.
+                                event_id=f"ev-{hop_job.job_id}"
                                            f"-{int((hop_job.metadata or {}).get('run_seq', 0))}",
                                 job_id=hop_job.job_id,
                                 task_redacted=redact(str(inputs.get("task", "")))[:200],

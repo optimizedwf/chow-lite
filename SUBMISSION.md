@@ -48,7 +48,7 @@ hop that PRODUCES output requires its model and fails loud otherwise —
 CI-friendly and judge-friendly, with zero fabricated answers.
 
 **Dogfooding.** The repo's own roadmap, tracker, and this submission were
-managed with the same route→execute→verify→learn loop. 602/607 tests pass (607 collected, 5 live-gated skips);
+managed with the same route→execute→verify→learn loop. 614/619 tests pass (619 collected, 5 live-gated skips);
 every CLI run ships a full artifact trail.
 
 **Try it (5 minutes, no key needed):**
@@ -95,7 +95,7 @@ the deployed API.
 |---|---|
 | Innovation & Operational Utility (40%) | autonomy kernel with evidence-gated SHIP/FIX/BLOCK; candidate-only learning loop; dogfooded on its own build |
 | Architectural Discipline & Tech Stack (30%) | typed schemas for every boundary (jobs, artifacts, verdicts, route decisions/events); ADK + gemini-3.6-flash + Cloud Run/Firestore; JSON Schema validation in tests |
-| Demo & Production Readiness (30%) | one-command demo, 602 tests (607 collected), Dockerfile + deploy.sh, FastAPI operator API, model-or-fail (no fabricated output) |
+| Demo & Production Readiness (30%) | one-command demo, 614 tests (619 collected), Dockerfile + deploy.sh, FastAPI operator API, model-or-fail (no fabricated output) |
 
 ## 9. Post-submission freeze
 Video, repo, and live site are frozen after submission (Aug 31 17:00 PDT);

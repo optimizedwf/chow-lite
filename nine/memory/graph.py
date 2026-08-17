@@ -15,8 +15,10 @@ Backends:
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import re
 import sys
 import uuid
 from datetime import UTC, datetime
@@ -74,7 +76,15 @@ class LocalMemoryGraph:
         task_redacted: str,
         verdict: str,
     ) -> str:
-        memory_id = f"mem-{job_id[:8]}-{artifact_name.split('.')[0]}"
+        # torture-36 F4: the deterministic id used job_id[:8] + raw artifact
+        # basename — distinct jobs sharing an 8-char prefix collided onto
+        # ONE document, subdir artifact names embedded '/' into the id,
+        # and Firestore (uuid4) disagreed with local. Use a stable hash
+        # of the FULL job id + sanitized artifact so (job, artifact) maps
+        # 1:1 to a document id, deterministically, with no slash.
+        jh = hashlib.sha256(job_id.encode()).hexdigest()[:12]
+        art = re.sub(r'[^A-Za-z0-9_.-]', '_', artifact_name.split('.')[0])
+        memory_id = f"mem-{jh}-{art}"
         rec = {
             "memory_id": memory_id,
             "job_id": job_id,

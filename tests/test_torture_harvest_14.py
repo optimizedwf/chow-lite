@@ -265,13 +265,17 @@ def test_t28_f5_whitespace_task_rejected_422(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------- T28-F6 ---
-def test_t28_f6_rate_limiter_keys_on_forwarded_for():
+def test_t28_f6_rate_limiter_keys_on_forwarded_for(monkeypatch):
     """X-Forwarded-For's last hop (the trusted LB-inserted value) must be
-    the per-IP bucket key; a client-supplied first hop must NOT split."""
+    the per-IP bucket key; a client-supplied first hop must NOT split.
+    slice-54 (torture-36 F6): XFF is only trusted when the platform LB is
+    present (K_SERVICE=Cloud Run) or NINE_TRUST_PROXY=1 — the test must
+    declare the trust boundary explicitly."""
     import types
 
     from deploy.server import _check_rate_limit, _hits
 
+    monkeypatch.setenv("K_SERVICE", "cloud-run-test")
     _hits.clear()
     req = types.SimpleNamespace(
         headers={"x-forwarded-for": "1.2.3.4, 203.0.113.9"},

@@ -114,6 +114,25 @@ class BodyLimitMiddleware:
 app = FastAPI(title="nine", version="0.1.0")
 app.add_middleware(BodyLimitMiddleware)
 
+# torture-36 F6 (CORS half): the API previously had NO CORS at all — browser
+# dashboards got a 405 on OPTIONS preflight with no Access-Control-* headers,
+# yet the API silently accepted any Origin when it did serve. Default: same-
+# origin only (browser dashboards on other origins are REFUSED, not silently
+# served). Operators can allowlist origins via NINE_CORS_ORIGINS (comma-
+# separated; "*" supported only if explicitly set).
+_CORS_ORIGINS = [
+    o.strip() for o in os.environ.get("NINE_CORS_ORIGINS", "").split(",")
+    if o.strip()
+]
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_CORS_ORIGINS,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 
 @app.exception_handler(WorkflowError)
 async def _workflow_error_handler(request: Request, exc: WorkflowError) -> JSONResponse:
@@ -343,9 +362,21 @@ def _check_rate_limit(request: Request) -> JSONResponse | None:
     # boundary: Cloud Run sets X-Forwarded-For with the real client as the
     # LAST value it inserts; only the last hop is trusted (never a
     # client-supplied first value).
+    # torture-36 F6: X-Forwarded-For is ONLY trustworthy when a platform
+    # LB appends the real client as the last hop (Cloud Run). Everywhere
+    # else (local demo, docker, bare metal) the header is client-writable
+    # — a rotating XFF last hop bypassed the limiter entirely, and behind a
+    # shared middlebox one tenant's 30 req/60s starved all tenants (the
+    # exact collapse T28-F6 fixed for Cloud Run was live for every other
+    # deployment). Trust the header only under K_SERVICE (Cloud Run) or an
+    # explicit NINE_TRUST_PROXY=1; otherwise key on the socket peer.
+    trust_proxy = bool(os.environ.get("K_SERVICE")) or (
+        os.environ.get("NINE_TRUST_PROXY", "").strip().lower()
+        in ("1", "true", "yes")
+    )
     ip = "unknown"
     headers = getattr(request, "headers", None)
-    if headers is not None:
+    if trust_proxy and headers is not None:
         xff = headers.get("x-forwarded-for")
         if xff:
             hops = [h.strip() for h in xff.split(",") if h.strip()]

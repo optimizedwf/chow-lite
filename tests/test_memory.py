@@ -154,7 +154,8 @@ def test_local_memory_roundtrip_and_search(tmp_path):
         sha256="abc", size=100, summary="findings about fooquark dynamics",
         task_redacted="study fooquark dynamics", verdict="SHIP",
     )
-    assert mid.startswith("mem-job-1111")
+    assert mid.startswith("mem-") and mid.endswith("-HANDOFF")
+    # torture-36 F4: deterministic full-job-hash id (no 8-char prefix collision, no slash)
     assert len(mem) == 1
     hits = mem.search_context("fooquark", k=5)
     assert len(hits) == 1
